@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    /* 默认值防止报错 */
+    --bg-overlay-opacity: 1;
+    --glass-backdrop-blur: 20px;
+    --icon-size: 72px;
+    --glass-radius: 24px;
+    --grid-gap: 32px;
+    --icon-text-size: 14px; /* 新增 */
+
+    /* === 深色模式 === */
+    --page-bg: #0f172a;
+    --bg-overlay: linear-gradient(to bottom, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6));
+
+    --glass-surface: rgba(30, 30, 35, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-highlight: rgba(255, 255, 255, 0.1);
+
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.6);
+    --text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+
+    --add-card-bg: rgba(255, 255, 255, 0.08);
+    --add-card-border: rgba(255, 255, 255, 0.2);
+
+    --accent-color: #3b82f6;
+    --sidebar-active: rgba(255, 255, 255, 0.15);
+
+    /* 设置面板专用 */
+    --modal-bg: rgba(20, 20, 23, 0.95);
+    --modal-sidebar: rgba(0, 0, 0, 0.3);
+    --modal-border: rgba(255, 255, 255, 0.1);
+}
+
+/* === 浅色模式 === */
+html.light {
+    --page-bg: #f3f4f6;
+    --bg-overlay: linear-gradient(to bottom, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.9));
+
+    --glass-surface: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.8);
+
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-shadow: 0 0 10px rgba(255,255,255,0.8), 0 0 2px rgba(255,255,255,1);
+
+    --add-card-bg: rgba(0, 0, 0, 0.05);
+    --add-card-border: rgba(0, 0, 0, 0.15);
+
+    --accent-color: #007aff;
+    --sidebar-active: rgba(0, 0, 0, 0.06);
+
+    /* 设置面板专用 */
+    --modal-bg: rgba(255, 255, 255, 0.95);
+    --modal-sidebar: rgba(0, 0, 0, 0.03);
+    --modal-border: rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text-primary);
+    text-shadow: var(--text-shadow);
+    background-color: var(--page-bg);
+    background-attachment: fixed;
+    transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar { display: none; }
+
+.apple-glass {
+    background-color: var(--glass-surface);
+    backdrop-filter: blur(var(--glass-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--glass-backdrop-blur));
+    border: 1px solid var(--glass-border);
+    border-top: 1px solid var(--glass-highlight);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.add-card {
+    background-color: var(--add-card-bg);
+    border: 2px dashed var(--add-card-border);
+    text-shadow: none;
+    color: var(--text-secondary);
+}
+.add-card:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background-color: var(--sidebar-active);
+}
+
+/* 滑块样式优化 */
+input[type=range] {
+    @apply h-1.5 bg-current opacity-20 rounded-lg appearance-none cursor-pointer outline-none transition-opacity hover:opacity-30;
+}
+input[type=range]::-webkit-slider-thumb {
+    @apply appearance-none w-4 h-4 rounded-full bg-[var(--accent-color)] shadow-md cursor-pointer transition-transform hover:scale-125;
+}
