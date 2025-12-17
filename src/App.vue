@@ -8,29 +8,30 @@ import ContextMenu from './components/ui/ContextMenu.vue';
 import {
   PhMagnifyingGlass, PhGear, PhPlus, PhMoon, PhSun, PhX,
   PhLayout, PhImage, PhMonitor, PhTrash, PhGlobe,
-  PhSquaresFour, PhTextT, PhFrameCorners, PhClock, PhEye, PhEyeSlash, PhUploadSimple
+  PhSquaresFour, PhTextT, PhFrameCorners, PhClock, PhEye, PhEyeSlash, PhUploadSimple,
+  PhMagicWand, PhCursorClick, PhLightning
 } from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
 import { useConfigStore } from './stores/useConfigStore';
-import { useNow, useDateFormat } from '@vueuse/core';
+import { useNow, useDateFormat, useMouse } from '@vueuse/core';
 
 useTheme();
 const store = useConfigStore();
 
-// Time
+// Time & State
 const now = useNow();
 const timeStr = useDateFormat(now, 'HH:mm');
 const dateStr = useDateFormat(now, 'MM月DD日 dddd');
-
-// State
+const { x, y } = useMouse();
+const isHovering = ref(false);
 const showSettings = ref(false);
 const isFocusMode = ref(false);
 const activeGroupId = ref('');
 const searchText = ref('');
 const showEngineMenu = ref(false);
-const settingsTab = ref<'layout' | 'icon' | 'theme' | 'search'>('icon');
+const settingsTab = ref<'layout' | 'icon' | 'theme' | 'search' | 'effects'>('icon');
 
-// Search
+// Search Logic
 const handleSearch = () => {
   if (!searchText.value) return;
   const currentEngine = store.config.searchEngines.find(e => e.id === store.config.currentEngineId);
@@ -45,7 +46,7 @@ const currentEngineIcon = computed(() => {
 });
 const newEngineForm = ref({ name: '', url: '' });
 const handleAddEngine = () => {
-  if(newEngineForm.value.name && newEngineForm.value.url) {
+  if (newEngineForm.value.name && newEngineForm.value.url) {
     store.addEngine(newEngineForm.value.name, newEngineForm.value.url);
     newEngineForm.value = { name: '', url: '' };
   }
@@ -63,23 +64,35 @@ provide('dialog', {
 });
 
 const onSiteSubmit = (data: any) => {
-  if (siteDialog.value.isEdit && siteDialog.value.initialData) store.updateSite(siteDialog.value.groupId, siteDialog.value.initialData.id, data);
-  else store.addSite(siteDialog.value.groupId, data);
+  if (siteDialog.value.isEdit && siteDialog.value.initialData) {
+    store.updateSite(siteDialog.value.groupId, siteDialog.value.initialData.id, data);
+  } else {
+    store.addSite(siteDialog.value.groupId, data);
+  }
 };
+
 const onGroupSubmit = (data: any) => {
-  if (groupDialog.value.isEdit) store.updateGroup(groupDialog.value.groupId, data);
-  else store.addGroup(data.title);
+  if (groupDialog.value.isEdit) {
+    store.updateGroup(groupDialog.value.groupId, data);
+  } else {
+    store.addGroup(data);
+  }
 };
+
 const handleMenuAction = (action: 'edit' | 'delete') => {
   contextMenu.value.show = false;
-  if (action === 'edit') groupDialog.value = { show: true, isEdit: true, groupId: contextMenu.value.targetId, initialData: contextMenu.value.data };
-  else if (action === 'delete' && confirm('确定删除?')) store.removeGroup(contextMenu.value.targetId);
+  if (action === 'edit') {
+    groupDialog.value = { show: true, isEdit: true, groupId: contextMenu.value.targetId, initialData: contextMenu.value.data };
+  } else if (action === 'delete') {
+    store.removeGroup(contextMenu.value.targetId);
+  }
 };
+
 const handleFileUpload = (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
-  if (file && file.size < 2*1024*1024) {
+  if (file && file.size < 2 * 1024 * 1024) {
     const reader = new FileReader();
-    reader.onload = (e) => { if(e.target?.result) store.config.theme.wallpaper = e.target.result as string; };
+    reader.onload = (e) => { if (e.target?.result) store.config.theme.wallpaper = e.target.result as string; };
     reader.readAsDataURL(file);
   } else { alert("图片需小于 2MB"); }
 };
@@ -87,6 +100,13 @@ const handleFileUpload = (event: Event) => {
 onMounted(() => {
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
+  document.body.addEventListener('mouseover', (e) => {
+    if ((e.target as HTMLElement).closest('button, a, .cursor-pointer, input, select')) {
+      isHovering.value = true;
+    } else {
+      isHovering.value = false;
+    }
+  });
 });
 
 const toggleTheme = (mode: 'light' | 'dark') => {
@@ -99,9 +119,14 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
 
 <template>
   <div class="h-screen w-full relative overflow-hidden font-sans flex transition-all duration-500"
-       :class="containerClass"
+       :class="[containerClass, { 'cursor-hidden': store.config.theme.customCursor }]"
        @click="contextMenu.show = false; showEngineMenu = false"
        style="color: var(--text-primary);">
+
+    <div v-if="store.config.theme.customCursor" class="fixed pointer-events-none z-[9999] rounded-full mix-blend-difference bg-white transition-transform duration-100 ease-out"
+         :class="isHovering ? 'w-8 h-8 opacity-50' : 'w-4 h-4 opacity-80'" :style="{ left: x + 'px', top: y + 'px', transform: 'translate(-50%, -50%)' }"></div>
+    <div v-if="store.config.theme.customCursor" class="fixed pointer-events-none z-[9999] w-1 h-1 rounded-full bg-[var(--accent-color)] transition-none"
+         :style="{ left: x + 'px', top: y + 'px', transform: 'translate(-50%, -50%)' }"></div>
 
     <div class="fixed inset-0 z-[-1]">
       <div class="absolute inset-0 bg-cover bg-center transition-all duration-700" :style="{ backgroundImage: `var(--bg-image)` }"></div>
@@ -119,40 +144,42 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
           <PhMonitor weight="fill" size="24" />
         </div>
         <div class="flex-1 flex flex-col gap-3 w-full px-2 overflow-y-auto no-scrollbar">
-          <button v-for="group in store.config.layout" :key="group.id" @click="activeGroupId = group.id" @contextmenu.stop="(e) => { e.preventDefault(); contextMenu = { show: true, x: e.clientX, y: e.clientY, type: 'group', targetId: group.id, data: group }; }"
-                  class="relative w-full aspect-square rounded-2xl transition-all flex flex-col items-center justify-center gap-1 group/btn"
-                  :class="activeGroupId === group.id ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)]' : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100'">
+          <button v-for="group in store.config.layout" :key="group.id" @click="activeGroupId = group.id"
+                  @contextmenu.stop="(e) => { e.preventDefault(); contextMenu = { show: true, x: e.clientX, y: e.clientY, type: 'group', targetId: group.id, data: group }; }"
+                  class="relative w-full aspect-square rounded-2xl transition-all flex flex-col items-center justify-center gap-1 group/btn border-2 border-transparent"
+                  :class="[activeGroupId === group.id ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)]' : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100', { 'effect-breathe': store.config.theme.breathingLight && activeGroupId === group.id }]">
             <component :is="(PhIcons as any)['Ph' + group.icon]" size="26" weight="duotone" class="transition-transform group-hover/btn:scale-110"/>
             <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">{{ group.title }}</span>
             <div v-if="activeGroupId === group.id" class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"></div>
           </button>
-          <button @click="groupDialog = { show: true, isEdit: false, groupId: '', initialData: null }" class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2"><PhPlus size="24" /></button>
+          <button @click="groupDialog = { show: true, isEdit: false, groupId: '', initialData: null }" class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2">
+            <PhPlus size="24" />
+          </button>
         </div>
-        <button @click="showSettings = true" class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all"><PhGear :size="26" weight="duotone" /></button>
+        <button @click="showSettings = true" class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all">
+          <PhGear :size="26" weight="duotone" />
+        </button>
       </aside>
     </transition>
 
     <main class="flex-1 h-full relative overflow-hidden flex flex-col items-center">
-
-      <div class="w-full flex flex-col items-center justify-center mt-[10vh] mb-8 transition-all duration-500 z-30"
-           :class="isFocusMode ? 'scale-110 mt-[30vh]' : ''">
-
+      <div class="w-full flex flex-col items-center justify-center mt-[10vh] mb-8 transition-all duration-500 z-30" :class="isFocusMode ? 'scale-110 mt-[30vh]' : ''">
         <transition name="fade">
           <div v-if="store.config.theme.showTime && !isFocusMode" class="text-center select-none mb-8">
-            <h1 class="text-6xl font-bold tracking-tight drop-shadow-md" style="font-feature-settings: 'tnum';">{{ timeStr }}</h1>
+            <h1 class="text-6xl font-bold tracking-tight drop-shadow-md" :class="{ 'font-tech': store.config.theme.techFont }" style="font-feature-settings: 'tnum';">{{ timeStr }}</h1>
             <p class="text-sm font-medium opacity-70 mt-1 uppercase tracking-widest">{{ dateStr }}</p>
           </div>
         </transition>
-
         <div class="relative w-full max-w-[640px] px-4 group">
-          <div class="flex items-center apple-glass rounded-full px-2 py-2 transition-all focus-within:ring-2 focus-within:ring-[var(--accent-color)] focus-within:ring-opacity-50 shadow-lg">
+          <div class="flex items-center apple-glass rounded-full px-2 py-2 transition-all border border-transparent" :class="{ 'effect-neon': store.config.theme.neonGlow }">
             <div class="relative">
               <button @click.stop="showEngineMenu = !showEngineMenu" class="p-3 rounded-full hover:bg-[var(--sidebar-active)] transition-colors text-[var(--accent-color)] flex items-center justify-center">
                 <component :is="currentEngineIcon" size="24" weight="bold"/>
               </button>
               <transition name="scale">
                 <div v-if="showEngineMenu" class="absolute top-14 left-0 w-48 apple-glass rounded-2xl p-2 shadow-xl flex flex-col gap-1 z-50">
-                  <div v-for="eng in store.config.searchEngines" :key="eng.id" class="flex items-center justify-between p-2 rounded-xl hover:bg-[var(--sidebar-active)] cursor-pointer group/item" @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
+                  <div v-for="eng in store.config.searchEngines" :key="eng.id" class="flex items-center justify-between p-2 rounded-xl hover:bg-[var(--sidebar-active)] cursor-pointer group/item"
+                       @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
                     <div class="flex items-center gap-3"><component :is="(PhIcons as any)['Ph' + eng.icon] || PhIcons.PhGlobe" size="18"/><span class="text-sm font-bold">{{ eng.name }}</span></div>
                     <button v-if="store.config.searchEngines.length > 1" @click.stop="store.removeEngine(eng.id)" class="opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-1"><PhTrash size="14"/></button>
                   </div>
@@ -166,7 +193,6 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
           </div>
         </div>
       </div>
-
       <transition name="fade">
         <div v-if="!isFocusMode" class="flex-1 w-full overflow-y-auto px-12 pb-20 scroll-smooth no-scrollbar">
           <MainGrid :activeGroupId="activeGroupId" />
@@ -177,7 +203,6 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
     <transition name="scale">
       <div v-if="showSettings" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-12">
         <div @click="showSettings = false" class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-all"></div>
-
         <div class="relative w-full max-w-4xl h-[80vh] flex overflow-hidden rounded-3xl shadow-2xl border transition-all animate-scale-in"
              style="background-color: var(--modal-bg); border-color: var(--modal-border); backdrop-filter: blur(40px);">
 
@@ -190,13 +215,14 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
               <button @click="settingsTab = 'icon'" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left" :class="settingsTab === 'icon' ? 'bg-[var(--accent-color)] text-white shadow-md' : 'hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100'"><PhSquaresFour size="18" weight="bold"/> 图标样式</button>
               <button @click="settingsTab = 'layout'" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left" :class="settingsTab === 'layout' ? 'bg-[var(--accent-color)] text-white shadow-md' : 'hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100'"><PhFrameCorners size="18" weight="bold"/> 整体布局</button>
               <button @click="settingsTab = 'theme'" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left" :class="settingsTab === 'theme' ? 'bg-[var(--accent-color)] text-white shadow-md' : 'hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100'"><PhImage size="18" weight="bold"/> 主题壁纸</button>
+              <button @click="settingsTab = 'effects'" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left" :class="settingsTab === 'effects' ? 'bg-[var(--accent-color)] text-white shadow-md' : 'hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100'"><PhMagicWand size="18" weight="bold"/> 科技特效</button>
               <button @click="settingsTab = 'search'" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-left" :class="settingsTab === 'search' ? 'bg-[var(--accent-color)] text-white shadow-md' : 'hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100'"><PhGlobe size="18" weight="bold"/> 搜索引擎</button>
             </nav>
           </div>
 
           <div class="flex-1 flex flex-col h-full">
             <div class="flex justify-between items-center p-6 border-b" style="border-color: var(--modal-border);">
-              <h2 class="text-xl font-bold">{{ settingsTab === 'icon' ? '图标个性化' : settingsTab === 'layout' ? '界面布局' : settingsTab === 'theme' ? '主题与壁纸' : '搜索管理' }}</h2>
+              <h2 class="text-xl font-bold">{{ settingsTab === 'icon' ? '图标个性化' : settingsTab === 'layout' ? '界面布局' : settingsTab === 'theme' ? '主题与壁纸' : settingsTab === 'effects' ? '科技感特效' : '搜索管理' }}</h2>
               <button @click="showSettings = false" class="p-2 hover:bg-[var(--sidebar-active)] rounded-full transition-colors"><PhX size="20"/></button>
             </div>
 
@@ -210,7 +236,7 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
                   <div class="flex justify-between items-center"><label class="font-bold text-sm">网格间距</label><span class="text-xs opacity-60">{{ store.config.theme.gap }}px</span></div>
                   <input type="range" v-model="store.config.theme.gap" min="10" max="80" class="w-full">
                 </div>
-                <hr class="border-[var(--modal-border)]">
+                <hr class="border-[var(--modal-border)] opacity-50">
                 <div class="space-y-6">
                   <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-2"><PhTextT size="18"/> 显示名称</label><input type="checkbox" v-model="store.config.theme.showIconName" class="w-5 h-5 accent-[var(--accent-color)]"></div>
                   <div class="opacity-50 transition-opacity" :class="{ 'opacity-100 pointer-events-auto': store.config.theme.showIconName }">
@@ -249,6 +275,18 @@ const containerClass = computed(() => store.config.theme.sidebarPos === 'right' 
                   <input type="range" v-model="store.config.theme.blur" min="0" max="50" class="w-full">
                   <div class="flex justify-between items-center"><label class="font-bold text-sm">背景遮罩浓度</label><span class="text-xs opacity-60">{{ (store.config.theme.opacity * 100).toFixed(0) }}%</span></div>
                   <input type="range" v-model="store.config.theme.opacity" min="0" max="1" step="0.05" class="w-full">
+                </div>
+              </div>
+
+              <div v-if="settingsTab === 'effects'" class="space-y-6 animate-fade-in max-w-xl">
+                <div class="bg-[var(--sidebar-active)] p-5 rounded-2xl border border-[var(--glass-border)] space-y-6">
+                  <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhTextT size="20"/> 科技感数字字体 (Monospace)</label><input type="checkbox" v-model="store.config.theme.techFont" class="w-5 h-5 accent-[var(--accent-color)]"></div>
+                  <hr class="border-[var(--glass-border)] opacity-50">
+                  <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhLightning size="20"/> 侧边栏呼吸灯效</label><input type="checkbox" v-model="store.config.theme.breathingLight" class="w-5 h-5 accent-[var(--accent-color)]"></div>
+                  <hr class="border-[var(--glass-border)] opacity-50">
+                  <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhFrameCorners size="20"/> 霓虹边框发光</label><input type="checkbox" v-model="store.config.theme.neonGlow" class="w-5 h-5 accent-[var(--accent-color)]"></div>
+                  <hr class="border-[var(--glass-border)] opacity-50">
+                  <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhCursorClick size="20"/> 科技感自定义光标</label><input type="checkbox" v-model="store.config.theme.customCursor" class="w-5 h-5 accent-[var(--accent-color)]"></div>
                 </div>
               </div>
 

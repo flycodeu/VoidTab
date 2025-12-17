@@ -32,19 +32,24 @@ export interface ThemeConfig {
     opacity: number;
 
     // 图标布局
-    iconSize: number;      // 图标大小 (px)
-    radius: number;        // 圆角 (px)
-    gap: number;           // 间距 (px)
+    iconSize: number;
+    radius: number;
+    gap: number;
 
     // 文字设置
-    showIconName: boolean; // 是否显示名称
-    iconTextSize: number;  // 文字大小 (px)
-    iconTextColor: string; // 文字颜色 (Hex)
+    showIconName: boolean;
+    iconTextSize: number;
+    iconTextColor: string;
 
     // 整体布局
-    gridMaxWidth: number;  // 图标区域最大宽度 (px)
+    gridMaxWidth: number;
     sidebarPos: 'left' | 'right';
     showTime: boolean;
+
+    techFont: boolean;       // 是否使用等宽数字字体 (时间)
+    breathingLight: boolean; // 是否开启侧边栏呼吸灯
+    neonGlow: boolean;       // 是否开启霓虹边框发光
+    customCursor: boolean;   // 是否开启自定义科技光标
 }
 
 export interface UserConfig {
