@@ -11,7 +11,7 @@ import {
   PhSquaresFour, PhTextT, PhFrameCorners, PhClock, PhImage,
   PhMagicWand, PhCursorClick, PhLightning, PhDatabase, PhGlobe,
   PhCards, PhMonitor, PhSun, PhMoon, PhUploadSimple, PhDownloadSimple, PhFileArrowUp, PhX,
-  PhCheck
+  PhCheckCircle
 } from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
 import { useConfigStore } from './stores/useConfigStore';
@@ -203,22 +203,22 @@ onUnmounted(() => {
       </nav>
     </transition>
 
-    <main class="flex-1 w-full h-full flex flex-col items-center relative overflow-hidden pt-[12vh] md:pt-[15vh]">
+    <main class="flex-1 w-full h-full flex flex-col items-center relative overflow-hidden pt-[8vh] md:pt-[10vh] justify-start">
       <transition name="fade">
-        <div v-if="store.config.theme.showTime && !isFocusMode" class="text-center select-none mb-8 z-30">
+        <div v-if="store.config.theme.showTime" class="text-center select-none mb-6 z-30 transition-all" :class="isFocusMode ? 'scale-110 translate-y-[20vh]' : ''">
           <h1 class="text-7xl md:text-8xl font-bold tracking-tight drop-shadow-2xl" :class="{ 'font-tech': store.config.theme.techFont }" style="font-feature-settings: 'tnum';">{{ timeStr }}</h1>
-          <p class="text-base md:text-lg font-medium opacity-80 mt-3 uppercase tracking-widest">{{ dateStr }}</p>
+          <p class="text-base md:text-lg font-medium opacity-80 mt-2 uppercase tracking-widest">{{ dateStr }}</p>
         </div>
       </transition>
 
-      <div v-if="!isFocusMode" class="relative w-[90%] md:w-full md:max-w-[640px] px-0 md:px-4 group z-30 mb-8">
-        <div class="flex items-center apple-glass rounded-full px-2 py-3 transition-all border border-transparent shadow-xl hover:shadow-2xl" :class="{ 'effect-neon': store.config.theme.neonGlow }">
+      <div class="relative w-[90%] md:w-full md:max-w-[520px] px-0 group z-30 mb-6 transition-all" :class="isFocusMode ? 'translate-y-[20vh]' : ''">
+        <div class="flex items-center apple-glass rounded-full px-2 py-2.5 transition-all border border-transparent shadow-xl hover:shadow-2xl" :class="{ 'effect-neon': store.config.theme.neonGlow }">
           <div class="relative">
-            <button @click.stop="showEngineMenu = !showEngineMenu" class="p-3 rounded-full hover:bg-[var(--sidebar-active)] transition-colors text-[var(--accent-color)] flex items-center justify-center"><component :is="currentEngineIcon" size="24" weight="bold"/></button>
+            <button @click.stop="showEngineMenu = !showEngineMenu" class="p-2.5 rounded-full hover:bg-[var(--sidebar-active)] transition-colors text-[var(--accent-color)] flex items-center justify-center"><component :is="currentEngineIcon" size="22" weight="bold"/></button>
             <transition name="scale"><div v-if="showEngineMenu" class="absolute top-16 left-0 w-48 apple-glass rounded-2xl p-2 shadow-xl flex flex-col gap-1 z-50"><div v-for="eng in store.config.searchEngines" :key="eng.id" class="flex items-center justify-between p-2 rounded-xl hover:bg-[var(--sidebar-active)] cursor-pointer group/item" @click="store.config.currentEngineId = eng.id; showEngineMenu = false"><div class="flex items-center gap-3"><component :is="(PhIcons as any)['Ph' + eng.icon] || PhIcons.PhGlobe" size="18"/><span class="text-sm font-bold">{{ eng.name }}</span></div><button v-if="store.config.searchEngines.length > 1" @click.stop="store.removeEngine(eng.id)" class="opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-1"><PhTrash size="14"/></button></div><div class="h-[1px] bg-current opacity-10 my-1"></div><button @click="showSettings = true; settingsTab = 'search'; showEngineMenu = false" class="text-xs font-bold opacity-60 hover:opacity-100 text-center py-2">添加引擎...</button></div></transition>
           </div>
-          <div class="h-8 w-[1px] bg-current opacity-20 mx-3"></div>
-          <input v-model="searchText" @keydown.enter="handleSearch" type="text" placeholder="Search the void..." class="w-full bg-transparent text-xl md:text-2xl outline-none placeholder-current/60 font-medium px-2" autofocus />
+          <div class="h-6 w-[1px] bg-current opacity-20 mx-2"></div>
+          <input v-model="searchText" @keydown.enter="handleSearch" type="text" placeholder="Search the void..." class="w-full bg-transparent text-lg font-medium px-2 outline-none placeholder-current/60" autofocus />
         </div>
       </div>
 
@@ -270,18 +270,22 @@ onUnmounted(() => {
               <div v-if="settingsTab === 'theme'" class="space-y-6 animate-fade-in">
                 <div class="grid grid-cols-2 gap-4">
                   <button @click="toggleTheme('light')"
-                          class="flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
+                          class="relative flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
                           :class="store.config.theme.mode === 'light' ? 'border-[var(--accent-color)] bg-[var(--accent-color)] bg-opacity-10 text-[var(--accent-color)]' : 'border-transparent bg-[var(--modal-input-bg)] opacity-70 hover:opacity-100'">
                     <PhSun weight="fill" size="32"/>
                     <span class="font-bold text-sm">浅色模式</span>
-                    <div v-if="store.config.theme.mode === 'light'" class="absolute top-2 right-2 text-[var(--accent-color)]"><PhCheck size="16" weight="bold"/></div>
+                    <div v-if="store.config.theme.mode === 'light'" class="absolute top-3 right-3 text-[var(--accent-color)] pointer-events-none">
+                      <PhCheckCircle size="20" weight="fill"/>
+                    </div>
                   </button>
                   <button @click="toggleTheme('dark')"
-                          class="flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
+                          class="relative flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
                           :class="store.config.theme.mode === 'dark' ? 'border-[var(--accent-color)] bg-[var(--accent-color)] bg-opacity-10 text-[var(--accent-color)]' : 'border-transparent bg-[var(--modal-input-bg)] opacity-70 hover:opacity-100'">
                     <PhMoon weight="fill" size="32"/>
                     <span class="font-bold text-sm">深色模式</span>
-                    <div v-if="store.config.theme.mode === 'dark'" class="absolute top-2 right-2 text-[var(--accent-color)]"><PhCheck size="16" weight="bold"/></div>
+                    <div v-if="store.config.theme.mode === 'dark'" class="absolute top-3 right-3 text-[var(--accent-color)] pointer-events-none">
+                      <PhCheckCircle size="20" weight="fill"/>
+                    </div>
                   </button>
                 </div>
 
