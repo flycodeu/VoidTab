@@ -16,38 +16,17 @@ const emit = defineEmits(['close']);
 
         <div class="flex items-center justify-between px-6 py-5 border-b border-[var(--glass-border)] bg-[var(--sidebar-active)] select-none">
           <div class="flex items-center gap-3">
-            <div class="p-2 rounded bg-[var(--accent-color)] text-white shadow-lg shadow-[var(--accent-color)]/20">
-              <PhSquaresFour size="20" weight="fill"/>
-            </div>
-            <span class="font-bold text-sm tracking-widest font-tech opacity-90" style="color: var(--text-primary)">
-              DATA DASHBOARD
-            </span>
+            <div class="p-2 rounded bg-[var(--accent-color)] text-white shadow-lg"><PhSquaresFour size="20" weight="fill"/></div>
+            <span class="font-bold text-sm tracking-widest font-tech opacity-90" style="color: var(--text-primary)">DATA DASHBOARD</span>
           </div>
-
-          <button @click="emit('close')" class="p-2 hover:bg-white/10 rounded-full transition-colors group">
-            <PhX size="22" class="text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors"/>
-          </button>
+          <button @click="emit('close')" class="p-2 hover:bg-white/10 rounded-full transition-colors"><PhX size="22" style="color: var(--text-primary)"/></button>
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 md:p-8 custom-scroll">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
-
-            <div class="h-full min-h-[300px]">
-              <WeatherWidget />
-            </div>
-
-            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] group bg-[var(--sidebar-active)]">
-              <PhGithubLogo size="56" class="mb-4 group-hover:scale-110 transition-transform"/>
-              <span class="font-tech text-xs font-bold tracking-widest">GITHUB_TRENDS</span>
-              <span class="text-[10px] mt-2 opacity-50">Loading Data Stream...</span>
-            </div>
-
-            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] group bg-[var(--sidebar-active)]">
-              <PhCpu size="56" class="mb-4 group-hover:scale-110 transition-transform animate-pulse"/>
-              <span class="font-tech text-xs font-bold tracking-widest">SYSTEM_STATS</span>
-              <span class="text-[10px] mt-2 opacity-50">Analyzing System...</span>
-            </div>
-
+            <div class="h-full min-h-[300px]"><WeatherWidget /></div>
+            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] bg-[var(--sidebar-active)]"><PhGithubLogo size="56" class="mb-4"/><span class="font-tech text-xs font-bold">GITHUB</span><span class="text-[10px] mt-2 opacity-50">Loading...</span></div>
+            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] bg-[var(--sidebar-active)]"><PhCpu size="56" class="mb-4"/><span class="font-tech text-xs font-bold">SYSTEM</span><span class="text-[10px] mt-2 opacity-50">Analyzing...</span></div>
           </div>
         </div>
       </div>
