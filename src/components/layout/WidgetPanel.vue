@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { PhX, PhSquaresFour, PhGithubLogo, PhCpu } from '@phosphor-icons/vue';
+import { PhX, PhSquaresFour } from '@phosphor-icons/vue';
 import WeatherWidget from '../widgets/WeatherWidget.vue';
+import GitHubTrendsWidget from '../widgets/GitHubTrendsWidget.vue';
+import SystemWidget from '../widgets/SystemWidget.vue'; // ✅ 引入新组件
 
 defineProps<{ isOpen: boolean }>();
 const emit = defineEmits(['close']);
@@ -24,9 +26,19 @@ const emit = defineEmits(['close']);
 
         <div class="flex-1 overflow-y-auto p-6 md:p-8 custom-scroll">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
-            <div class="h-full min-h-[300px]"><WeatherWidget /></div>
-            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] bg-[var(--sidebar-active)]"><PhGithubLogo size="56" class="mb-4"/><span class="font-tech text-xs font-bold">GITHUB</span><span class="text-[10px] mt-2 opacity-50">Loading...</span></div>
-            <div class="border border-dashed border-[var(--glass-border)] rounded-2xl flex flex-col items-center justify-center opacity-40 hover:opacity-80 transition-all min-h-[250px] bg-[var(--sidebar-active)]"><PhCpu size="56" class="mb-4"/><span class="font-tech text-xs font-bold">SYSTEM</span><span class="text-[10px] mt-2 opacity-50">Analyzing...</span></div>
+
+            <div class="h-full min-h-[300px]">
+              <WeatherWidget />
+            </div>
+
+            <div class="h-full min-h-[300px]">
+              <GitHubTrendsWidget />
+            </div>
+
+            <div class="h-full min-h-[300px]">
+              <SystemWidget />
+            </div>
+
           </div>
         </div>
       </div>

@@ -35,14 +35,18 @@ const weatherCodeMap: Record<number, { icon: any, label: string, color: string }
 
 const getWeatherInfo = (code: number) => weatherCodeMap[code] || { icon: PhCloudSun, label: '未知', color: 'currentColor' };
 
-const fetchData = async () => {
-  // 严格检查坐标有效性，防止 Infinity 导致 API 报错
+// force: 是否强制刷新（用于手动点击重试）
+const fetchData = async (force = false) => {
+  // 1. 如果已有数据且不是强制刷新，直接返回，不再请求
+  if (weatherData.value && !force) return;
+
+  // 2. 坐标无效检查
   const lat = coords.value.latitude;
   const lon = coords.value.longitude;
 
   if (lat === Infinity || lon === Infinity || lat === 0 || lon === 0) {
     if (geoError.value) {
-      errorMsg.value = "无法获取定位权限";
+      errorMsg.value = "无法获取位置权限";
       isLoading.value = false;
     }
     return;
@@ -52,9 +56,9 @@ const fetchData = async () => {
     isLoading.value = true;
     errorMsg.value = '';
 
-    // 1. 获取城市名 (CORS 容错处理)
-    // 即使这里失败，也不要阻断后续的天气请求
+    // 3. 容错获取城市名
     try {
+      // 使用 try-catch 包裹，CORS 失败不影响天气显示
       const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&count=1&language=zh`);
       if (geoRes.ok) {
         const geoJson = await geoRes.json();
@@ -63,23 +67,20 @@ const fetchData = async () => {
         } else {
           locationName.value = `Lat:${lat.toFixed(1)} Lon:${lon.toFixed(1)}`;
         }
-      } else {
-        locationName.value = `Lat:${lat.toFixed(1)} Lon:${lon.toFixed(1)}`;
       }
     } catch (e) {
-      // 跨域或网络错误，静默失败，使用坐标兜底
-      console.warn("Geocoding failed, using coordinates instead.");
+      console.warn("Geocoding skipped due to CORS/Network error");
       locationName.value = `Lat:${lat.toFixed(1)} Lon:${lon.toFixed(1)}`;
     }
 
-    // 2. 获取天气
+    // 4. 获取天气
     const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`);
 
-    if (!weatherRes.ok) throw new Error('天气服务暂时不可用');
+    if (!weatherRes.ok) throw new Error('API 连接失败');
 
     weatherData.value = await weatherRes.json();
 
-    // 3. 黄历
+    // 5. 黄历
     const now = new Date();
     const solar = Solar.fromDate(now);
     const lunar = solar.getLunar();
@@ -120,16 +121,15 @@ const dailyForecast = computed(() => {
   });
 });
 
-// 使用 watch 监听坐标变化，确保只在坐标有效时发起请求
-watch(coords, (newCoords) => {
-  if (newCoords.latitude !== Infinity && newCoords.latitude !== 0) {
-    fetchData();
-  }
-}, { immediate: true });
-
 onMounted(() => {
-  // 双重保险
-  if (coords.value.latitude && coords.value.latitude !== Infinity) fetchData();
+  // 逻辑修正：只监听一次，获取到有效坐标后立即停止监听
+  const stopWatcher = watch(coords, (newCoords) => {
+    // 只有当坐标不再是 Infinity 且非 0 时才请求
+    if (newCoords.latitude !== Infinity && newCoords.latitude !== 0) {
+      fetchData(false); // false = 非强制，利用缓存检查
+      stopWatcher();    // ✅ 关键：获取到坐标后，立即停止监听，防止 GPS 抖动导致死循环
+    }
+  }, { immediate: true });
 });
 </script>
 
@@ -144,7 +144,7 @@ onMounted(() => {
       <div class="flex justify-between items-start mb-4">
         <div class="flex items-center gap-1">
           <PhMapPin size="16" weight="fill" class="text-[var(--accent-color)]" />
-          <span class="text-sm font-bold tracking-wide">{{ locationName }}</span>
+          <span class="text-sm font-bold tracking-wide truncate max-w-[140px]">{{ locationName }}</span>
         </div>
         <div class="text-right">
           <div class="text-sm font-bold font-tech text-[var(--accent-color)]">{{ lunarData.dateStr }}</div>
@@ -189,7 +189,7 @@ onMounted(() => {
 
     <div v-else class="absolute inset-0 flex flex-col items-center justify-center p-4 text-center z-10">
       <p class="text-xs opacity-60 mb-2">{{ errorMsg || '无法获取数据' }}</p>
-      <button @click="fetchData" class="px-4 py-2 bg-[var(--accent-color)] text-white rounded-lg text-xs font-bold shadow-lg hover:brightness-110">重试</button>
+      <button @click="fetchData(true)" class="px-4 py-2 bg-[var(--accent-color)] text-white rounded-lg text-xs font-bold shadow-lg hover:brightness-110">重试</button>
     </div>
   </div>
 </template>

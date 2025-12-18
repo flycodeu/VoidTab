@@ -43,7 +43,7 @@ const handleSearch = () => {
         </transition>
       </div>
       <div class="h-6 w-[1px] bg-current opacity-20 mx-2"></div>
-      <input v-model="searchText" @keydown.enter="handleSearch" type="text" placeholder="Search the void..." class="w-full bg-transparent text-lg font-medium px-2 outline-none placeholder-current/60" autofocus />
+      <input v-model="searchText" @keydown.enter="handleSearch" type="text" placeholder="开始搜索..." class="w-full bg-transparent text-lg font-medium px-2 outline-none placeholder-current/60" autofocus />
     </div>
   </div>
 </template>
