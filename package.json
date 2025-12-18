@@ -11,6 +11,7 @@
   "dependencies": {
     "@phosphor-icons/vue": "^2.2.1",
     "@vueuse/core": "^10.9.0",
+    "lunar-javascript": "^1.7.7",
     "pinia": "^2.1.7",
     "pinia-plugin-persistedstate": "^3.2.1",
     "vue": "^3.4.21",
