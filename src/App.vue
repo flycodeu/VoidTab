@@ -121,9 +121,17 @@ onMounted(async () => {
       <div class="absolute inset-0 backdrop-blur-[var(--glass-backdrop-blur)] transition-all duration-300"></div>
     </div>
 
-    <div class="fixed top-6 right-6 z-50 flex items-center gap-3">
-      <button @click="showWidgetModal = true" class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95" title="控制台"><PhCards size="20" weight="bold" /></button>
-      <button @click="isFocusMode = !isFocusMode" class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--accent-color)] shadow-lg hover:scale-110 active:scale-95" title="专注模式"><component :is="isFocusMode ? PhEyeSlash : PhEye" size="20" weight="bold" /></button>
+    <div class="fixed top-6 z-50 flex items-center gap-3 transition-all duration-500"
+         :class="store.config.theme.sidebarPos === 'right' ? 'left-6' : 'right-6'">
+
+      <button @click="showWidgetModal = true" class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95" title="控制台">
+        <PhCards size="20" weight="bold" />
+      </button>
+
+      <button @click="isFocusMode = !isFocusMode" class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--accent-color)] shadow-lg hover:scale-110 active:scale-95" title="专注模式">
+        <component :is="isFocusMode ? PhEyeSlash : PhEye" size="20" weight="bold" />
+      </button>
+
     </div>
 
     <SideBar
