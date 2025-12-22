@@ -8,6 +8,7 @@ import WeatherWidget from '../widgets/WeatherWidget.vue';
 import GitHubTrendsWidget from '../widgets/GitHubTrendsWidget.vue';
 import SystemWidget from '../widgets/SystemWidget.vue';
 import DevToolsWidget from '../widgets/DevToolsWidget.vue';
+import RSSWidget from '../widgets/RSSWidget.vue';
 
 defineProps<{ isOpen: boolean }>();
 const emit = defineEmits(['close']);
@@ -17,7 +18,8 @@ const components: Record<string, any> = {
   weather: WeatherWidget,
   github: GitHubTrendsWidget,
   system: SystemWidget,
-  devtools: DevToolsWidget
+  devtools: DevToolsWidget,
+  rss: RSSWidget
 };
 
 const visibleWidgets = computed(() => {

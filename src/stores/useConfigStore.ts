@@ -31,14 +31,14 @@ const defaultConfig = {
             name: '天气信息',
             visible: true,
             order: 1,
-            config: { city: 'Shanghai' }
+            config: {city: 'Shanghai'}
         },
         {
             id: 'github',
             name: 'GitHub 趋势',
             visible: true,
             order: 2,
-            config: { language: 'javascript', since: 'daily' }
+            config: {language: 'javascript', since: 'daily'}
         },
         {
             id: 'system',
@@ -47,10 +47,23 @@ const defaultConfig = {
             order: 3
         },
         {
-            id:'devtools',
+            id: 'devtools',
             name: '开发工具',
             visible: true,
             order: 4
+        },
+        {
+            id: 'rss',
+            name: 'RSS 阅读器',
+            visible: true,
+            order: 5,
+            config: {
+                feeds: [
+                    {name: '少数派', url: 'https://sspai.com/feed'},
+                    {name: 'V2EX', url: 'https://www.v2ex.com/index.xml'},
+                    {name: '36Kr', url: 'https://36kr.com/feed'}
+                ]
+            }
         }
     ],
     theme: {
@@ -82,8 +95,9 @@ const defaultConfig = {
 export const useConfigStore = defineStore('config', () => {
     const config = ref<any>(JSON.parse(JSON.stringify(defaultConfig)));
     const isLoaded = ref(false);
-
-// 📥 加载逻辑：智能合并 Sync 和 Local
+    // 新增一个不持久化的缓存，用于存已抓取的新闻
+    const rssCache = ref<Record<string, any[]>>({});
+    // 加载逻辑：智能合并 Sync 和 Local
     const loadConfig = async () => {
         // 1. 先加载云端/本地存储的配置
         const syncedConfig = await storage.get(CONFIG_KEY, null, 'sync');
@@ -93,7 +107,7 @@ export const useConfigStore = defineStore('config', () => {
             config.value = {
                 ...config.value,
                 ...syncedConfig,
-                theme: { ...config.value.theme, ...syncedConfig.theme }
+                theme: {...config.value.theme, ...syncedConfig.theme}
             };
 
             // ✨✨✨ 核心修复：智能合并 Widgets ✨✨✨
@@ -245,7 +259,7 @@ export const useConfigStore = defineStore('config', () => {
         const widget = config.value.widgets.find((w: any) => w.id === widgetId);
         if (widget) {
             // 合并配置，防止丢失原有配置
-            widget.config = { ...widget.config, ...settings };
+            widget.config = {...widget.config, ...settings};
         }
     };
 
@@ -286,6 +300,21 @@ export const useConfigStore = defineStore('config', () => {
         contextMenu.value.show = false;
     };
 
+    //3. 新增 RSS 相关的 Action
+    const addRssFeed = (widgetId: string, name: string, url: string) => {
+        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
+        if (widget && widget.config && widget.config.feeds) {
+            widget.config.feeds.push({name, url});
+        }
+    };
+
+    const removeRssFeed = (widgetId: string, url: string) => {
+        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
+        if (widget && widget.config && widget.config.feeds) {
+            widget.config.feeds = widget.config.feeds.filter((f: any) => f.url !== url);
+        }
+    };
+
     return {
         config,
         isLoaded,
@@ -312,5 +341,8 @@ export const useConfigStore = defineStore('config', () => {
         contextMenu,
         openContextMenu,
         closeContextMenu,
+        addRssFeed,
+        removeRssFeed,
+        rssCache
     };
 });

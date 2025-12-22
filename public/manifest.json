@@ -17,7 +17,9 @@
   },
   "host_permissions": [
     "https://geocoding-api.open-meteo.com/*",
-    "https://api.open-meteo.com/*"
+    "https://api.open-meteo.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "icons": {
     "16": "favicon.ico",
