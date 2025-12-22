@@ -1,19 +1,22 @@
-// 判断是否在 Chrome 扩展环境中
-const isExtension = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync;
+// 定义存储区域类型
+type StorageArea = 'sync' | 'local';
+
+const isExtension = typeof chrome !== 'undefined' && chrome.storage;
 
 export const storage = {
-    // 读取数据 (异步)
-    get: async (key: string, defaultValue: any) => {
+    // 获取数据
+    get: async (key: string, defaultValue: any, area: StorageArea = 'sync') => {
         if (isExtension) {
             return new Promise((resolve) => {
-                chrome.storage.sync.get([key], (result) => {
-                    // 如果 storage 里没有，返回默认值
+                // 动态选择 storage.sync 或 storage.local
+                chrome.storage[area].get([key], (result) => {
                     resolve(result[key] !== undefined ? result[key] : defaultValue);
                 });
             });
         } else {
-            // 开发环境：读取 localStorage
-            const val = localStorage.getItem(key);
+            // 开发环境：全部存 localStorage，但在 key 前面加前缀模拟分区
+            const realKey = `${area}_${key}`;
+            const val = localStorage.getItem(realKey);
             try {
                 return val ? JSON.parse(val) : defaultValue;
             } catch (e) {
@@ -22,20 +25,32 @@ export const storage = {
         }
     },
 
-    // 保存数据 (异步)
-    set: async (key: string, value: any) => {
+    // 保存数据
+    set: async (key: string, value: any, area: StorageArea = 'sync') => {
         if (isExtension) {
             return new Promise<void>((resolve) => {
-                // 使用 sync 进行云同步
-                // 注意：sync 有配额限制（每项 8KB，总共 100KB），适合存配置
-                // 如果是壁纸这种大文件，后续建议改用 chrome.storage.local
-                chrome.storage.sync.set({[key]: value}, () => {
+                chrome.storage[area].set({ [key]: value }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error(`Storage Error (${area}):`, chrome.runtime.lastError);
+                    }
                     resolve();
                 });
             });
         } else {
-            // 开发环境：写入 localStorage
-            localStorage.setItem(key, JSON.stringify(value));
+            // 开发环境
+            const realKey = `${area}_${key}`;
+            localStorage.setItem(realKey, JSON.stringify(value));
+        }
+    },
+
+    // 删除数据 (用于清理旧壁纸)
+    remove: async (key: string, area: StorageArea = 'sync') => {
+        if (isExtension) {
+            return new Promise<void>((resolve) => {
+                chrome.storage[area].remove(key, resolve);
+            });
+        } else {
+            localStorage.removeItem(`${area}_${key}`);
         }
     }
 };

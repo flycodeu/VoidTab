@@ -2,7 +2,11 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { storage } from '../utils/storage';
 
-// 默认配置（兜底用）
+const CONFIG_KEY = 'voidtab-core-config'; // 存同步配置
+const WALLPAPER_KEY = 'voidtab-wallpaper-blob'; // 存本地大图
+const LOCAL_MARKER = '_USE_LOCAL_STORAGE_'; // 标记位
+
+// 默认配置
 const defaultConfig = {
     layout: [
         {
@@ -16,13 +20,13 @@ const defaultConfig = {
         }
     ],
     theme: {
-        mode: 'dark',
+        mode: 'light',
         sidebarPos: 'left',
         showTime: true,
         gridMaxWidth: 1200,
         blur: 20,
         opacity: 0.6,
-        wallpaper: '',
+        wallpaper: '', // 这里只存 URL 或者 MARKER
         techFont: true,
         breathingLight: true,
         neonGlow: true,
@@ -42,30 +46,65 @@ const defaultConfig = {
 };
 
 export const useConfigStore = defineStore('config', () => {
-    // 1. 初始化为默认值
     const config = ref<any>(JSON.parse(JSON.stringify(defaultConfig)));
-    const isLoaded = ref(false); // 标记数据是否加载完成
+    const isLoaded = ref(false);
 
-    // 2. 异步加载数据的方法
+    // 📥 加载逻辑：合并 Sync 和 Local
     const loadConfig = async () => {
-        const savedConfig = await storage.get('voidtab-config', null);
-        if (savedConfig) {
-            // 合并逻辑：防止新版本加了字段，老配置覆盖导致字段丢失
-            config.value = { ...config.value, ...savedConfig, theme: { ...config.value.theme, ...savedConfig.theme } };
+        // 1. 先加载云端配置 (轻量)
+        const syncedConfig = await storage.get(CONFIG_KEY, null, 'sync');
+
+        if (syncedConfig) {
+            // 深度合并配置
+            config.value = {
+                ...config.value,
+                ...syncedConfig,
+                theme: { ...config.value.theme, ...syncedConfig.theme }
+            };
+
+            // 2. 检查壁纸是否存储在本地
+            if (config.value.theme.wallpaper === LOCAL_MARKER) {
+                const localWallpaper = await storage.get(WALLPAPER_KEY, '', 'local');
+                if (localWallpaper) {
+                    config.value.theme.wallpaper = localWallpaper; // 恢复大图显示
+                }
+            }
         }
         isLoaded.value = true;
     };
 
-    // 3. 监听变化并自动保存
-    // 使用 deep: true 深度监听对象变化
+    // 💾 保存逻辑：拆分 Sync 和 Local
     watch(config, async (newVal) => {
-        if (isLoaded.value) {
-            // 只有加载完成后，变动才写入存储，防止初始空数据覆盖云端
-            await storage.set('voidtab-config', JSON.parse(JSON.stringify(newVal)));
+        if (!isLoaded.value) return;
+
+        // 深拷贝一份副本用于处理，不影响当前显示
+        const configToSync = JSON.parse(JSON.stringify(newVal));
+        const currentWallpaper = configToSync.theme.wallpaper || '';
+
+        // 判断壁纸类型
+        const isBase64 = currentWallpaper.startsWith('data:image');
+
+        if (isBase64) {
+            // 情况 A: 是 Base64 大图
+            // 1. 存入 Local Storage
+            await storage.set(WALLPAPER_KEY, currentWallpaper, 'local');
+            // 2. Sync 中只存标记位，防止爆库
+            configToSync.theme.wallpaper = LOCAL_MARKER;
+        } else {
+            // 情况 B: 是网络 URL 或空
+            // 1. 清理 Local Storage (节省空间)
+            if (currentWallpaper !== LOCAL_MARKER) {
+                await storage.remove(WALLPAPER_KEY, 'local');
+            }
+            // 2. Sync 中直接存 URL
         }
+
+        // 保存瘦身后的配置到 Sync
+        await storage.set(CONFIG_KEY, configToSync, 'sync');
+
     }, { deep: true });
 
-    // Actions
+    // Actions (保持不变)
     const addGroup = (group: any) => {
         group.id = Date.now().toString();
         group.items = [];
@@ -97,19 +136,19 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
+    const removeSite = (groupId: string, siteId: string) => {
+        const group = config.value.layout.find((g: any) => g.id === groupId);
+        if (group) {
+            group.items = group.items.filter((s: any) => s.id !== siteId);
+        }
+    };
+
     const addEngine = (name: string, url: string) => {
         config.value.searchEngines.push({ id: Date.now().toString(), name, url, icon: 'Globe' });
     };
 
     const removeEngine = (id: string) => {
         config.value.searchEngines = config.value.searchEngines.filter((e: any) => e.id !== id);
-    };
-
-    const removeSite = (groupId: string, siteId: string) => {
-        const group = config.value.layout.find((g: any) => g.id === groupId);
-        if (group) {
-            group.items = group.items.filter((s: any) => s.id !== siteId);
-        }
     };
 
     return {
@@ -121,8 +160,8 @@ export const useConfigStore = defineStore('config', () => {
         updateGroup,
         addSite,
         updateSite,
+        removeSite,
         addEngine,
-        removeEngine,
-        removeSite
+        removeEngine
     };
 });

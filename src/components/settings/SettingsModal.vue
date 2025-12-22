@@ -69,7 +69,7 @@ const triggerImport = () => fileInput.value?.click();
                 <hr class="border-[var(--glass-border)] opacity-50">
                 <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhFrameCorners size="20" weight="duotone"/> 霓虹边框发光</label><input type="checkbox" v-model="store.config.theme.neonGlow" class="w-5 h-5 accent-[var(--accent-color)]"></div>
                 <hr class="border-[var(--glass-border)] opacity-50">
-                <div class="flex justify-between items-center"><label class="font-bold text-sm flex items-center gap-3"><PhCursorClick size="20" weight="duotone"/> 科技感光标 (仅桌面)</label><input type="checkbox" v-model="store.config.theme.customCursor" class="w-5 h-5 accent-[var(--accent-color)]"></div>
+                <div class="flex justify-between items-center" style="display: none"><label class="font-bold text-sm flex items-center gap-3"><PhCursorClick size="20" weight="duotone"/> 科技感光标 (仅桌面)</label><input type="checkbox" v-model="store.config.theme.customCursor" class="w-5 h-5 accent-[var(--accent-color)]"></div>
               </div>
             </div>
             <div v-if="settingsTab === 'data'" class="space-y-6">
