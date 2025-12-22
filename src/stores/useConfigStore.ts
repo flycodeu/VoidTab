@@ -1,6 +1,6 @@
-import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
-import { storage } from '../utils/storage';
+import {defineStore} from 'pinia';
+import {ref, watch} from 'vue';
+import {storage} from '../utils/storage';
 
 const CONFIG_KEY = 'voidtab-core-config'; // 存同步配置
 const WALLPAPER_KEY = 'voidtab-wallpaper-blob'; // 存本地大图
@@ -14,8 +14,13 @@ const defaultConfig = {
             title: '常用工具',
             icon: 'Briefcase',
             items: [
-                { id: 'site-1', title: 'GitHub', url: 'https://github.com', icon: 'https://github.com/favicon.ico' },
-                { id: 'site-2', title: 'Bilibili', url: 'https://bilibili.com', icon: 'https://www.bilibili.com/favicon.ico' },
+                {id: 'site-1', title: 'GitHub', url: 'https://github.com', icon: 'https://github.com/favicon.ico'},
+                {
+                    id: 'site-2',
+                    title: 'Bilibili',
+                    url: 'https://bilibili.com',
+                    icon: 'https://www.bilibili.com/favicon.ico'
+                },
             ]
         }
     ],
@@ -38,9 +43,9 @@ const defaultConfig = {
         iconTextSize: 12
     },
     searchEngines: [
-        { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=', icon: 'MagnifyingGlass' },
-        { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=', icon: 'Globe' },
-        { id: 'baidu', name: 'Baidu', url: 'https://www.baidu.com/s?wd=', icon: 'PawPrint' }
+        {id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=', icon: 'MagnifyingGlass'},
+        {id: 'google', name: 'Google', url: 'https://www.google.com/search?q=', icon: 'Globe'},
+        {id: 'baidu', name: 'Baidu', url: 'https://www.baidu.com/s?wd=', icon: 'PawPrint'}
     ],
     currentEngineId: 'bing'
 };
@@ -59,7 +64,7 @@ export const useConfigStore = defineStore('config', () => {
             config.value = {
                 ...config.value,
                 ...syncedConfig,
-                theme: { ...config.value.theme, ...syncedConfig.theme }
+                theme: {...config.value.theme, ...syncedConfig.theme}
             };
 
             // 2. 检查壁纸是否存储在本地
@@ -116,7 +121,7 @@ export const useConfigStore = defineStore('config', () => {
         // 保存瘦身后的配置到 Sync
         await storage.set(CONFIG_KEY, configToSync, 'sync');
 
-    }, { deep: true });
+    }, {deep: true});
 
     // Actions (保持不变)
     const addGroup = (group: any) => {
@@ -158,7 +163,7 @@ export const useConfigStore = defineStore('config', () => {
     };
 
     const addEngine = (name: string, url: string) => {
-        config.value.searchEngines.push({ id: Date.now().toString(), name, url, icon: 'Globe' });
+        config.value.searchEngines.push({id: Date.now().toString(), name, url, icon: 'Globe'});
     };
 
     const removeEngine = (id: string) => {
@@ -194,7 +199,35 @@ export const useConfigStore = defineStore('config', () => {
 
     // 设置拖拽状态的方法
     const setDragState = (isDragging: boolean, fromGroupId: string = '', item: any = null) => {
-        dragState.value = { isDragging, fromGroupId, item };
+        dragState.value = {isDragging, fromGroupId, item};
+    };
+
+    const contextMenu = ref({
+        show: false,
+        x: 0,
+        y: 0,
+        type: 'site' as 'site' | 'group', // 区分是网站图标还是分组
+        item: null as any,                // 被点击的对象数据
+        groupId: ''                       // 图标所属的分组ID (如果是分组类型，此前为该分组ID)
+    });
+
+    // ✨ 新增：打开菜单 Action
+    const openContextMenu = (e: MouseEvent, item: any, type: 'site' | 'group', groupId: string = '') => {
+        e.preventDefault();
+        e.stopPropagation(); // 阻止冒泡，防止触发其他菜单
+        contextMenu.value = {
+            show: true,
+            x: e.clientX,
+            y: e.clientY,
+            type,
+            item,
+            groupId: groupId || (type === 'group' ? item.id : '')
+        };
+    };
+
+    // ✨ 新增：关闭菜单 Action
+    const closeContextMenu = () => {
+        contextMenu.value.show = false;
     };
 
     return {
@@ -212,6 +245,9 @@ export const useConfigStore = defineStore('config', () => {
         reorderItems,
         moveSite,
         setDragState,
-        dragState
+        dragState,
+        contextMenu,
+        openContextMenu,
+        closeContextMenu,
     };
 });

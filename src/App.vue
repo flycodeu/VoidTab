@@ -12,7 +12,7 @@ import SettingsModal from './components/settings/SettingsModal.vue';
 import MainGrid from './components/layout/MainGrid.vue';
 import WidgetPanel from './components/layout/WidgetPanel.vue';
 import SiteDialog from './components/ui/SiteDialog.vue';
-import GroupDialog from './components/ui/GroupDialog.vue';
+import GroupDialog from './components/ui/GroupDialog.vue'; // 假设你有这个组件
 import ContextMenu from './components/ui/ContextMenu.vue';
 
 useTheme();
@@ -23,39 +23,77 @@ const showWidgetModal = ref(false);
 const isFocusMode = ref(false);
 const activeGroupId = ref('');
 
+// 弹窗状态管理
 interface DialogState { show: boolean; isEdit: boolean; groupId: string; initialData: any; }
+
 const siteDialog = ref<DialogState>({ show: false, isEdit: false, groupId: '', initialData: null });
 const groupDialog = ref<DialogState>({ show: false, isEdit: false, groupId: '', initialData: null });
-const contextMenu = ref({ show: false, x: 0, y: 0, type: 'group', targetId: '', data: null as any });
 
+// ✨ 1. 处理全局右键菜单的“编辑”事件
+const handleGlobalEdit = () => {
+  // 从 Store 中获取当前右键选中的目标信息
+  const { type, item, groupId } = store.contextMenu;
+
+  if (type === 'site') {
+    // 编辑网站：填充数据并打开 SiteDialog
+    siteDialog.value = {
+      show: true,
+      isEdit: true,
+      groupId: groupId, // 记录所属分组ID
+      initialData: { ...item } // 复制数据，防止直接引用
+    };
+  } else if (type === 'group') {
+    // 编辑分组：填充数据并打开 GroupDialog
+    groupDialog.value = {
+      show: true,
+      isEdit: true,
+      groupId: '', // 分组编辑通常不需要父ID
+      initialData: { ...item }
+    };
+  }
+};
+
+// 打开“添加网站”弹窗的方法
+const openAddSiteDialog = (gid: string) => {
+  siteDialog.value = { show: true, isEdit: false, groupId: gid, initialData: null };
+};
+
+// 打开“添加分组”弹窗的方法
+const openAddGroupDialog = () => {
+  groupDialog.value = { show: true, isEdit: false, groupId: '', initialData: null };
+};
+
+// 注入给子组件 (Sidebar "添加"按钮 和 MainGrid "添加"块)
 provide('dialog', {
-  openAddDialog: (gid: string) => { siteDialog.value = { show: true, isEdit: false, groupId: gid, initialData: null }; },
-  openEditDialog: (gid: string, item: any) => { siteDialog.value = { show: true, isEdit: true, groupId: gid, initialData: item }; }
+  openAddDialog: openAddSiteDialog,
+  openGroupDialog: openAddGroupDialog,
+  // openEditDialog 不需要了，因为编辑走右键菜单流程
 });
 
+// 处理网站保存
 const onSiteSubmit = (data: any) => {
-  if (siteDialog.value.isEdit && siteDialog.value.initialData) store.updateSite(siteDialog.value.groupId, siteDialog.value.initialData.id, data);
-  else store.addSite(siteDialog.value.groupId, data);
+  if (siteDialog.value.isEdit && siteDialog.value.initialData) {
+    // 编辑模式：需要传入 groupId 和 siteId
+    store.updateSite(siteDialog.value.groupId, siteDialog.value.initialData.id, data);
+  } else {
+    // 新增模式
+    store.addSite(siteDialog.value.groupId, data);
+  }
 };
+
+// 处理分组保存
 const onGroupSubmit = (data: any) => {
-  if (groupDialog.value.isEdit) store.updateGroup(groupDialog.value.groupId, data);
-  else store.addGroup(data);
-};
-const openContextMenu = (e: MouseEvent, group: any) => {
-  e.preventDefault();
-  contextMenu.value = { show: true, x: e.clientX, y: e.clientY, type: 'group', targetId: group.id, data: group };
-};
-const handleMenuAction = (action: 'edit' | 'delete') => {
-  contextMenu.value.show = false;
-  if (action === 'edit') groupDialog.value = { show: true, isEdit: true, groupId: contextMenu.value.targetId, initialData: contextMenu.value.data };
-  else if (action === 'delete') store.removeGroup(contextMenu.value.targetId);
+  if (groupDialog.value.isEdit && groupDialog.value.initialData) {
+    // 编辑模式：传入 groupId
+    store.updateGroup(groupDialog.value.initialData.id, data);
+  } else {
+    // 新增模式
+    store.addGroup(data);
+  }
 };
 
 onMounted(async () => {
-  // 1. 触发异步加载 (无论是从 localStorage 还是 chrome.storage)
   await store.loadConfig();
-
-  // 2. 数据加载完成后，再初始化 UI 状态，避免闪烁
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
 });
@@ -71,7 +109,8 @@ onMounted(async () => {
 
   <div v-else class="h-screen w-full relative overflow-hidden font-sans flex flex-col transition-all duration-500"
        :class="[store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row', { 'cursor-hidden': store.config.theme.customCursor }]"
-       @click="contextMenu.show = false"
+       @click="store.closeContextMenu()"
+       @contextmenu="store.closeContextMenu()"
        style="color: var(--text-primary);">
 
     <CustomCursor />
@@ -92,8 +131,7 @@ onMounted(async () => {
         :isFocusMode="isFocusMode"
         @update:activeGroupId="id => activeGroupId = id"
         @openSettings="showSettings = true"
-        @openGroupDialog="groupDialog = { show: true, isEdit: false, groupId: '', initialData: null }"
-        @openContextMenu="openContextMenu"
+        @openGroupDialog="openAddGroupDialog"
     />
 
     <main class="flex-1 w-full flex flex-col items-center relative overflow-hidden pt-16 md:pt-20 justify-start">
@@ -113,9 +151,24 @@ onMounted(async () => {
 
     <SettingsModal :show="showSettings" @close="showSettings = false" />
     <WidgetPanel :isOpen="showWidgetModal" @close="showWidgetModal = false" />
-    <SiteDialog :show="siteDialog.show" :isEdit="siteDialog.isEdit" :initialData="siteDialog.initialData" @close="siteDialog.show = false" @submit="onSiteSubmit" />
-    <GroupDialog :show="groupDialog.show" :isEdit="groupDialog.isEdit" :initialData="groupDialog.initialData" @close="groupDialog.show = false" @submit="onGroupSubmit" />
-    <ContextMenu :show="contextMenu.show" :x="contextMenu.x" :y="contextMenu.y" @close="contextMenu.show = false" @edit="handleMenuAction('edit')" @delete="handleMenuAction('delete')" />
+
+    <SiteDialog
+        :show="siteDialog.show"
+        :isEdit="siteDialog.isEdit"
+        :initialData="siteDialog.initialData"
+        @close="siteDialog.show = false"
+        @submit="onSiteSubmit"
+    />
+
+    <GroupDialog
+        :show="groupDialog.show"
+        :isEdit="groupDialog.isEdit"
+        :initialData="groupDialog.initialData"
+        @close="groupDialog.show = false"
+        @submit="onGroupSubmit"
+    />
+
+    <ContextMenu @edit="handleGlobalEdit" />
 
   </div>
 </template>
