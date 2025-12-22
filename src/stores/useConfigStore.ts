@@ -24,6 +24,35 @@ const defaultConfig = {
             ]
         }
     ],
+    // ✨ 新增：小组件配置
+    widgets: [
+        {
+            id: 'weather',
+            name: '天气信息',
+            visible: true,
+            order: 1,
+            config: { city: 'Shanghai' }
+        },
+        {
+            id: 'github',
+            name: 'GitHub 趋势',
+            visible: true,
+            order: 2,
+            config: { language: 'javascript', since: 'daily' }
+        },
+        {
+            id: 'system',
+            name: '系统监控',
+            visible: true,
+            order: 3
+        },
+        {
+            id:'devtools',
+            name: '开发工具',
+            visible: true,
+            order: 4
+        }
+    ],
     theme: {
         mode: 'light',
         sidebarPos: 'left',
@@ -31,7 +60,7 @@ const defaultConfig = {
         gridMaxWidth: 1200,
         blur: 20,
         opacity: 0.6,
-        wallpaper: '', // 这里只存 URL 或者 MARKER
+        wallpaper: '',
         techFont: true,
         breathingLight: true,
         neonGlow: true,
@@ -54,24 +83,41 @@ export const useConfigStore = defineStore('config', () => {
     const config = ref<any>(JSON.parse(JSON.stringify(defaultConfig)));
     const isLoaded = ref(false);
 
-    // 📥 加载逻辑：合并 Sync 和 Local
+// 📥 加载逻辑：智能合并 Sync 和 Local
     const loadConfig = async () => {
-        // 1. 先加载云端配置 (轻量)
+        // 1. 先加载云端/本地存储的配置
         const syncedConfig = await storage.get(CONFIG_KEY, null, 'sync');
 
         if (syncedConfig) {
-            // 深度合并配置
+            // 基础合并 (主题、布局等)
             config.value = {
                 ...config.value,
                 ...syncedConfig,
-                theme: {...config.value.theme, ...syncedConfig.theme}
+                theme: { ...config.value.theme, ...syncedConfig.theme }
             };
 
-            // 2. 检查壁纸是否存储在本地
+            // ✨✨✨ 核心修复：智能合并 Widgets ✨✨✨
+            // 取出存储中的组件列表（如果是旧版可能没有 widgets 字段，就用默认的）
+            const storedWidgets = syncedConfig.widgets || defaultConfig.widgets;
+
+            // 遍历默认配置里的所有组件
+            defaultConfig.widgets.forEach((defW: any) => {
+                // 检查存储的列表中是否已经有这个组件
+                const exists = storedWidgets.find((w: any) => w.id === defW.id);
+                // ⚠️ 如果存储里没有（说明是新加的功能），就把它追加进去
+                if (!exists) {
+                    storedWidgets.push(defW);
+                }
+            });
+
+            // 赋值回去
+            config.value.widgets = storedWidgets;
+
+            // 2. 检查壁纸逻辑 (保持不变)
             if (config.value.theme.wallpaper === LOCAL_MARKER) {
                 const localWallpaper = await storage.get(WALLPAPER_KEY, '', 'local');
                 if (localWallpaper) {
-                    config.value.theme.wallpaper = localWallpaper; // 恢复大图显示
+                    config.value.theme.wallpaper = localWallpaper;
                 }
             }
         }
@@ -80,19 +126,18 @@ export const useConfigStore = defineStore('config', () => {
 
     if (typeof chrome !== 'undefined' && chrome.storage) {
         chrome.storage.onChanged.addListener((changes, areaName) => {
-            // 如果是 Sync 里的配置变了 (比如 wallpaper 字段变成了 MARKER)
+            // 如果是 Sync 里的配置变了
             if (areaName === 'sync' && changes[CONFIG_KEY]) {
                 loadConfig(); // 重新加载配置
             }
             // 如果是 Local 里的壁纸变了
             if (areaName === 'local' && changes[WALLPAPER_KEY]) {
-                // 直接更新当前内存里的壁纸，不用全量重载，体验更丝滑
                 config.value.theme.wallpaper = changes[WALLPAPER_KEY].newValue;
             }
         });
     }
 
-    // 💾 保存逻辑：拆分 Sync 和 Local
+    //  保存逻辑：拆分 Sync 和 Local
     watch(config, async (newVal) => {
         if (!isLoaded.value) return;
 
@@ -105,17 +150,13 @@ export const useConfigStore = defineStore('config', () => {
 
         if (isBase64) {
             // 情况 A: 是 Base64 大图
-            // 1. 存入 Local Storage
             await storage.set(WALLPAPER_KEY, currentWallpaper, 'local');
-            // 2. Sync 中只存标记位，防止爆库
             configToSync.theme.wallpaper = LOCAL_MARKER;
         } else {
             // 情况 B: 是网络 URL 或空
-            // 1. 清理 Local Storage (节省空间)
             if (currentWallpaper !== LOCAL_MARKER) {
                 await storage.remove(WALLPAPER_KEY, 'local');
             }
-            // 2. Sync 中直接存 URL
         }
 
         // 保存瘦身后的配置到 Sync
@@ -123,7 +164,9 @@ export const useConfigStore = defineStore('config', () => {
 
     }, {deep: true});
 
-    // Actions (保持不变)
+    // --- Actions ---
+
+    // 1. 布局/分组操作
     const addGroup = (group: any) => {
         group.id = Date.now().toString();
         group.items = [];
@@ -139,6 +182,7 @@ export const useConfigStore = defineStore('config', () => {
         if (group) Object.assign(group, data);
     };
 
+    // 2. 站点图标操作
     const addSite = (groupId: string, site: any) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
         if (group) {
@@ -162,13 +206,6 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
-    const addEngine = (name: string, url: string) => {
-        config.value.searchEngines.push({id: Date.now().toString(), name, url, icon: 'Globe'});
-    };
-
-    const removeEngine = (id: string) => {
-        config.value.searchEngines = config.value.searchEngines.filter((e: any) => e.id !== id);
-    };
     const reorderItems = (groupId: string, newItems: any[]) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
         if (group) {
@@ -183,21 +220,42 @@ export const useConfigStore = defineStore('config', () => {
         if (fromGroup && toGroup) {
             const siteIndex = fromGroup.items.findIndex((s: any) => s.id === siteId);
             if (siteIndex > -1) {
-                const [site] = fromGroup.items.splice(siteIndex, 1); // 从旧组移除
-                toGroup.items.push(site); // 加到新组
+                const [site] = fromGroup.items.splice(siteIndex, 1);
+                toGroup.items.push(site);
             }
         }
     };
 
+    // 3. 搜索引擎操作
+    const addEngine = (name: string, url: string) => {
+        config.value.searchEngines.push({id: Date.now().toString(), name, url, icon: 'Globe'});
+    };
 
-    // 全局拖拽状态
+    const removeEngine = (id: string) => {
+        config.value.searchEngines = config.value.searchEngines.filter((e: any) => e.id !== id);
+    };
+
+    // 4. ✨ 新增：Widget 操作
+    const toggleWidget = (widgetId: string, isVisible: boolean) => {
+        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
+        if (widget) widget.visible = isVisible;
+    };
+
+    const updateWidgetConfig = (widgetId: string, settings: any) => {
+        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
+        if (widget) {
+            // 合并配置，防止丢失原有配置
+            widget.config = { ...widget.config, ...settings };
+        }
+    };
+
+    // 5. 状态管理 (拖拽 & 右键)
     const dragState = ref({
-        isDragging: false,    // 是否正在拖拽
-        item: null as any,    // 被拖拽的图标数据
-        fromGroupId: ''       // 来自哪个组
+        isDragging: false,
+        item: null as any,
+        fromGroupId: ''
     });
 
-    // 设置拖拽状态的方法
     const setDragState = (isDragging: boolean, fromGroupId: string = '', item: any = null) => {
         dragState.value = {isDragging, fromGroupId, item};
     };
@@ -206,15 +264,14 @@ export const useConfigStore = defineStore('config', () => {
         show: false,
         x: 0,
         y: 0,
-        type: 'site' as 'site' | 'group', // 区分是网站图标还是分组
-        item: null as any,                // 被点击的对象数据
-        groupId: ''                       // 图标所属的分组ID (如果是分组类型，此前为该分组ID)
+        type: 'site' as 'site' | 'group',
+        item: null as any,
+        groupId: ''
     });
 
-    // ✨ 新增：打开菜单 Action
     const openContextMenu = (e: MouseEvent, item: any, type: 'site' | 'group', groupId: string = '') => {
         e.preventDefault();
-        e.stopPropagation(); // 阻止冒泡，防止触发其他菜单
+        e.stopPropagation();
         contextMenu.value = {
             show: true,
             x: e.clientX,
@@ -225,7 +282,6 @@ export const useConfigStore = defineStore('config', () => {
         };
     };
 
-    // ✨ 新增：关闭菜单 Action
     const closeContextMenu = () => {
         contextMenu.value.show = false;
     };
@@ -234,16 +290,23 @@ export const useConfigStore = defineStore('config', () => {
         config,
         isLoaded,
         loadConfig,
+        // Group Actions
         addGroup,
         removeGroup,
         updateGroup,
+        // Site Actions
         addSite,
         updateSite,
         removeSite,
-        addEngine,
-        removeEngine,
         reorderItems,
         moveSite,
+        // Engine Actions
+        addEngine,
+        removeEngine,
+        // Widget Actions
+        toggleWidget,
+        updateWidgetConfig,
+        // States
         setDragState,
         dragState,
         contextMenu,
