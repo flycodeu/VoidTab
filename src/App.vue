@@ -2,7 +2,7 @@
 import { ref, onMounted, provide } from 'vue';
 import { useTheme } from './composables/useTheme';
 import { useConfigStore } from './stores/useConfigStore';
-import { PhEye, PhEyeSlash, PhCards } from '@phosphor-icons/vue';
+import { PhEye, PhEyeSlash, PhCards, PhSpinner } from '@phosphor-icons/vue';
 
 import CustomCursor from './components/ui/CustomCursor.vue';
 import TimeWidget from './components/widgets/TimeWidget.vue';
@@ -51,14 +51,25 @@ const handleMenuAction = (action: 'edit' | 'delete') => {
   else if (action === 'delete') store.removeGroup(contextMenu.value.targetId);
 };
 
-onMounted(() => {
+onMounted(async () => {
+  // 1. 触发异步加载 (无论是从 localStorage 还是 chrome.storage)
+  await store.loadConfig();
+
+  // 2. 数据加载完成后，再初始化 UI 状态，避免闪烁
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
 });
 </script>
 
 <template>
-  <div class="h-screen w-full relative overflow-hidden font-sans flex flex-col transition-all duration-500"
+  <div v-if="!store.isLoaded" class="h-screen w-full flex items-center justify-center bg-black text-white z-[9999]">
+    <div class="flex flex-col items-center gap-4">
+      <PhSpinner size="40" class="animate-spin text-[var(--accent-color)]" />
+      <span class="font-tech tracking-widest text-xs opacity-70 animate-pulse">SYSTEM INITIALIZING...</span>
+    </div>
+  </div>
+
+  <div v-else class="h-screen w-full relative overflow-hidden font-sans flex flex-col transition-all duration-500"
        :class="[store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row', { 'cursor-hidden': store.config.theme.customCursor }]"
        @click="contextMenu.show = false"
        style="color: var(--text-primary);">

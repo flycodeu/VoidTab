@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { PhStar, PhGitFork, PhCircle, PhSpinner, PhWarning, PhGithubLogo } from '@phosphor-icons/vue';
+import { PhStar, PhSpinner, PhWarning, PhGithubLogo } from '@phosphor-icons/vue';
 
 // 定义数据接口
 interface Repo {

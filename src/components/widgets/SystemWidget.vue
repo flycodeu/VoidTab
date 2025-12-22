@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'; // 补上 computed 引用
+import { ref, computed } from 'vue'; // 补上 computed 引用
 import { useBattery, useNetwork, useMemory, useFps } from '@vueuse/core';
 import { PhCpu, PhWifiHigh, PhBatteryCharging, PhBatteryHigh, PhGauge, PhActivity } from '@phosphor-icons/vue';
 

@@ -1,129 +1,128 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
-import type { UserConfig, LinkGroup, LinkItem, SearchEngineItem } from '../types';
+import { ref, watch } from 'vue';
+import { storage } from '../utils/storage';
 
-const defaultEngines: SearchEngineItem[] = [
-    { id: 'baidu', name: '百度', url: 'https://www.baidu.com/s?wd=', icon: 'PawPrint' },
-    { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=', icon: 'GoogleLogo' },
-    { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=', icon: 'MagnifyingGlass' },
-];
-
-const defaultConfig: UserConfig = {
+// 默认配置（兜底用）
+const defaultConfig = {
+    layout: [
+        {
+            id: 'group-1',
+            title: '常用工具',
+            icon: 'Briefcase',
+            items: [
+                { id: 'site-1', title: 'GitHub', url: 'https://github.com', icon: 'https://github.com/favicon.ico' },
+                { id: 'site-2', title: 'Bilibili', url: 'https://bilibili.com', icon: 'https://www.bilibili.com/favicon.ico' },
+            ]
+        }
+    ],
     theme: {
-        wallpaper: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop',
         mode: 'dark',
-        blur: 20,
-        opacity: 0.3,
-        iconSize: 72,
-        radius: 24,
-        gap: 32,
-        showIconName: true,
-        iconTextSize: 14,
-        iconTextColor: '#ffffff',
-        gridMaxWidth: 1200,
         sidebarPos: 'left',
         showTime: true,
+        gridMaxWidth: 1200,
+        blur: 20,
+        opacity: 0.6,
+        wallpaper: '',
         techFont: true,
         breathingLight: true,
         neonGlow: true,
         customCursor: true,
+        iconSize: 60,
+        radius: 16,
+        gap: 24,
+        showIconName: true,
+        iconTextSize: 12
     },
-    currentEngineId: 'baidu',
-    searchEngines: defaultEngines,
-    layout: [
-        {
-            id: 'g-1',
-            title: '生产环境',
-            icon: 'Briefcase',
-            items: [
-                { id: '1', title: '文档中心', url: '#', iconType: 'text', iconValue: '文', bgColor: '#ef4444' },
-            ]
-        },
-        {
-            id: 'g-2',
-            title: '常用工具',
-            icon: 'Star',
-            items: []
-        }
-    ]
+    searchEngines: [
+        { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=', icon: 'MagnifyingGlass' },
+        { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=', icon: 'Globe' },
+        { id: 'baidu', name: 'Baidu', url: 'https://www.baidu.com/s?wd=', icon: 'PawPrint' }
+    ],
+    currentEngineId: 'bing'
 };
 
 export const useConfigStore = defineStore('config', () => {
-    const config = ref<UserConfig>(defaultConfig);
+    // 1. 初始化为默认值
+    const config = ref<any>(JSON.parse(JSON.stringify(defaultConfig)));
+    const isLoaded = ref(false); // 标记数据是否加载完成
 
-    // === 分类 (Group) 操作 ===
-
-    // 修复：接收对象 { title, icon }
-    function addGroup(data: { title: string, icon: string }) {
-        config.value.layout.push({
-            id: `g-${Date.now()}`, // 生成唯一 ID
-            title: data.title || '新分类',
-            icon: data.icon || 'Folder',
-            items: []
-        });
-    }
-
-    function removeGroup(groupId: string) {
-        // 至少保留一个分类
-        if (config.value.layout.length <= 1) {
-            alert("请至少保留一个分类");
-            return;
+    // 2. 异步加载数据的方法
+    const loadConfig = async () => {
+        const savedConfig = await storage.get('voidtab-config', null);
+        if (savedConfig) {
+            // 合并逻辑：防止新版本加了字段，老配置覆盖导致字段丢失
+            config.value = { ...config.value, ...savedConfig, theme: { ...config.value.theme, ...savedConfig.theme } };
         }
-        config.value.layout = config.value.layout.filter(g => g.id !== groupId);
-    }
+        isLoaded.value = true;
+    };
 
-    function updateGroup(groupId: string, data: Partial<LinkGroup>) {
-        const group = config.value.layout.find(g => g.id === groupId);
+    // 3. 监听变化并自动保存
+    // 使用 deep: true 深度监听对象变化
+    watch(config, async (newVal) => {
+        if (isLoaded.value) {
+            // 只有加载完成后，变动才写入存储，防止初始空数据覆盖云端
+            await storage.set('voidtab-config', JSON.parse(JSON.stringify(newVal)));
+        }
+    }, { deep: true });
+
+    // Actions
+    const addGroup = (group: any) => {
+        group.id = Date.now().toString();
+        group.items = [];
+        config.value.layout.push(group);
+    };
+
+    const removeGroup = (groupId: string) => {
+        config.value.layout = config.value.layout.filter((g: any) => g.id !== groupId);
+    };
+
+    const updateGroup = (groupId: string, data: any) => {
+        const group = config.value.layout.find((g: any) => g.id === groupId);
+        if (group) Object.assign(group, data);
+    };
+
+    const addSite = (groupId: string, site: any) => {
+        const group = config.value.layout.find((g: any) => g.id === groupId);
         if (group) {
-            Object.assign(group, data);
+            site.id = Date.now().toString();
+            group.items.push(site);
         }
-    }
+    };
 
-    // === 网站 (Site) 操作 ===
-
-    function addSite(groupId: string, item: Omit<LinkItem, 'id'>) {
-        const group = config.value.layout.find(g => g.id === groupId);
+    const updateSite = (groupId: string, siteId: string, data: any) => {
+        const group = config.value.layout.find((g: any) => g.id === groupId);
         if (group) {
-            group.items.push({
-                ...item,
-                id: `site-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` // 确保 ID 绝对唯一
-            });
-        } else {
-            console.error('Group not found:', groupId);
+            const site = group.items.find((s: any) => s.id === siteId);
+            if (site) Object.assign(site, data);
         }
-    }
+    };
 
-    function removeSite(groupId: string, itemId: string) {
-        const group = config.value.layout.find(g => g.id === groupId);
+    const addEngine = (name: string, url: string) => {
+        config.value.searchEngines.push({ id: Date.now().toString(), name, url, icon: 'Globe' });
+    };
+
+    const removeEngine = (id: string) => {
+        config.value.searchEngines = config.value.searchEngines.filter((e: any) => e.id !== id);
+    };
+
+    const removeSite = (groupId: string, siteId: string) => {
+        const group = config.value.layout.find((g: any) => g.id === groupId);
         if (group) {
-            group.items = group.items.filter(i => i.id !== itemId);
+            group.items = group.items.filter((s: any) => s.id !== siteId);
         }
-    }
-
-    function updateSite(groupId: string, itemId: string, newData: Partial<LinkItem>) {
-        const group = config.value.layout.find(g => g.id === groupId);
-        if (group) {
-            const index = group.items.findIndex(i => i.id === itemId);
-            if (index !== -1) {
-                group.items[index] = { ...group.items[index], ...newData };
-            }
-        }
-    }
-
-    // === 搜索引擎操作 ===
-    function addEngine(name: string, url: string) {
-        config.value.searchEngines.push({ id: `se-${Date.now()}`, name, url, icon: 'Globe' });
-    }
-    function removeEngine(id: string) {
-        if (config.value.searchEngines.length <= 1) return;
-        config.value.searchEngines = config.value.searchEngines.filter(e => e.id !== id);
-        if (config.value.currentEngineId === id) config.value.currentEngineId = config.value.searchEngines[0].id;
-    }
+    };
 
     return {
         config,
-        addGroup, removeGroup, updateGroup,
-        addSite, removeSite, updateSite,
-        addEngine, removeEngine
+        isLoaded,
+        loadConfig,
+        addGroup,
+        removeGroup,
+        updateGroup,
+        addSite,
+        updateSite,
+        addEngine,
+        removeEngine,
+        removeSite
     };
-}, { persist: true });
+});

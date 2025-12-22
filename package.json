@@ -18,6 +18,7 @@
     "vue-draggable-plus": "^0.4.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.32",
     "@types/node": "^20.11.24",
     "@vitejs/plugin-vue": "^5.0.4",
     "autoprefixer": "^10.4.18",

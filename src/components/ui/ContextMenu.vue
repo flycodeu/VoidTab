@@ -2,10 +2,10 @@
 import { onMounted, onUnmounted } from 'vue';
 import { PhPencilSimple, PhTrash } from '@phosphor-icons/vue';
 
-const props = defineProps<{
+defineProps<{
+  show: boolean;
   x: number;
   y: number;
-  show: boolean;
 }>();
 
 const emit = defineEmits(['close', 'edit', 'delete']);

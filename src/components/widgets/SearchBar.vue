@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useConfigStore } from '../../stores/useConfigStore';
-import { PhMagnifyingGlass, PhTrash, PhGlobe } from '@phosphor-icons/vue';
+import {  PhTrash } from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
 
 const store = useConfigStore();
@@ -10,13 +10,13 @@ const showEngineMenu = ref(false);
 const emit = defineEmits(['openSettings']);
 
 const currentEngineIcon = computed(() => {
-  const engine = store.config.searchEngines.find(e => e.id === store.config.currentEngineId);
+  const engine = store.config.searchEngines.find((e:any) => e.id === store.config.currentEngineId);
   return engine ? (PhIcons as any)['Ph' + engine.icon] || PhIcons.PhMagnifyingGlass : PhIcons.PhMagnifyingGlass;
 });
 
 const handleSearch = () => {
   if (!searchText.value) return;
-  const currentEngine = store.config.searchEngines.find(e => e.id === store.config.currentEngineId);
+  const currentEngine = store.config.searchEngines.find((e:any )=> e.id === store.config.currentEngineId);
   if (currentEngine) {
     window.open(currentEngine.url + encodeURIComponent(searchText.value), '_blank');
     searchText.value = '';
