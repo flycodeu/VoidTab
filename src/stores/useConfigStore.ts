@@ -50,17 +50,10 @@ const defaultConfig = {
             order: 3
         },
         {
-            id: 'devtools',
-            name: '开发工具',
-            visible: true,
-            colSpan: 1,
-            order: 4
-        },
-        {
             id: 'rss',
             name: 'RSS 阅读器',
             visible: true,
-            order: 5,
+            order: 4,
             colSpan: 2,
             config: {
                 feeds: [

@@ -2,9 +2,74 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VoidTab - Cyberpunk Dashboard</title>
+    <title>VoidTab</title>
+
+    <meta name="theme-color" content="#050505" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#f0f4f8" media="(prefers-color-scheme: light)">
+
+    <style>
+        /* 2. 关键：直接对 HTML 设置背景，且不使用 var() 变量 */
+        html {
+            /* 默认深色背景 (硬编码) */
+            background-color: #050505;
+            background-image: radial-gradient(circle at 15% 50%, rgba(32, 40, 80, 0.4), transparent 25%),
+            radial-gradient(circle at 85% 30%, rgba(40, 30, 60, 0.4), transparent 25%),
+            linear-gradient(180deg, #0f1012 0%, #151618 100%);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            /* body 透明，直接透出 html 的背景 */
+            background: transparent;
+        }
+
+        /* 3. CSS 媒体查询：利用原生机制秒切浅色 (硬编码) */
+        @media (prefers-color-scheme: light) {
+            html {
+                background-color: #f0f4f8;
+                background-image: radial-gradient(at 0% 0%, rgba(216, 235, 255, 0.8) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(240, 220, 255, 0.8) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(240, 248, 255, 0.8) 0px, transparent 50%),
+                linear-gradient(180deg, #f0f4f8 0%, #eef2f6 100%);
+            }
+        }
+
+        /* 4. JS 强制覆盖类 (优先级最高) */
+        html.force-dark {
+            background-color: #050505 !important;
+            background-image: radial-gradient(circle at 15% 50%, rgba(32, 40, 80, 0.4), transparent 25%),
+            radial-gradient(circle at 85% 30%, rgba(40, 30, 60, 0.4), transparent 25%),
+            linear-gradient(180deg, #0f1012 0%, #151618 100%) !important;
+        }
+
+        html.force-light {
+            background-color: #f0f4f8 !important;
+            background-image: radial-gradient(at 0% 0%, rgba(216, 235, 255, 0.8) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(240, 220, 255, 0.8) 0px, transparent 50%),
+            radial-gradient(at 50% 100%, rgba(240, 248, 255, 0.8) 0px, transparent 50%),
+            linear-gradient(180deg, #f0f4f8 0%, #eef2f6 100%) !important;
+        }
+
+        /* 5. App 内容淡入 */
+        #app {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #app.loaded {
+            opacity: 1;
+        }
+    </style>
 </head>
 <body>
 <div id="app"></div>

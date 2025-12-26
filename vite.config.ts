@@ -28,8 +28,8 @@ export default defineConfig({
         rollupOptions: {
             // 输入入口：告诉 Vite 有两个文件要处理
             input: {
-                main: resolve(__dirname, 'index.html'),       // 你的主页
-                background: resolve(__dirname, 'src/background.ts') // 你的后台脚本
+                main: resolve(__dirname, 'index.html'),
+                background: resolve(__dirname, 'src/background.ts')
             },
             // 输出配置：强制去掉文件名后的哈希乱码
             output: {

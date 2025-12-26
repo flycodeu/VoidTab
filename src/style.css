@@ -1,157 +1,251 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=JetBrains+Mono:wght@400;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* -------------------------------------------------------------------------- */
+/* Variables                                  */
+/* -------------------------------------------------------------------------- */
 :root {
-    /* === 全局变量 === */
-    --bg-overlay-opacity: 1;
-    --glass-backdrop-blur: 20px;
-    --icon-size: 72px;
-    --glass-radius: 24px;
-    --grid-gap: 32px;
-    --icon-text-size: 14px;
+    /* === 深色模式 (Dark Mode Default) === */
+    --text-primary: #f5f5f7; /* 苹果白 */
+    --text-secondary: rgba(235, 235, 245, 0.6);
+    --text-tertiary: rgba(235, 235, 245, 0.3);
+
+    --accent-color: #0A84FF; /* iOS Blue */
+
+    /* 玻璃材质 (Dark) */
+    --glass-surface: rgba(30, 30, 35, 0.60);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-highlight: rgba(255, 255, 255, 0.15);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    --glass-blur: 40px;
+    --glass-saturate: 180%;
+
+    /* 弹窗 & 输入框 */
+    --modal-bg: rgba(30, 30, 35, 0.85);
     --modal-sidebar: rgba(0, 0, 0, 0.2);
-    /* === 深色模式 (Dark Mode) === */
-    --page-bg: #0f1115;
-    --bg-overlay: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.6) 100%);
-
-    --glass-surface: rgba(30, 32, 40, 0.85); /* 稍微加深，提高前景对比度 */
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --glass-highlight: rgba(255, 255, 255, 0.1);
-    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-
-    --text-primary: #ffffff;
-    --text-secondary: rgba(255, 255, 255, 0.7); /* 提高副标题亮度 */
-    --text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-
-    --accent-color: #6366f1;
-    --sidebar-active: rgba(255, 255, 255, 0.1);
-
-    /* 弹窗专用 */
-    --modal-bg: #1e1e24;
-    --modal-text: #ffffff;
-    --modal-input-bg: rgba(0, 0, 0, 0.3);
     --modal-border: rgba(255, 255, 255, 0.1);
+    --modal-input-bg: rgba(255, 255, 255, 0.08);
 
-    --add-card-bg: rgba(255, 255, 255, 0.05);
-    --add-card-border: rgba(255, 255, 255, 0.2);
+    /* 滑块组件颜色 */
+    --slider-track: rgba(255, 255, 255, 0.2);
+    --slider-thumb: #ffffff;
 
-    /* 滑块轨道颜色 (高对比度) */
-    --slider-track: rgba(255, 255, 255, 0.25);
-    --slider-track-hover: rgba(255, 255, 255, 0.35);
-    --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+    /* 背景策略 */
+    --page-fallback: #050505;
+    /* 深色极光/午夜壁纸 */
+    --default-wallpaper: radial-gradient(circle at 15% 50%, rgba(32, 40, 80, 0.4), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(40, 30, 60, 0.4), transparent 25%),
+    linear-gradient(180deg, #0f1012 0%, #151618 100%);
+
+    /* 动画曲线 (Apple Spring) */
+    --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --modal-text: #f5f5f7;
 }
 
 /* === 浅色模式 (Light Mode) === */
 html.light {
-    --page-bg: #eff1f5;
-    --bg-overlay: linear-gradient(180deg, rgba(255,255,255,0.4) 0%, rgba(240,242,248,0.6) 100%);
+    --text-primary: #1d1d1f; /* Apple Grey */
+    --text-secondary: rgba(60, 60, 67, 0.75);
+    --text-tertiary: rgba(60, 60, 67, 0.4);
 
+    --accent-color: #007AFF;
+    --modal-text: #1d1d1f;
+    /* 玻璃材质 (Light - 更通透，更锐利) */
     --glass-surface: rgba(255, 255, 255, 0.75);
-    --glass-border: rgba(0, 0, 0, 0.06);
-    --glass-highlight: rgba(255, 255, 255, 0.8);
-    --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.6); /* 增强边框可见度 */
+    --glass-highlight: rgba(255, 255, 255, 0.9);
+    --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 10px 15px -3px rgba(0, 0, 0, 0.05),
+    inset 0 0 20px rgba(255, 255, 255, 0.5); /* 内部反光，增加厚度感 */
+    --glass-blur: 40px;
 
-    --text-primary: #374151;
-    --text-secondary: #6b7280;
-    --text-shadow: none;
+    /* 弹窗 & 输入框 */
+    --modal-bg: rgba(255, 255, 255, 0.92);
+    --modal-sidebar: rgba(240, 240, 245, 0.6);
+    --modal-border: rgba(0, 0, 0, 0.05);
+    --modal-input-bg: rgba(0, 0, 0, 0.05);
 
-    --accent-color: #3b82f6;
-    --sidebar-active: rgba(0, 0, 0, 0.05);
-
-    --modal-bg: #ffffff;
-    --modal-text: #1f2937;
-    --modal-input-bg: #f3f4f6;
-    --modal-border: #e5e7eb;
-
-    --add-card-bg: rgba(255, 255, 255, 0.6);
-    --add-card-border: rgba(0, 0, 0, 0.15);
-
-    /* 浅色模式下的滑块 */
+    /* 滑块组件颜色 */
     --slider-track: rgba(0, 0, 0, 0.1);
-    --slider-track-hover: rgba(0, 0, 0, 0.15);
-    --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-    --modal-sidebar: #f8fafc;
+    --slider-thumb: #ffffff;
+
+    /* 背景策略 */
+    --page-fallback: #f0f4f8;
+    /* 浅色弥散壁纸 (不刺眼方案) */
+    --default-wallpaper: radial-gradient(at 0% 0%, rgba(216, 235, 255, 0.8) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(240, 220, 255, 0.8) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(240, 248, 255, 0.8) 0px, transparent 50%),
+    linear-gradient(180deg, #f0f4f8 0%, #eef2f6 100%);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Global Styles                                */
+/* -------------------------------------------------------------------------- */
 body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     color: var(--text-primary);
-    text-shadow: var(--text-shadow);
-    background-color: var(--page-bg);
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+
+    background-color: var(--page-fallback);
+    background-image: var(--default-wallpaper);
+    background-size: cover;
+    background-position: center;
     background-attachment: fixed;
-    transition: all 0.3s ease;
+    background-repeat: no-repeat;
+
+    /* 字体平滑处理 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    transition: background-color 0.3s ease, color 0.3s ease;
+    min-height: 100vh;
 }
 
-.font-tech { font-family: 'JetBrains Mono', monospace; letter-spacing: -1px; }
+/* -------------------------------------------------------------------------- */
+/* Utility Classes                                */
+/* -------------------------------------------------------------------------- */
 
-/* === 核心修复：滑块 (Range Input) 可视化 === */
-input[type=range] {
-    @apply h-1.5 rounded-lg appearance-none cursor-pointer outline-none transition-colors;
-    background-color: var(--slider-track) !important; /* 强制使用高对比度变量 */
-}
-input[type=range]:hover {
-    background-color: var(--slider-track-hover) !important;
-}
-input[type=range]::-webkit-slider-thumb {
-    @apply appearance-none w-4 h-4 rounded-full bg-[var(--accent-color)] shadow-md cursor-pointer hover:scale-125 transition-transform;
-    /* 给滑块头加个白色边框，深色模式下更显眼 */
-    box-shadow: 0 0 0 2px var(--modal-bg), 0 2px 4px rgba(0,0,0,0.3);
-}
-
-/* === 核心修复：滚动条 (Scrollbar) 可视化 === */
-/* 之前是 display: none，现在改为自定义样式，确保能看到位置 */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px; /* 确保横向滚动条也有高度 */
-    display: block; /* 恢复显示 */
-}
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-::-webkit-scrollbar-thumb {
-    background-color: var(--scrollbar-thumb);
-    border-radius: 3px;
-    transition: background-color 0.2s;
-}
-::-webkit-scrollbar-thumb:hover {
-    background-color: var(--text-secondary); /* 悬停时变亮 */
-}
-
-/* 其他样式保持不变 */
-@keyframes breathe {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-color), 0); border-color: transparent; }
-    50% { border-color: var(--accent-color); box-shadow: 0 0 10px var(--accent-color); }
-}
-.effect-breathe.active { animation: breathe 3s infinite; }
-
-.effect-neon:focus-within {
-    box-shadow: 0 0 15px var(--accent-color);
-    border-color: var(--accent-color);
-}
-
-.cursor-hidden, .cursor-hidden * { cursor: none !important; }
-
+/* 核心：Apple 风格玻璃卡片 */
 .apple-glass {
     background-color: var(--glass-surface);
-    backdrop-filter: blur(var(--glass-backdrop-blur));
-    -webkit-backdrop-filter: blur(var(--glass-backdrop-blur));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+
     border: 1px solid var(--glass-border);
-    border-top: 1px solid var(--glass-highlight);
-    box-shadow: var(--glass-shadow);
+    box-shadow: var(--glass-shadow),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.4); /* 顶部高光 */
+
+    transition: all 0.3s var(--ease-spring);
 }
 
+/* 虚线添加框 */
 .add-card {
-    background-color: var(--add-card-bg);
-    border: 2px dashed var(--add-card-border);
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1.5px dashed rgba(128, 128, 128, 0.3);
     color: var(--text-secondary);
-    text-shadow: none;
+    transition: all 0.2s ease;
 }
+
 .add-card:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
-    background-color: var(--sidebar-active);
+    background-color: rgba(128, 128, 128, 0.05);
+}
+
+html.light .add-card {
+    border-color: rgba(0, 0, 0, 0.15);
+    background-color: rgba(255, 255, 255, 0.4);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Components (Sliders, Scrollbars)               */
+/* -------------------------------------------------------------------------- */
+
+/* Range Slider (iOS Style) */
+input[type=range] {
+    @apply appearance-none h-1.5 rounded-full cursor-pointer outline-none;
+    background: var(--slider-track);
+}
+
+input[type=range]::-webkit-slider-thumb {
+    @apply appearance-none w-5 h-5 rounded-full shadow-md transition-transform;
+    background: var(--slider-thumb);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+input[type=range]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+input[type=range]::-webkit-slider-thumb:active {
+    transform: scale(0.95);
+}
+
+/* Scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.custom-scroll::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+.custom-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.2);
+    border-radius: 10px;
+    transition: background 0.2s;
+}
+
+.custom-scroll:hover::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.4);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Animations                                     */
+/* -------------------------------------------------------------------------- */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.animate-shimmer {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+html.light .animate-shimmer {
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.05) 25%, rgba(0, 0, 0, 0.1) 50%, rgba(0, 0, 0, 0.05) 75%);
+}
+
+.stagger-enter-active, .stagger-leave-active {
+    transition: all 0.4s var(--ease-spring);
+}
+
+.stagger-enter-from, .stagger-leave-to {
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+    filter: blur(10px);
+}
+
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.92);
+        filter: blur(4px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+        filter: blur(0);
+    }
+}
+
+.animate-scale-in {
+    animation: scaleIn 0.25s var(--ease-spring) forwards;
 }
