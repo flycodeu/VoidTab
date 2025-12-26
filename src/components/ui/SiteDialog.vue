@@ -2,6 +2,7 @@
 import {ref, watch, computed} from 'vue';
 import {PhX, PhCheck, PhGlobe, PhSpinner} from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
+import {getHighResIconUrl} from '../../utils/icon';
 
 const props = defineProps<{ show: boolean; isEdit: boolean; initialData?: any; }>();
 const emit = defineEmits(['close', 'submit']);
@@ -27,6 +28,7 @@ const debouncedFaviconUrl = ref('');
 const isFetchingIcon = ref(false);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ✨✨✨ 核心修改：使用 getHighResIconUrl 替代旧逻辑 ✨✨✨
 const fetchFavicon = (url: string, immediate = false) => {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (!url) {
@@ -35,28 +37,24 @@ const fetchFavicon = (url: string, immediate = false) => {
   }
 
   const run = () => {
+    isFetchingIcon.value = true;
     try {
-      let fullUrl = url;
-      if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
-
-      const domain = new URL(fullUrl).hostname;
-      if (domain.includes('.') && domain.length > 3) {
-        debouncedFaviconUrl.value = `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`;
-      } else {
-        debouncedFaviconUrl.value = '';
-      }
+      // 直接调用工具函数，获取 Google S2 高清图
+      debouncedFaviconUrl.value = getHighResIconUrl(url);
     } catch {
       debouncedFaviconUrl.value = '';
     } finally {
-      isFetchingIcon.value = false;
+      // 稍微延迟一点关闭 loading，让用户感知到在加载（可选）
+      setTimeout(() => {
+        isFetchingIcon.value = false;
+      }, 200);
     }
   };
 
-  isFetchingIcon.value = true;
   if (immediate) {
     run();
   } else {
-    debounceTimer = setTimeout(run, 800);
+    debounceTimer = setTimeout(run, 500); // 防抖 500ms
   }
 };
 
@@ -75,7 +73,7 @@ watch(() => props.show, (val) => {
         iconValue: props.initialData.iconValue || ''
       };
       activeTab.value = formData.value.iconType;
-      // 编辑模式下立即加载图标，不需要防抖
+      // 编辑模式下立即加载图标
       fetchFavicon(formData.value.url, true);
     } else {
       formData.value = {
@@ -182,9 +180,10 @@ const PreviewIcon = computed(() => {
             >
               <template v-if="activeTab === 'auto'">
                 <PhSpinner v-if="isFetchingIcon" class="animate-spin text-gray-400" size="24"/>
+
                 <img v-else-if="debouncedFaviconUrl"
                      :src="debouncedFaviconUrl"
-                     class="w-12 h-12 object-contain"
+                     class="w-full h-full object-cover"
                      onerror="this.style.display='none'"
                 >
                 <PhGlobe v-else size="32" class="text-gray-300"/>

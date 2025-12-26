@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import {computed} from 'vue';
-import {useConfigStore} from '../../stores/useConfigStore'; // ✨ 引入 Store
+import {computed, onMounted, onUnmounted, ref} from 'vue';
+import {useConfigStore} from '../../stores/useConfigStore';
 import * as PhIcons from '@phosphor-icons/vue';
 import {PhGlobe, PhTrash, PhPencilSimple} from '@phosphor-icons/vue';
+import {getHighResIconUrl} from '../../utils/icon';
 
-const store = useConfigStore(); // ✨ 获取配置
+const store = useConfigStore();
 
 const props = defineProps<{
   item: {
@@ -18,18 +19,38 @@ const props = defineProps<{
   isEditMode?: boolean;
 }>();
 
-const emit = defineEmits(['delete']);
+defineEmits(['delete']);
 
+const isLoaded = ref(false);
+let timeoutTimer: any = null;
+
+// 计算 URL
 const autoIconUrl = computed(() => {
-  if (!props.item.url) return '';
-  try {
-    let fullUrl = props.item.url;
-    if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
-    const domain = new URL(fullUrl).hostname;
-    return `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`;
-  } catch (e) {
-    return '';
+  // 如果已经是手动模式，直接返回空，切断请求
+  if (props.item.iconType === 'text' || props.item.iconType === 'icon') return '';
+  return getHighResIconUrl(props.item.url);
+});
+
+// 文字显示逻辑
+const displayIconValue = computed(() => {
+  if (props.item.iconType === 'text') {
+    if (props.item.iconValue && props.item.iconValue.length > 1) return props.item.iconValue;
+    const clean = (props.item.title || '').trim().replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+    if (/[\u4e00-\u9fa5]/.test(clean)) return clean.substring(0, 2);
+    return clean.substring(0, 4).toUpperCase() || props.item.title.substring(0, 2);
   }
+  return '';
+});
+
+// 动态字体大小
+const dynamicFontSize = computed(() => {
+  const baseSize = Number(store.config.theme.iconSize);
+  const text = displayIconValue.value;
+  const len = text.length;
+  if (len >= 4) return baseSize * 0.3;
+  if (len === 3) return baseSize * 0.35;
+  if (len === 2) return baseSize * 0.42;
+  return baseSize * 0.5;
 });
 
 const PhosphorIcon = computed(() => {
@@ -38,6 +59,37 @@ const PhosphorIcon = computed(() => {
     return (PhIcons as any)[name] || PhGlobe;
   }
   return PhGlobe;
+});
+
+// ✨✨✨ 核心修复：加载成功处理 ✨✨✨
+const handleImgLoad = () => {
+  isLoaded.value = true;
+  if (timeoutTimer) clearTimeout(timeoutTimer);
+};
+
+// ✨✨✨ 核心修复：加载失败处理 (无论是网络错误还是超时) ✨✨✨
+const triggerFallback = () => {
+  // 只有当前还是 auto 模式时才触发，避免重复修改
+  if (props.item.iconType === 'auto' || !props.item.iconType) {
+    store.setIconFallback(props.item.id);
+  }
+};
+
+//  核心修复：主动超时检测
+// 如果 2.5 秒内图片没触发 @load，就视为被浏览器拦截了，强制转文字
+onMounted(() => {
+  if ((props.item.iconType === 'auto' || !props.item.iconType) && autoIconUrl.value) {
+    timeoutTimer = setTimeout(() => {
+      if (!isLoaded.value) {
+        console.warn('图标加载超时(可能是被拦截)，强制转为文字:', props.item.title);
+        triggerFallback();
+      }
+    }, 2500);
+  }
+});
+
+onUnmounted(() => {
+  if (timeoutTimer) clearTimeout(timeoutTimer);
 });
 
 const handleClick = (e: MouseEvent) => {
@@ -50,7 +102,7 @@ const handleClick = (e: MouseEvent) => {
       :href="item.url"
       target="_blank"
       @click="handleClick"
-      class="group relative flex flex-col items-center gap-2 p-2 rounded-xl transition-all duration-300"
+      class="group relative flex flex-col items-center gap-2 p-1 rounded-xl transition-all duration-300"
       :class="[
       isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
     ]"
@@ -58,36 +110,41 @@ const handleClick = (e: MouseEvent) => {
     <div
         class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
         :style="{
-        backgroundColor: item.bgColor || '#3b82f6',
-        width: store.config.theme.iconSize + 'px',
-        height: store.config.theme.iconSize + 'px',
+        /* 如果是文字模式且背景是白的，强制变深灰 */
+        backgroundColor: (item.bgColor === '#ffffff' && item.iconType === 'text') ? '#475569' : (item.bgColor || '#3b82f6'),
+        width: Number(store.config.theme.iconSize) + 'px',
+        height: Number(store.config.theme.iconSize) + 'px',
         borderRadius: store.config.theme.radius + 'px'
       }"
     >
 
       <img
-          v-if="item.iconType === 'auto' || !item.iconType"
+          v-if="(item.iconType === 'auto' || !item.iconType) && autoIconUrl"
           :src="autoIconUrl"
           class="w-full h-full object-cover bg-white"
-          onerror="this.style.display='none'"
+          loading="lazy"
+          @load="handleImgLoad"
+          @error="triggerFallback"
           alt="icon"
       />
+
       <PhGlobe
-          v-if="(item.iconType === 'auto' || !item.iconType) && !autoIconUrl"
-          :size="store.config.theme.iconSize * 0.5"
+          v-if="(item.iconType === 'auto' || !item.iconType) && (!isLoaded || !autoIconUrl)"
+          :size="Number(store.config.theme.iconSize) * 0.5"
           weight="duotone"
-          class="absolute"
+          class="absolute z-[-1]"
       />
 
-      <span v-else-if="item.iconType === 'text'" class="font-bold"
-            :style="{ fontSize: (store.config.theme.iconSize * 0.45) + 'px' }">
-        {{ item.iconValue ? item.iconValue.substring(0, 1) : item.title.substring(0, 1) }}
+      <span v-else-if="item.iconType === 'text'"
+            class="font-bold select-none leading-none flex items-center justify-center text-center break-all px-0.5"
+            :style="{ fontSize: dynamicFontSize + 'px' }">
+        {{ displayIconValue }}
       </span>
 
       <component
           v-else
           :is="PhosphorIcon"
-          :size="store.config.theme.iconSize * 0.5"
+          :size="Number(store.config.theme.iconSize) * 0.5"
           weight="fill"
       />
 
@@ -100,7 +157,7 @@ const handleClick = (e: MouseEvent) => {
     <span v-if="store.config.theme.showIconName"
           class="font-medium opacity-80 group-hover:opacity-100 transition-opacity truncate text-center leading-tight"
           :style="{
-            width: (store.config.theme.iconSize + 20) + 'px',
+            width: (Number(store.config.theme.iconSize) + 16) + 'px',
             fontSize: store.config.theme.iconTextSize + 'px',
             color: 'var(--text-primary)',
             textShadow: '0 1px 2px rgba(0,0,0,0.5)'

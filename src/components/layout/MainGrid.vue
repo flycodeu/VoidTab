@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {ref, inject, computed} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
-import GlassCard from '../ui/GlassCard.vue';
+import GlassCard from '../layout/GlassCard.vue';
 import {VueDraggable} from 'vue-draggable-plus';
 import {PhPlus, PhSquaresFour, PhList} from '@phosphor-icons/vue';
 
