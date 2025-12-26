@@ -6,7 +6,7 @@ import {VueDraggable} from 'vue-draggable-plus';
 import {PhPlus, PhTrash} from '@phosphor-icons/vue';
 
 // 接收 App.vue 传来的 isEditMode
-const props = defineProps<{
+defineProps<{
   activeGroupId: string;
   isEditMode: boolean;
 }>();
