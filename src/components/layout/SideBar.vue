@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useConfigStore } from '../../stores/useConfigStore';
-import { PhMonitor, PhPlus, PhGear } from '@phosphor-icons/vue';
+import {useConfigStore} from '../../stores/useConfigStore';
+import {PhMonitor, PhPlus, PhGear} from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
-import { computed } from 'vue';
+import {computed} from 'vue';
 
 const store = useConfigStore();
 const props = defineProps<{ activeGroupId: string, isFocusMode: boolean }>();
@@ -25,10 +25,16 @@ const sidebarStyle = computed(() => {
 const handleDragEnter = (groupId: string) => {
   if (store.dragState && store.dragState.isDragging && groupId !== props.activeGroupId) {
     if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => { emit('update:activeGroupId', groupId); hoverTimer = null; }, 600);
+    hoverTimer = setTimeout(() => {
+      emit('update:activeGroupId', groupId);
+      hoverTimer = null;
+    }, 600);
   }
 };
-const handleDragLeave = () => { if (hoverTimer) clearTimeout(hoverTimer); hoverTimer = null; };
+const handleDragLeave = () => {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  hoverTimer = null;
+};
 const handleDrop = (targetGroupId: string) => {
   if (hoverTimer) clearTimeout(hoverTimer);
   if (store.dragState && store.dragState.isDragging && store.dragState.item) {
@@ -50,8 +56,9 @@ const handleDrop = (targetGroupId: string) => {
           :class="store.config.theme.sidebarPos === 'right' ? 'mr-4' : 'ml-4'"
           :style="sidebarStyle"
       >
-        <div class="mb-6 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-          <PhMonitor weight="fill" size="24" />
+        <div
+            class="mb-6 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+          <PhMonitor weight="fill" size="24"/>
         </div>
 
         <div class="flex-1 flex flex-col gap-3 w-full px-2 overflow-y-auto no-scrollbar">
@@ -79,19 +86,23 @@ const handleDrop = (targetGroupId: string) => {
               :data-group-id="group.id"
           >
             <div class="pointer-events-none flex flex-col items-center gap-1">
-              <component :is="(PhIcons as any)['Ph' + group.icon]" size="26" weight="duotone" class="transition-transform group-hover/btn:scale-110"/>
+              <component :is="(PhIcons as any)['Ph' + group.icon]" size="26" weight="duotone"
+                         class="transition-transform group-hover/btn:scale-110"/>
               <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">{{ group.title }}</span>
             </div>
-            <div v-if="activeGroupId === group.id" class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"></div>
+            <div v-if="activeGroupId === group.id"
+                 class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"></div>
           </button>
 
-          <button @click="emit('openGroupDialog')" class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2">
-            <PhPlus size="24" />
+          <button @click="emit('openGroupDialog')"
+                  class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2">
+            <PhPlus size="24"/>
           </button>
         </div>
 
-        <button @click="emit('openSettings')" class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all">
-          <PhGear :size="26" weight="duotone" />
+        <button @click="emit('openSettings')"
+                class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all">
+          <PhGear :size="26" weight="duotone"/>
         </button>
       </aside>
     </transition>
@@ -104,10 +115,29 @@ const handleDrop = (targetGroupId: string) => {
 
 <style scoped>
 /* 保持你的 Slide 动画样式不变 */
-.slide-fade-enter-active, .slide-fade-leave-active { transition: all 0.3s ease; }
-.slide-fade-enter-from, .slide-fade-leave-to { transform: translateX(-20px); opacity: 0; }
-.slide-fade-right-enter-active, .slide-fade-right-leave-active { transition: all 0.3s ease; }
-.slide-fade-right-enter-from, .slide-fade-right-leave-to { transform: translateX(20px); opacity: 0; }
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s ease; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+.slide-fade-enter-active, .slide-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-fade-enter-from, .slide-fade-leave-to {
+  transform: translateX(-20px);
+  opacity: 0;
+}
+
+.slide-fade-right-enter-active, .slide-fade-right-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-fade-right-enter-from, .slide-fade-right-leave-to {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-up-enter-from, .slide-up-leave-to {
+  transform: translateY(100%);
+}
 </style>

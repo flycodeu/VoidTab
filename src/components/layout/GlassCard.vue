@@ -59,7 +59,6 @@ const handleClick = (e: MouseEvent) => {
         class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
         :style="{
         backgroundColor: item.bgColor || '#3b82f6',
-        /* ✨✨✨ 核心修复：使用动态宽高和圆角 ✨✨✨ */
         width: store.config.theme.iconSize + 'px',
         height: store.config.theme.iconSize + 'px',
         borderRadius: store.config.theme.radius + 'px'

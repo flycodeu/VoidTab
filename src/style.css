@@ -33,9 +33,10 @@
 
     /* 3. 弹窗与侧边栏 */
     /* 使用深灰色 (#1c1c1e) 代替纯黑，类似 iOS 设置页面的背景 */
-    --modal-bg: #1c1c1e;
-    --modal-sidebar: rgba(0, 0, 0, 0.2);
+    --modal-bg: rgba(30, 30, 35, 0.70);
+    --modal-sidebar: rgba(0, 0, 0, 0.3);
     --modal-border: rgba(255, 255, 255, 0.1);
+    --modal-text: #ffffff;
     --modal-input-bg: rgba(255, 255, 255, 0.1);
 
     /* 滑块组件颜色 */
@@ -57,8 +58,6 @@
     /* 让壁纸或默认渐变能透出来，不要糊成一团黑 */
     --bg-overlay: #000000;
     --bg-overlay-opacity: 0.3;
-
-    --modal-text: #f5f5f7;
     --sidebar-active: rgba(255, 255, 255, 0.15);
 }
 
@@ -69,7 +68,6 @@ html.light {
     --text-tertiary: rgba(60, 60, 67, 0.4);
 
     --accent-color: #007AFF;
-    --modal-text: #1d1d1f;
 
     --glass-surface: rgba(255, 255, 255, 0.75);
     --glass-border: rgba(255, 255, 255, 0.6);
@@ -80,9 +78,10 @@ html.light {
     --glass-blur: 40px;
     --glass-saturate: 120%;
 
-    --modal-bg: rgba(255, 255, 255, 0.92);
-    --modal-sidebar: rgba(240, 240, 245, 0.6);
+    --modal-bg: rgba(255, 255, 255, 0.75);
+    --modal-sidebar: rgba(240, 240, 245, 0.5); /* 侧边栏稍微深一点点 */
     --modal-border: rgba(0, 0, 0, 0.05);
+    --modal-text: #1d1d1f;
     --modal-input-bg: rgba(0, 0, 0, 0.05);
 
     --slider-track: rgba(0, 0, 0, 0.1);
