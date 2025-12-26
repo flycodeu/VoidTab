@@ -1,88 +1,143 @@
 <script setup lang="ts">
-import type { LinkItem } from '../../types';
+import {computed} from 'vue';
+import {useConfigStore} from '../../stores/useConfigStore';
 import * as PhIcons from '@phosphor-icons/vue';
-import { computed } from 'vue';
+import {PhGlobe, PhTrash, PhPencilSimple} from '@phosphor-icons/vue';
 
-const props = defineProps<{ item: LinkItem }>();
+const store = useConfigStore();
 
-// === 核心修复：防崩溃计算属性 ===
-const IconComponent = computed(() => {
-  // 1. 第一道防线：如果没有 item 对象，直接返回 Null
-  if (!props.item) return null;
+const props = defineProps<{
+  item: {
+    id: string;
+    title: string;
+    url: string;
+    iconType?: 'auto' | 'text' | 'icon';
+    iconValue?: string;
+    bgColor?: string;
+  };
+  isEditMode?: boolean;
+}>();
 
-  // 2. 如果是文字模式，不需要加载图标组件
-  if (props.item.iconType === 'text') return null;
+const emit = defineEmits(['delete']);
 
-  // 3. 获取原始图标名：
-  // 修复报错：使用 (props.item as any).icon 来访问旧数据的字段，避开 TS 检查
-  const raw = props.item.iconValue || (props.item as any).icon || 'Globe';
-
-  // 4. 第二道防线：强制转为字符串，防止对 undefined/null 调用 replace
-  const safeStr = String(raw);
-
-  // 5. 去除可能重复的前缀
-  const iconName = safeStr.replace(/^Ph/, '');
-
-  // 6. 返回组件，如果找不到图标，返回默认地球
-  // @ts-ignore
-  return PhIcons['Ph' + iconName] || PhIcons['PhGlobe'];
-});
-
-// 计算显示的文字
-const textIcon = computed(() => {
-  if (!props.item) return '';
-  if (props.item.iconType === 'text') {
-    // 同样做防空处理
-    const val = props.item.iconValue || props.item.title || 'A';
-    return String(val).substring(0, 1);
+const autoIconUrl = computed(() => {
+  if (!props.item.url) return '';
+  try {
+    let fullUrl = props.item.url;
+    if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+    const domain = new URL(fullUrl).hostname;
+    return `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`;
+  } catch (e) {
+    return '';
   }
-  return '';
 });
 
-const bgColor = computed(() => {
-  return props.item?.bgColor || '#3b82f6';
+const PhosphorIcon = computed(() => {
+  if (props.item.iconType === 'icon' && props.item.iconValue) {
+    const name = 'Ph' + props.item.iconValue.replace(/^Ph/, '');
+    return (PhIcons as any)[name] || PhGlobe;
+  }
+  return PhGlobe;
 });
 
-const openUrl = () => {
-  if (!props.item?.url) return;
-  let url = props.item.url;
-  if (!url.startsWith('http') && !url.startsWith('#')) url = 'https://' + url;
-  window.open(url, '_blank');
+const handleClick = (e: MouseEvent) => {
+  if (props.isEditMode) e.preventDefault();
 };
 </script>
 
 <template>
-  <div
-      class="flex flex-col items-center gap-3 group cursor-pointer w-24 sm:w-28 transition-transform hover:-translate-y-1"
-      @click="openUrl"
+  <a
+      :href="item.url"
+      target="_blank"
+      @click="handleClick"
+      class="group relative flex flex-col items-center gap-2 p-2 rounded-xl transition-all duration-300"
+      :class="[
+      isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
+    ]"
   >
     <div
-        class="relative flex items-center justify-center shadow-lg transition-all duration-300 group-hover:shadow-2xl group-hover:brightness-110"
+        class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
         :style="{
-        width: 'var(--icon-size)',
-        height: 'var(--icon-size)',
-        borderRadius: 'var(--glass-radius)',
-        backgroundColor: bgColor
+        backgroundColor: item.bgColor || '#3b82f6',
+        width: store.config.theme.iconSize + 'px',
+        height: store.config.theme.iconSize + 'px',
+        borderRadius: store.config.theme.radius + 'px'
       }"
     >
-      <span v-if="item?.iconType === 'text'" class="text-white font-bold text-3xl select-none">
-        {{ textIcon }}
+
+      <img
+          v-if="item.iconType === 'auto' || !item.iconType"
+          :src="autoIconUrl"
+          class="w-full h-full object-cover bg-white"
+          onerror="this.style.display='none'"
+          alt="icon"
+      />
+      <PhGlobe
+          v-if="(item.iconType === 'auto' || !item.iconType) && !autoIconUrl"
+          :size="store.config.theme.iconSize * 0.5"
+          weight="duotone"
+          class="absolute"
+      />
+
+      <span v-else-if="item.iconType === 'text'" class="font-bold"
+            :style="{ fontSize: (store.config.theme.iconSize * 0.45) + 'px' }">
+        {{ item.iconValue ? item.iconValue.substring(0, 1) : item.title.substring(0, 1) }}
       </span>
 
       <component
           v-else
-          :is="IconComponent"
-          :size="32"
+          :is="PhosphorIcon"
+          :size="store.config.theme.iconSize * 0.5"
           weight="fill"
-          class="text-white drop-shadow-md"
       />
+
+      <div v-if="isEditMode"
+           class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10">
+        <PhPencilSimple size="24" class="text-white drop-shadow-md"/>
+      </div>
     </div>
 
-    <span
-        class="text-sm font-medium text-center leading-tight px-1 w-full truncate"
-        style="color: var(--text-primary); text-shadow: 0 1px 4px rgba(0,0,0,0.1);"
-    >
-      {{ item?.title || '未命名' }}
+    <span v-if="store.config.theme.showIconName"
+          class="font-medium opacity-80 group-hover:opacity-100 transition-opacity truncate text-center leading-tight"
+          :style="{
+            width: (store.config.theme.iconSize + 20) + 'px',
+            fontSize: store.config.theme.iconTextSize + 'px',
+            color: 'var(--text-primary)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+          }">
+      {{ item.title }}
     </span>
-  </div>
+
+    <button
+        v-if="isEditMode"
+        @click.prevent.stop="$emit('delete')"
+        class="absolute -top-1 -right-1 p-1.5 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 hover:scale-110 transition-all z-20"
+    >
+      <PhTrash size="12" weight="bold"/>
+    </button>
+  </a>
 </template>
+
+<style scoped>
+@keyframes shake {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.3s infinite ease-in-out;
+}
+</style>

@@ -62,6 +62,14 @@ const defaultConfig = {
                     {name: '36Kr', url: 'https://36kr.com/feed'}
                 ]
             }
+        },
+        {
+            id: 'greeting',
+            name: '问候语',
+            visible: true,
+            order: 0,
+            colSpan: 1,
+            config: {}
         }
     ],
     theme: {

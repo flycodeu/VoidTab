@@ -5,81 +5,98 @@
 @tailwind utilities;
 
 /* -------------------------------------------------------------------------- */
-/* Variables                                  */
+/* Variables - 核心变量定义                                                    */
 /* -------------------------------------------------------------------------- */
 :root {
-    /* === 深色模式 (Dark Mode Default) === */
-    --text-primary: #f5f5f7; /* 苹果白 */
-    --text-secondary: rgba(235, 235, 245, 0.6);
-    --text-tertiary: rgba(235, 235, 245, 0.3);
+    /* ================= 深色模式 (Dark Mode) - 高级灰调重制版 ================= */
+
+    /* 1. 文字颜色：纯白主色，拉开对比度 */
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.70);
+    --text-tertiary: rgba(255, 255, 255, 0.45);
 
     --accent-color: #0A84FF; /* iOS Blue */
 
-    /* 玻璃材质 (Dark) */
-    --glass-surface: rgba(30, 30, 35, 0.60);
+    /* 2. 玻璃材质核心：使用“白色微光”而非“黑色遮罩” */
+    /* 关键点：用极低透明度的白色 (0.08)，在深色背景上会产生“提亮”效果，显得通透 */
+    --glass-surface: rgba(255, 255, 255, 0.08);
+
+    /* 边框：微弱的白光，勾勒轮廓 */
     --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-highlight: rgba(255, 255, 255, 0.15);
-    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-    --glass-blur: 40px;
+    --glass-highlight: rgba(255, 255, 255, 0.1);
+
+    /* 阴影：深色柔和阴影，增加悬浮感 */
+    --glass-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+
+    --glass-blur: 50px;
     --glass-saturate: 180%;
 
-    /* 弹窗 & 输入框 */
-    --modal-bg: rgba(30, 30, 35, 0.85);
+    /* 3. 弹窗与侧边栏 */
+    /* 使用深灰色 (#1c1c1e) 代替纯黑，类似 iOS 设置页面的背景 */
+    --modal-bg: #1c1c1e;
     --modal-sidebar: rgba(0, 0, 0, 0.2);
     --modal-border: rgba(255, 255, 255, 0.1);
-    --modal-input-bg: rgba(255, 255, 255, 0.08);
+    --modal-input-bg: rgba(255, 255, 255, 0.1);
 
     /* 滑块组件颜色 */
     --slider-track: rgba(255, 255, 255, 0.2);
     --slider-thumb: #ffffff;
 
-    /* 背景策略 */
-    --page-fallback: #050505;
-    /* 深色极光/午夜壁纸 */
-    --default-wallpaper: radial-gradient(circle at 15% 50%, rgba(32, 40, 80, 0.4), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(40, 30, 60, 0.4), transparent 25%),
-    linear-gradient(180deg, #0f1012 0%, #151618 100%);
+    /* 4. 默认背景策略 (无壁纸时) */
+    /* 关键修改：不再是纯黑 #000000 */
+    /* 使用深灰蓝渐变，模拟深夜的星空或极光，更有“透气感” */
+    --page-fallback: #121212;
+    --default-wallpaper: radial-gradient(circle at 15% 50%, rgba(40, 45, 60, 0.5), transparent 40%),
+    radial-gradient(circle at 85% 30%, rgba(30, 35, 50, 0.5), transparent 40%),
+    linear-gradient(180deg, #161618 0%, #0c0c0e 100%);
 
-    /* 动画曲线 (Apple Spring) */
+    /* 动画曲线 */
     --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 
+    /* 5. 背景遮罩：大幅降低浓度 */
+    /* 让壁纸或默认渐变能透出来，不要糊成一团黑 */
+    --bg-overlay: #000000;
+    --bg-overlay-opacity: 0.3;
+
     --modal-text: #f5f5f7;
+    --sidebar-active: rgba(255, 255, 255, 0.15);
 }
 
 /* === 浅色模式 (Light Mode) === */
 html.light {
-    --text-primary: #1d1d1f; /* Apple Grey */
+    --text-primary: #1d1d1f;
     --text-secondary: rgba(60, 60, 67, 0.75);
     --text-tertiary: rgba(60, 60, 67, 0.4);
 
     --accent-color: #007AFF;
     --modal-text: #1d1d1f;
-    /* 玻璃材质 (Light - 更通透，更锐利) */
+
     --glass-surface: rgba(255, 255, 255, 0.75);
-    --glass-border: rgba(255, 255, 255, 0.6); /* 增强边框可见度 */
+    --glass-border: rgba(255, 255, 255, 0.6);
     --glass-highlight: rgba(255, 255, 255, 0.9);
     --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05),
     0 10px 15px -3px rgba(0, 0, 0, 0.05),
-    inset 0 0 20px rgba(255, 255, 255, 0.5); /* 内部反光，增加厚度感 */
+    inset 0 0 20px rgba(255, 255, 255, 0.5);
     --glass-blur: 40px;
+    --glass-saturate: 120%;
 
-    /* 弹窗 & 输入框 */
     --modal-bg: rgba(255, 255, 255, 0.92);
     --modal-sidebar: rgba(240, 240, 245, 0.6);
     --modal-border: rgba(0, 0, 0, 0.05);
     --modal-input-bg: rgba(0, 0, 0, 0.05);
 
-    /* 滑块组件颜色 */
     --slider-track: rgba(0, 0, 0, 0.1);
     --slider-thumb: #ffffff;
 
-    /* 背景策略 */
     --page-fallback: #f0f4f8;
-    /* 浅色弥散壁纸 (不刺眼方案) */
     --default-wallpaper: radial-gradient(at 0% 0%, rgba(216, 235, 255, 0.8) 0px, transparent 50%),
     radial-gradient(at 100% 0%, rgba(240, 220, 255, 0.8) 0px, transparent 50%),
     radial-gradient(at 50% 100%, rgba(240, 248, 255, 0.8) 0px, transparent 50%),
     linear-gradient(180deg, #f0f4f8 0%, #eef2f6 100%);
+
+    --bg-overlay: #ffffff;
+    --bg-overlay-opacity: 0.4;
+    --sidebar-active: #ffffff;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -96,11 +113,10 @@ body {
     background-attachment: fixed;
     background-repeat: no-repeat;
 
-    /* 字体平滑处理 */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
-    transition: background-color 0.3s ease, color 0.3s ease;
+    transition: background-color 0.5s ease, color 0.3s ease;
     min-height: 100vh;
 }
 
@@ -115,10 +131,22 @@ body {
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 
     border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.4); /* 顶部高光 */
+    box-shadow: var(--glass-shadow);
 
     transition: all 0.3s var(--ease-spring);
+}
+
+/* ✨ 深色模式质感增强：内发光与高亮 ✨ */
+html.dark .apple-glass {
+    /* 使用微量白色让组件“浮”起来，而不是沉下去 */
+    background-color: rgba(255, 255, 255, 0.06);
+
+    /* 顶部内发光(模拟光源) + 柔和阴影 */
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* 虚线添加框 */
@@ -141,10 +169,9 @@ html.light .add-card {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Components (Sliders, Scrollbars)               */
+/* Components                                     */
 /* -------------------------------------------------------------------------- */
 
-/* Range Slider (iOS Style) */
 input[type=range] {
     @apply appearance-none h-1.5 rounded-full cursor-pointer outline-none;
     background: var(--slider-track);
@@ -248,4 +275,84 @@ html.light .animate-shimmer {
 
 .animate-scale-in {
     animation: scaleIn 0.25s var(--ease-spring) forwards;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dashboard Widgets & Cards (Deep Dark Mode Optimization) */
+/* -------------------------------------------------------------------------- */
+
+/* 弹窗大容器 */
+.dashboard-modal {
+    background: rgba(245, 245, 247, 0.6);
+    backdrop-filter: blur(50px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Bento Card (内部小组件卡片) */
+.bento-card {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    border-radius: 20px;
+    padding: 16px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.bento-card:hover {
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
+}
+
+/* === 深色模式适配 (重点) === */
+
+html.dark .dashboard-modal {
+    /* 使用深灰色而非纯黑，保持弹窗的“层级感” */
+    background: rgba(30, 32, 40, 0.7);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .bento-card {
+    /* 关键：使用微透明白色，在深灰背景上产生“亮”的效果，而非更黑 */
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    /* 增加内发光，防止看起来像黑洞 */
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html.dark .bento-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Widget Card (通用) */
+.widget-card {
+    @apply bg-white/90 backdrop-blur-sm border border-white/40 shadow-sm;
+}
+
+.widget-card:hover {
+    @apply bg-white/95 shadow-md -translate-y-0.5 transition-all duration-300;
+}
+
+/* 网站图标容器 */
+.site-icon-container {
+    background-color: #3b82f6;
+    border: 1px solid transparent;
+    transition: all 0.3s ease;
+}
+
+:global(html.dark) .site-icon-container {
+    /* 稍作透明处理，融入环境 */
+    background-color: rgba(59, 130, 246, 0.85);
+    border-color: rgba(255, 255, 255, 0.15);
+    /* 增加微弱的外发光 */
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+:global(html.dark) .site-icon-container:hover {
+    background-color: rgba(59, 130, 246, 1);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    transform: scale(1.05);
 }

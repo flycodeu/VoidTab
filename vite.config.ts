@@ -1,20 +1,17 @@
-import { defineConfig } from 'vite'
+import {defineConfig} from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolve } from 'path'
-console.log("VITE 配置已加载！正在启动代理服务...");
+import {resolve} from 'path'
+
 export default defineConfig({
     plugins: [vue()],
-    base: './', // 确保相对路径
+    base: './',
     server: {
-        // 添加代理配置
         proxy: {
-            // 1. 代理地理编码 API (解决你现在的报错)
             '/api/geo': {
                 target: 'https://geocoding-api.open-meteo.com',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/geo/, '')
             },
-            // 2. 顺便把天气 API 也代理了 (预防未来报错)
             '/api/weather': {
                 target: 'https://api.open-meteo.com',
                 changeOrigin: true,
@@ -22,20 +19,38 @@ export default defineConfig({
             }
         }
     },
+
+    // ✨ 关键修正：移除 terser 配置，改用内置 esbuild
+    esbuild: {
+        // 同样可以实现移除 console 和 debugger
+        drop: ['console', 'debugger'],
+    },
+
     build: {
-        // 关键配置：输出目录设为 dist
         outDir: 'dist',
+        assetsInlineLimit: 4096,
+        // 默认使用 esbuild 压缩，无需额外安装
+        minify: 'esbuild',
+
         rollupOptions: {
-            // 输入入口：告诉 Vite 有两个文件要处理
             input: {
                 main: resolve(__dirname, 'index.html'),
                 background: resolve(__dirname, 'src/background.ts')
             },
-            // 输出配置：强制去掉文件名后的哈希乱码
             output: {
                 entryFileNames: 'assets/[name].js',
                 chunkFileNames: 'assets/[name].js',
-                assetFileNames: 'assets/[name].[ext]'
+                assetFileNames: 'assets/[name].[ext]',
+
+                // 保持之前的合并策略，减少请求数
+                manualChunks(id) {
+                    if (id.includes('src/background.ts')) {
+                        return 'background';
+                    }
+                    if (id.includes('node_modules')) {
+                        return 'vendor';
+                    }
+                }
             }
         }
     }

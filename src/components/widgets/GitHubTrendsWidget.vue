@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {ref, onMounted} from 'vue';
-import {PhStar, PhSpinner, PhWarning, PhGithubLogo, PhGitFork} from '@phosphor-icons/vue';
+import {PhStar, PhSpinner, PhWarning, PhGithubLogo} from '@phosphor-icons/vue';
 
 interface Repo {
   id: number;

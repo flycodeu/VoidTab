@@ -1,93 +1,144 @@
 <script setup lang="ts">
-import type {LinkItem} from '../../types';
-import * as PhIcons from '@phosphor-icons/vue';
 import {computed} from 'vue';
-import {useConfigStore} from '../../stores/useConfigStore';
+import {useConfigStore} from '../../stores/useConfigStore'; // ✨ 引入 Store
+import * as PhIcons from '@phosphor-icons/vue';
+import {PhGlobe, PhTrash, PhPencilSimple} from '@phosphor-icons/vue';
 
-const props = defineProps<{ item: LinkItem }>();
-const store = useConfigStore();
+const store = useConfigStore(); // ✨ 获取配置
 
-// 动态获取图标组件
-const IconComponent = computed(() => {
-  if (!props.item || props.item.iconType === 'text') return null;
-  const raw = props.item.iconValue || (props.item as any).icon || 'Globe';
-  // 移除可能存在的 'Ph' 前缀以防重复，然后重新拼接
-  const iconName = String(raw).replace(/^Ph/, '');
-  // @ts-ignore
-  return PhIcons['Ph' + iconName] || PhIcons['PhGlobe'];
-});
+const props = defineProps<{
+  item: {
+    id: string;
+    title: string;
+    url: string;
+    iconType?: 'auto' | 'text' | 'icon';
+    iconValue?: string;
+    bgColor?: string;
+  };
+  isEditMode?: boolean;
+}>();
 
-// 计算文字图标 (首字母)
-const textIcon = computed(() => {
-  if (!props.item) return '';
-  if (props.item.iconType === 'text') {
-    const val = props.item.iconValue || props.item.title || 'A';
-    return String(val).substring(0, 1).toUpperCase();
+const emit = defineEmits(['delete']);
+
+const autoIconUrl = computed(() => {
+  if (!props.item.url) return '';
+  try {
+    let fullUrl = props.item.url;
+    if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+    const domain = new URL(fullUrl).hostname;
+    return `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`;
+  } catch (e) {
+    return '';
   }
-  return '';
 });
 
-// 背景色 & 打开链接
-const bgColor = computed(() => props.item?.bgColor || '#3b82f6');
-const openUrl = () => {
-  if (!props.item?.url) return;
-  window.open(props.item.url.startsWith('http') ? props.item.url : 'https://' + props.item.url, '_blank');
-};
+const PhosphorIcon = computed(() => {
+  if (props.item.iconType === 'icon' && props.item.iconValue) {
+    const name = 'Ph' + props.item.iconValue.replace(/^Ph/, '');
+    return (PhIcons as any)[name] || PhGlobe;
+  }
+  return PhGlobe;
+});
 
-// 动态样式计算
-const iconStyle = computed(() => ({
-  width: `${store.config.theme.iconSize}px`,
-  height: `${store.config.theme.iconSize}px`,
-  borderRadius: `${store.config.theme.radius}px`,
-  backgroundColor: bgColor.value,
-}));
+const handleClick = (e: MouseEvent) => {
+  if (props.isEditMode) e.preventDefault();
+};
 </script>
 
 <template>
-  <div
-      class="group flex flex-col items-center gap-2 cursor-pointer select-none"
-      @click="openUrl"
+  <a
+      :href="item.url"
+      target="_blank"
+      @click="handleClick"
+      class="group relative flex flex-col items-center gap-2 p-2 rounded-xl transition-all duration-300"
+      :class="[
+      isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
+    ]"
   >
     <div
-        class="relative flex items-center justify-center
-             shadow-[0_4px_12px_rgba(0,0,0,0.1)]
-             border border-white/10
-             transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]
-             group-hover:scale-110 group-hover:shadow-[0_12px_24px_rgba(0,0,0,0.15)]
-             group-active:scale-95"
-        :style="iconStyle"
+        class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
+        :style="{
+        backgroundColor: item.bgColor || '#3b82f6',
+        /* ✨✨✨ 核心修复：使用动态宽高和圆角 ✨✨✨ */
+        width: store.config.theme.iconSize + 'px',
+        height: store.config.theme.iconSize + 'px',
+        borderRadius: store.config.theme.radius + 'px'
+      }"
     >
-      <span
-          v-if="item?.iconType === 'text'"
-          class="text-white font-bold tracking-wider"
-          :style="{ fontSize: (store.config.theme.iconSize * 0.45) + 'px' }"
-      >
-        {{ textIcon }}
+
+      <img
+          v-if="item.iconType === 'auto' || !item.iconType"
+          :src="autoIconUrl"
+          class="w-full h-full object-cover bg-white"
+          onerror="this.style.display='none'"
+          alt="icon"
+      />
+      <PhGlobe
+          v-if="(item.iconType === 'auto' || !item.iconType) && !autoIconUrl"
+          :size="store.config.theme.iconSize * 0.5"
+          weight="duotone"
+          class="absolute"
+      />
+
+      <span v-else-if="item.iconType === 'text'" class="font-bold"
+            :style="{ fontSize: (store.config.theme.iconSize * 0.45) + 'px' }">
+        {{ item.iconValue ? item.iconValue.substring(0, 1) : item.title.substring(0, 1) }}
       </span>
 
       <component
           v-else
-          :is="IconComponent"
+          :is="PhosphorIcon"
           :size="store.config.theme.iconSize * 0.5"
           weight="fill"
-          class="text-white drop-shadow-sm transition-transform duration-300 group-hover:scale-105"
       />
 
-      <div class="absolute inset-0 bg-gradient-to-tr from-white/0 to-white/10 pointer-events-none"
-           :style="{ borderRadius: store.config.theme.radius + 'px' }">
+      <div v-if="isEditMode"
+           class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10">
+        <PhPencilSimple size="24" class="text-white drop-shadow-md"/>
       </div>
     </div>
 
-    <span
-        v-if="store.config.theme.showIconName"
-        class="font-medium text-center leading-tight px-1 w-full truncate transition-opacity duration-200 group-hover:text-[var(--accent-color)]"
-        :style="{
-        width: (store.config.theme.iconSize + 24) + 'px',
-        fontSize: store.config.theme.iconTextSize + 'px',
-        color: 'var(--text-secondary)'
-      }"
-    >
-      {{ item?.title || '未命名' }}
+    <span v-if="store.config.theme.showIconName"
+          class="font-medium opacity-80 group-hover:opacity-100 transition-opacity truncate text-center leading-tight"
+          :style="{
+            width: (store.config.theme.iconSize + 20) + 'px',
+            fontSize: store.config.theme.iconTextSize + 'px',
+            color: 'var(--text-primary)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+          }">
+      {{ item.title }}
     </span>
-  </div>
+
+    <button
+        v-if="isEditMode"
+        @click.prevent.stop="$emit('delete')"
+        class="absolute -top-1 -right-1 p-1.5 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 hover:scale-110 transition-all z-20"
+    >
+      <PhTrash size="12" weight="bold"/>
+    </button>
+  </a>
 </template>
+
+<style scoped>
+@keyframes shake {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(1deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.3s infinite ease-in-out;
+}
+</style>
