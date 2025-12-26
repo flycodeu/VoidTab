@@ -16,22 +16,23 @@ const props = defineProps<{
     iconValue?: string;
     bgColor?: string;
   };
+  // 接收编辑模式
   isEditMode?: boolean;
 }>();
 
+// 定义删除事件
 defineEmits(['delete']);
 
 const isLoaded = ref(false);
 let timeoutTimer: any = null;
 
-// 计算 URL
+// --- URL 计算逻辑 ---
 const autoIconUrl = computed(() => {
-  // 如果已经是手动模式，直接返回空，切断请求
   if (props.item.iconType === 'text' || props.item.iconType === 'icon') return '';
   return getHighResIconUrl(props.item.url);
 });
 
-// 文字显示逻辑
+// --- 文字显示逻辑 ---
 const displayIconValue = computed(() => {
   if (props.item.iconType === 'text') {
     if (props.item.iconValue && props.item.iconValue.length > 1) return props.item.iconValue;
@@ -42,7 +43,7 @@ const displayIconValue = computed(() => {
   return '';
 });
 
-// 动态字体大小
+// --- 动态字体大小 ---
 const dynamicFontSize = computed(() => {
   const baseSize = Number(store.config.theme.iconSize);
   const text = displayIconValue.value;
@@ -61,27 +62,23 @@ const PhosphorIcon = computed(() => {
   return PhGlobe;
 });
 
-// ✨✨✨ 核心修复：加载成功处理 ✨✨✨
+// --- 加载处理 ---
 const handleImgLoad = () => {
   isLoaded.value = true;
   if (timeoutTimer) clearTimeout(timeoutTimer);
 };
 
-// ✨✨✨ 核心修复：加载失败处理 (无论是网络错误还是超时) ✨✨✨
 const triggerFallback = () => {
-  // 只有当前还是 auto 模式时才触发，避免重复修改
   if (props.item.iconType === 'auto' || !props.item.iconType) {
     store.setIconFallback(props.item.id);
   }
 };
 
-//  核心修复：主动超时检测
-// 如果 2.5 秒内图片没触发 @load，就视为被浏览器拦截了，强制转文字
 onMounted(() => {
   if ((props.item.iconType === 'auto' || !props.item.iconType) && autoIconUrl.value) {
     timeoutTimer = setTimeout(() => {
       if (!isLoaded.value) {
-        console.warn('图标加载超时(可能是被拦截)，强制转为文字:', props.item.title);
+        // console.warn('图标加载超时(可能是被拦截)，强制转为文字:', props.item.title);
         triggerFallback();
       }
     }, 2500);
@@ -92,8 +89,12 @@ onUnmounted(() => {
   if (timeoutTimer) clearTimeout(timeoutTimer);
 });
 
+//  核心：拦截点击事件
 const handleClick = (e: MouseEvent) => {
-  if (props.isEditMode) e.preventDefault();
+  if (props.isEditMode) {
+    e.preventDefault(); // 阻止跳转
+    e.stopPropagation();
+  }
 };
 </script>
 
@@ -104,13 +105,13 @@ const handleClick = (e: MouseEvent) => {
       @click="handleClick"
       class="group relative flex flex-col items-center gap-2 p-1 rounded-xl transition-all duration-300"
       :class="[
-      isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
-    ]"
+        // ✨ 编辑模式下：添加抓手样式、取消原有 hover、添加抖动动画
+        isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
+      ]"
   >
     <div
         class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
         :style="{
-        /* 如果是文字模式且背景是白的，强制变深灰 */
         backgroundColor: (item.bgColor === '#ffffff' && item.iconType === 'text') ? '#475569' : (item.bgColor || '#3b82f6'),
         width: Number(store.config.theme.iconSize) + 'px',
         height: Number(store.config.theme.iconSize) + 'px',
@@ -149,7 +150,7 @@ const handleClick = (e: MouseEvent) => {
       />
 
       <div v-if="isEditMode"
-           class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10">
+           class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10 animate-fade-in">
         <PhPencilSimple size="24" class="text-white drop-shadow-md"/>
       </div>
     </div>
@@ -168,7 +169,7 @@ const handleClick = (e: MouseEvent) => {
     <button
         v-if="isEditMode"
         @click.prevent.stop="$emit('delete')"
-        class="absolute -top-1 -right-1 p-1.5 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 hover:scale-110 transition-all z-20"
+        class="absolute -top-2 -right-1 p-1.5 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 hover:scale-110 transition-all z-20 animate-pop-in"
     >
       <PhTrash size="12" weight="bold"/>
     </button>
@@ -176,18 +177,19 @@ const handleClick = (e: MouseEvent) => {
 </template>
 
 <style scoped>
+/* ✨ 抖动动画 */
 @keyframes shake {
   0% {
     transform: rotate(0deg);
   }
   25% {
-    transform: rotate(1deg);
+    transform: rotate(1.5deg);
   }
   50% {
     transform: rotate(0deg);
   }
   75% {
-    transform: rotate(-1deg);
+    transform: rotate(-1.5deg);
   }
   100% {
     transform: rotate(0deg);
@@ -195,6 +197,39 @@ const handleClick = (e: MouseEvent) => {
 }
 
 .animate-shake {
-  animation: shake 0.3s infinite ease-in-out;
+  animation: shake 0.25s infinite ease-in-out;
+}
+
+/* 按钮弹出动画 */
+@keyframes popIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  80% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-pop-in {
+  animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 </style>
