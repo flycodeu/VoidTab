@@ -4,7 +4,8 @@ import {useConfigStore} from '../../stores/useConfigStore';
 import {
   PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage, PhMagicWand, PhDatabase, PhGlobe,
   PhSun, PhMoon, PhCheckCircle, PhUploadSimple, PhTextT, PhLightning, PhCursorClick,
-  PhTrash, PhPuzzlePiece, PhBookmarkSimple, PhFileArrowUp, PhDownloadSimple
+  PhTrash, PhPuzzlePiece, PhBookmarkSimple, PhFileArrowUp, PhDownloadSimple,
+  PhCloudArrowUp, PhCloudArrowDown, PhWarning, PhSpinner, PhCheck
 } from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
 
@@ -20,13 +21,57 @@ const menuItems = [
   {id: 'effects', label: '特效', icon: PhMagicWand},
   {id: 'search', label: '搜索', icon: PhGlobe},
   {id: 'data', label: '数据', icon: PhDatabase},
+  {id: 'sync', label: '云端同步', icon: PhCloudArrowUp}, // ✨ 新增同步菜单
 ] as const;
 
 type TabType = typeof menuItems[number]['id'];
 const settingsTab = ref<TabType>('icon');
 const newEngineForm = ref({name: '', url: ''});
 const fileInput = ref<HTMLInputElement | null>(null);
-const bookmarkInput = ref<HTMLInputElement | null>(null); // 书签文件 Input
+const bookmarkInput = ref<HTMLInputElement | null>(null);
+
+// ✨✨✨ 同步相关状态 ✨✨✨
+const isTesting = ref(false);
+const isUploading = ref(false);
+const isDownloading = ref(false);
+const testResult = ref<{ success: boolean, msg: string } | null>(null);
+
+const handleTestConnection = async () => {
+  if (!store.config.sync.url || !store.config.sync.username || !store.config.sync.password) {
+    testResult.value = {success: false, msg: '请先填写完整配置'};
+    return;
+  }
+  isTesting.value = true;
+  testResult.value = null;
+  const success = await store.testSyncConnection(store.config.sync);
+  isTesting.value = false;
+  testResult.value = {
+    success,
+    msg: success ? '连接成功！' : '连接失败，请检查 URL 或密码'
+  };
+};
+
+const handleUpload = async () => {
+  isUploading.value = true;
+  const res = await store.uploadBackup();
+  isUploading.value = false;
+  alert(res.msg);
+};
+
+const handleDownload = async () => {
+  if (!confirm('这将覆盖当前的本地配置，确定要恢复吗？')) return;
+  isDownloading.value = true;
+  const res = await store.downloadBackup();
+  isDownloading.value = false;
+  alert(res.msg);
+};
+
+const lastSyncTimeStr = computed(() => {
+  if (!store.config.sync?.lastSyncTime) return '从未同步';
+  return new Date(store.config.sync.lastSyncTime).toLocaleString();
+});
+// ✨✨✨ 结束 ✨✨✨
+
 
 const toggleTheme = (mode: 'light' | 'dark') => {
   store.config.theme.mode = mode;
@@ -84,7 +129,6 @@ const handleBookmarkUpload = (event: Event) => {
   reader.onload = (e) => {
     const content = e.target?.result as string;
     if (content) {
-      // 调用 Store 方法
       const result = store.importBookmarks(content);
       if (result.success) {
         alert(`导入成功！共导入 ${result.groupCount} 个分组，${result.count} 个书签。`);
@@ -94,7 +138,7 @@ const handleBookmarkUpload = (event: Event) => {
     }
   };
   reader.readAsText(file);
-  (event.target as HTMLInputElement).value = ''; // 重置 input
+  (event.target as HTMLInputElement).value = '';
 };
 
 const greetingWidget = computed(() => store.config.widgets?.find((w: any) => w.id === 'greeting'));
@@ -340,6 +384,76 @@ const greetingWidget = computed(() => store.config.widgets?.find((w: any) => w.i
                     选择 HTML 文件<input type="file" ref="bookmarkInput" class="hidden" accept=".html"
                                          @change="handleBookmarkUpload"></button>
                 </div>
+              </div>
+            </div>
+
+            <div v-if="settingsTab === 'sync'" class="space-y-6 animate-fade-in">
+
+              <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm leading-relaxed">
+                <p class="font-bold text-blue-400 mb-1 flex items-center gap-2">
+                  <PhCloudArrowUp size="16" weight="fill"/>
+                  WebDAV 同步
+                </p>
+                <p class="opacity-80">推荐使用 <a href="https://www.jianguoyun.com/" target="_blank"
+                                                  class="underline hover:text-[var(--accent-color)]">坚果云</a> 等支持
+                  WebDAV 的网盘。</p>
+                <p class="opacity-60 text-xs mt-1">注意：部分网盘（如坚果云）需要生成"应用专用密码"。</p>
+              </div>
+
+              <div class="space-y-4 p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)]">
+                <div class="space-y-1">
+                  <label class="text-xs font-bold opacity-60 uppercase ml-1">服务器地址 (URL)</label>
+                  <input v-model="store.config.sync.url" type="text" placeholder="https://dav.jianguoyun.com/dav/"
+                         class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div class="space-y-1">
+                    <label class="text-xs font-bold opacity-60 uppercase ml-1">账号 (Email)</label>
+                    <input v-model="store.config.sync.username" type="text" placeholder="你的账号"
+                           class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors">
+                  </div>
+                  <div class="space-y-1">
+                    <label class="text-xs font-bold opacity-60 uppercase ml-1">密码 / 应用密码</label>
+                    <input v-model="store.config.sync.password" type="password" placeholder="建议使用应用专用密码"
+                           class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors">
+                  </div>
+                </div>
+
+                <div v-if="testResult" class="flex items-center gap-2 text-sm font-bold pt-2 animate-fade-in"
+                     :class="testResult.success ? 'text-green-500' : 'text-red-500'">
+                  <component :is="testResult.success ? PhCheck : PhWarning" size="18" weight="fill"/>
+                  {{ testResult.msg }}
+                </div>
+              </div>
+
+              <div class="flex flex-col sm:flex-row items-center gap-3">
+                <button @click="handleTestConnection" :disabled="isTesting"
+                        class="w-full sm:w-auto px-5 py-3 rounded-xl border border-[var(--glass-border)] font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-[var(--sidebar-active)]">
+                  <PhSpinner v-if="isTesting" class="animate-spin" size="18"/>
+                  <PhLightning v-else size="18" weight="bold"/>
+                  测试连接
+                </button>
+
+                <div class="hidden sm:block flex-1"></div>
+
+                <button @click="handleDownload" :disabled="isDownloading"
+                        class="w-full sm:w-auto px-5 py-3 rounded-xl border border-[var(--glass-border)] font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-[var(--sidebar-active)]">
+                  <PhSpinner v-if="isDownloading" class="animate-spin" size="18"/>
+                  <PhCloudArrowDown v-else size="18" weight="bold"/>
+                  恢复数据
+                </button>
+
+                <button @click="handleUpload" :disabled="isUploading"
+                        class="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent-color)] text-white font-bold text-sm transition-all hover:brightness-110 active:scale-95 shadow-lg flex items-center justify-center gap-2">
+                  <PhSpinner v-if="isUploading" class="animate-spin" size="18"/>
+                  <PhCloudArrowUp v-else size="18" weight="bold"/>
+                  立即备份
+                </button>
+              </div>
+
+              <div class="text-center pt-2">
+                <span class="text-xs opacity-40 font-mono">上次同步: {{ lastSyncTimeStr }}</span>
               </div>
             </div>
 

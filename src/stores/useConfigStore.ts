@@ -2,6 +2,7 @@ import {defineStore} from 'pinia';
 import {ref, watch} from 'vue';
 import {storage} from '../utils/storage';
 import {parseBookmarkContent} from "../utils/bookmarkImporter";
+import {checkWebDavConnection, downloadFromWebDav, uploadToWebDav, WebDavConfig} from "../utils/webdav.ts";
 
 const CONFIG_KEY = 'voidtab-core-config';
 const WALLPAPER_KEY = 'voidtab-wallpaper-blob';
@@ -22,6 +23,14 @@ const generateColor = (str: string) => {
 };
 
 const defaultConfig = {
+    sync: {
+        enabled: false,
+        autoSync: false, // 是否自动同步
+        url: '',         // 例如：https://dav.jianguoyun.com/dav/
+        username: '',
+        password: '',    // 注意：坚果云通常需要使用"应用专用密码"
+        lastSyncTime: 0
+    },
     layout: [
         {
             id: 'group-1',
@@ -365,6 +374,58 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
+    const testSyncConnection = async (config: WebDavConfig) => {
+        return await checkWebDavConnection(config);
+    };
+
+    // 手动上传备份
+    const uploadBackup = async () => {
+        const {url, username, password} = config.value.sync;
+        if (!url || !username || !password) return {success: false, msg: '配置不完整'};
+
+        // 准备要备份的数据 (排除 sync 里面的密码等敏感信息，防止循环套娃，也可以选择包含)
+        // 这里我们选择包含，这样用户换电脑只需要输一次密码就能拉取所有配置
+        const backupData = JSON.parse(JSON.stringify(config.value));
+
+        // 记录上传时间
+        const now = Date.now();
+        backupData.sync.lastSyncTime = now;
+
+        const success = await uploadToWebDav({url, username, password}, backupData);
+        if (success) {
+            config.value.sync.lastSyncTime = now;
+            saveConfig(); // 保存最新的同步时间到本地
+            return {success: true, msg: '云端备份成功'};
+        } else {
+            return {success: false, msg: '上传失败，请检查网络或配置'};
+        }
+    };
+
+    // 手动恢复备份
+    const downloadBackup = async () => {
+        const {url, username, password} = config.value.sync;
+        if (!url || !username || !password) return {success: false, msg: '配置不完整'};
+
+        const data = await downloadFromWebDav({url, username, password});
+        if (data && data.layout) { // 简单校验数据有效性
+            // 覆盖本地配置
+            // 保留当前的 WebDAV 账号密码，防止覆盖后丢失连接
+            const currentSync = {...config.value.sync};
+
+            config.value = data;
+
+            // 确保账号密码不被旧备份里的空值覆盖（如果需要的话）
+            config.value.sync.url = currentSync.url;
+            config.value.sync.username = currentSync.username;
+            config.value.sync.password = currentSync.password;
+
+            saveConfig();
+            return {success: true, msg: '数据恢复成功'};
+        } else {
+            return {success: false, msg: '下载失败或云端无备份'};
+        }
+    };
+
     return {
         config,
         isLoaded,
@@ -391,6 +452,7 @@ export const useConfigStore = defineStore('config', () => {
         openContextMenu,
         closeContextMenu,
         rssCache,
-        setIconFallback
+        setIconFallback,
+        testSyncConnection, uploadBackup, downloadBackup
     };
 });

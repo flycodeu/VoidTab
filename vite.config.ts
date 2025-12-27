@@ -16,11 +16,17 @@ export default defineConfig({
                 target: 'https://api.open-meteo.com',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/weather/, '')
-            }
+            },
+            '/jianguoyun': {
+                target: 'https://dav.jianguoyun.com', // 🟢 只代理到域名
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/jianguoyun/, ''), // 🟢 剥离前缀
+                secure: false,
+            },
         }
     },
 
-    // ✨ 关键修正：移除 terser 配置，改用内置 esbuild
+    // 移除 terser 配置，改用内置 esbuild
     esbuild: {
         // 同样可以实现移除 console 和 debugger
         drop: ['console', 'debugger'],
