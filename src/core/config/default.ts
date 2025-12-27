@@ -74,7 +74,7 @@ export const defaultConfig: Config = {
         mode: 'light',
         sidebarPos: 'left',
         showTime: true,
-        gridMaxWidth: 1200,
+        gridMaxWidth: 2000,
 
         blur: 20,
         opacity: 0.6,
@@ -90,7 +90,8 @@ export const defaultConfig: Config = {
         gap: 24,
 
         showIconName: true,
-        iconTextSize: 12
+        iconTextSize: 12,
+        icon: 'Folder'
     },
 
     searchEngines: [

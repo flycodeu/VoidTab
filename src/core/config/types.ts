@@ -52,6 +52,8 @@ export interface ThemeConfig {
 
     showIconName: boolean;
     iconTextSize: number;
+
+    icon: 'Folder';
 }
 
 export interface SearchEngine {
