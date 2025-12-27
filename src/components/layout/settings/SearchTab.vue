@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useConfigStore } from '../../../../stores/useConfigStore';
+import { useConfigStore } from '../../../stores/useConfigStore.ts';
 import * as PhIcons from '@phosphor-icons/vue';
 import { PhTrash } from '@phosphor-icons/vue';
 

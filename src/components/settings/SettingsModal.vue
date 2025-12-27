@@ -5,18 +5,18 @@ import {
   PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage, PhMagicWand, PhDatabase, PhGlobe, PhPuzzlePiece, PhCloudArrowUp
 } from '@phosphor-icons/vue';
 
-import IconTab from '../layout/settings/tabs/IconTab.vue';
-import LayoutTab from '../layout/settings/tabs/LayoutTab.vue';
-import ThemeTab from '../layout/settings/tabs/ThemeTab.vue';
-import WidgetsTab from '../layout/settings/tabs/WidgetsTab.vue';
-import EffectsTab from '../layout/settings/tabs/EffectsTab.vue';
-import SearchTab from '../layout/settings/tabs/SearchTab.vue';
-import DataTab from '../layout/settings/tabs/DataTab.vue';
-import SyncTab from '../layout/settings/tabs/SyncTab.vue';
+import IconTab from '../layout/settings/IconTab.vue';
+import LayoutTab from '../layout/settings/LayoutTab.vue';
+import ThemeTab from '../layout/settings/ThemeTab.vue';
+import WidgetsTab from '../layout/settings/WidgetsTab.vue';
+import EffectsTab from '../layout/settings/EffectsTab.vue';
+import SearchTab from '../layout/settings/SearchTab.vue';
+import DataTab from '../layout/settings/DataTab.vue';
+import SyncTab from '../layout/settings/SyncTab.vue';
 
 defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
-const store = useConfigStore();
+ useConfigStore();
 
 const menuItems = [
   {id: 'icon', label: '图标', icon: PhSquaresFour},

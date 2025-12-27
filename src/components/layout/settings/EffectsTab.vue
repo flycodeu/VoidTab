@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useConfigStore } from '../../../../stores/useConfigStore';
+import { useConfigStore } from '../../../stores/useConfigStore.ts';
 import { PhTextT, PhLightning, PhFrameCorners, PhCursorClick } from '@phosphor-icons/vue';
 
 const store = useConfigStore();

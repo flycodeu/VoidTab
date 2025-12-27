@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
-import {useConfigStore} from '../../../../stores/useConfigStore';
-import type {WebDavProfile} from '../../../../core/sync';
+import {useConfigStore} from '../../../stores/useConfigStore.ts';
+import type {WebDavProfile} from '../../../core/sync';
 import {PhCloudArrowUp, PhCloudArrowDown, PhWarning, PhSpinner, PhCheck, PhLightning} from '@phosphor-icons/vue';
 
 const store = useConfigStore();

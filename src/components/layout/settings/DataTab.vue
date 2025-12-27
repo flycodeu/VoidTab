@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useConfigStore } from '../../../../stores/useConfigStore';
+import { useConfigStore } from '../../../stores/useConfigStore.ts';
 import { PhDownloadSimple, PhFileArrowUp, PhBookmarkSimple } from '@phosphor-icons/vue';
 
-import { migrateConfig } from '../../../../core/config/migrate';
-import { normalizeConfig } from '../../../../core/config/normalize';
+import { migrateConfig } from '../../../core/config/migrate.ts';
+import { normalizeConfig } from '../../../core/config/normalize.ts';
 
 const store = useConfigStore();
 const fileInput = ref<HTMLInputElement | null>(null);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useConfigStore } from '../../../../stores/useConfigStore';
+import { useConfigStore } from '../../../stores/useConfigStore.ts';
 
 const store = useConfigStore();
 const greetingWidget = computed(() => (store.config.widgets as any[])?.find((w: any) => w.id === 'greeting'));

@@ -19,7 +19,7 @@ const emit = defineEmits<{
   (e: 'openSettings'): void;
 }>();
 
-const store = useConfigStore();
+ useConfigStore();
 
 const mainPaddingClass = computed(() => {
   if (props.isFocusMode) return '';
