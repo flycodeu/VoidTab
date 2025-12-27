@@ -7,6 +7,7 @@ import {
   PhArrowsLeftRight, PhPencilSimple, PhCheck
 } from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
+import {useUiStore} from './stores/useUiStore';
 
 // --- 首屏核心组件 ---
 import CustomCursor from './components/ui/CustomCursor.vue';
@@ -25,6 +26,7 @@ const GroupDialog = defineAsyncComponent(() => import('./components/ui/GroupDial
 
 useTheme();
 const store = useConfigStore();
+const ui = useUiStore();
 
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
@@ -43,7 +45,7 @@ const siteDialog = ref<DialogState>({show: false, isEdit: false, groupId: '', in
 const groupDialog = ref<DialogState>({show: false, isEdit: false, groupId: '', initialData: null});
 
 const handleGlobalEdit = () => {
-  const {type, item, groupId} = store.contextMenu;
+  const {type, item, groupId} = ui.contextMenu;
   if (type === 'site') {
     siteDialog.value = {show: true, isEdit: true, groupId: groupId, initialData: {...item}};
   } else if (type === 'group') {
@@ -105,8 +107,8 @@ onMounted(async () => {
 
   <div v-else class="h-screen w-full relative overflow-hidden font-sans flex flex-col transition-all duration-500"
        :class="[store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row', { 'cursor-hidden': store.config.theme.customCursor }]"
-       @click="store.closeContextMenu()"
-       @contextmenu="store.closeContextMenu()"
+       @click="ui.closeContextMenu()"
+       @contextmenu="ui.closeContextMenu()"
        style="color: var(--text-primary);">
 
     <CustomCursor/>

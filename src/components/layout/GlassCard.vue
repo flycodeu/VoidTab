@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from 'vue';
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 import * as PhIcons from '@phosphor-icons/vue';
 import {PhGlobe, PhTrash, PhPencilSimple} from '@phosphor-icons/vue';
@@ -16,37 +16,39 @@ const props = defineProps<{
     iconValue?: string;
     bgColor?: string;
   };
-  // 接收编辑模式
   isEditMode?: boolean;
 }>();
 
-// 定义删除事件
 defineEmits(['delete']);
 
 const isLoaded = ref(false);
-let timeoutTimer: any = null;
+let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-// --- URL 计算逻辑 ---
+/** 当前是否 auto 模式（兼容旧数据没有 iconType） */
+const isAuto = computed(() => props.item.iconType === 'auto' || !props.item.iconType);
+
+/** 自动图标 URL（auto 才生成） */
 const autoIconUrl = computed(() => {
-  if (props.item.iconType === 'text' || props.item.iconType === 'icon') return '';
+  if (!isAuto.value) return '';
+  if (!props.item.url) return '';
   return getHighResIconUrl(props.item.url);
 });
 
-// --- 文字显示逻辑 ---
+/** 文字显示（主要用于 text 模式 + 兜底） */
 const displayIconValue = computed(() => {
-  if (props.item.iconType === 'text') {
-    if (props.item.iconValue && props.item.iconValue.length > 1) return props.item.iconValue;
-    const clean = (props.item.title || '').trim().replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
-    if (/[\u4e00-\u9fa5]/.test(clean)) return clean.substring(0, 2);
-    return clean.substring(0, 4).toUpperCase() || props.item.title.substring(0, 2);
-  }
-  return '';
+  if (props.item.iconType !== 'text') return '';
+  if (props.item.iconValue && props.item.iconValue.length > 0) return props.item.iconValue;
+
+  // 兜底：尽量不依赖这里（正常应由 normalize / setIconFallback 补齐）
+  const clean = (props.item.title || '').trim().replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+  if (/[\u4e00-\u9fa5]/.test(clean)) return clean.substring(0, 2);
+  return (clean.substring(0, 4).toUpperCase() || (props.item.title || 'A').substring(0, 2));
 });
 
-// --- 动态字体大小 ---
+/** 动态字体大小 */
 const dynamicFontSize = computed(() => {
   const baseSize = Number(store.config.theme.iconSize);
-  const text = displayIconValue.value;
+  const text = displayIconValue.value || '';
   const len = text.length;
   if (len >= 4) return baseSize * 0.3;
   if (len === 3) return baseSize * 0.35;
@@ -54,6 +56,7 @@ const dynamicFontSize = computed(() => {
   return baseSize * 0.5;
 });
 
+/** icon 模式组件 */
 const PhosphorIcon = computed(() => {
   if (props.item.iconType === 'icon' && props.item.iconValue) {
     const name = 'Ph' + props.item.iconValue.replace(/^Ph/, '');
@@ -62,37 +65,60 @@ const PhosphorIcon = computed(() => {
   return PhGlobe;
 });
 
-// --- 加载处理 ---
-const handleImgLoad = () => {
-  isLoaded.value = true;
-  if (timeoutTimer) clearTimeout(timeoutTimer);
+const clearTimer = () => {
+  if (timeoutTimer) {
+    clearTimeout(timeoutTimer);
+    timeoutTimer = null;
+  }
 };
 
 const triggerFallback = () => {
-  if (props.item.iconType === 'auto' || !props.item.iconType) {
-    store.setIconFallback(props.item.id);
-  }
+  // 只允许 auto 模式降级，避免 text/icon 被误伤
+  if (!isAuto.value) return;
+  store.setIconFallback(props.item.id);
 };
 
+/** 图片成功加载 */
+const handleImgLoad = () => {
+  isLoaded.value = true;
+  clearTimer();
+};
+
+/** 统一启动超时：防止被拦截/内网等导致一直 pending */
+const startTimeout = () => {
+  clearTimer();
+  isLoaded.value = false;
+
+  // 仅 auto 且存在 url 才设超时
+  if (!isAuto.value) return;
+  if (!autoIconUrl.value) return;
+
+  timeoutTimer = setTimeout(() => {
+    if (!isLoaded.value) triggerFallback();
+  }, 2500);
+};
+
+/** item 变化时：重置加载状态 + 重新计时 */
+watch(
+    () => [props.item.url, props.item.iconType, props.item.iconValue, props.item.bgColor, props.item.title],
+    () => {
+      startTimeout();
+    },
+    {immediate: true}
+);
+
 onMounted(() => {
-  if ((props.item.iconType === 'auto' || !props.item.iconType) && autoIconUrl.value) {
-    timeoutTimer = setTimeout(() => {
-      if (!isLoaded.value) {
-        // console.warn('图标加载超时(可能是被拦截)，强制转为文字:', props.item.title);
-        triggerFallback();
-      }
-    }, 2500);
-  }
+  startTimeout();
 });
 
 onUnmounted(() => {
-  if (timeoutTimer) clearTimeout(timeoutTimer);
+  clearTimer();
 });
 
-//  核心：拦截点击事件
+/** 编辑模式：拦截点击跳转 */
 const handleClick = (e: MouseEvent) => {
   if (props.isEditMode) {
-    e.preventDefault(); // 阻止跳转
+    e.preventDefault();
     e.stopPropagation();
   }
 };
@@ -105,9 +131,8 @@ const handleClick = (e: MouseEvent) => {
       @click="handleClick"
       class="group relative flex flex-col items-center gap-2 p-1 rounded-xl transition-all duration-300"
       :class="[
-        // ✨ 编辑模式下：添加抓手样式、取消原有 hover、添加抖动动画
-        isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
-      ]"
+      isEditMode ? 'cursor-grab active:cursor-grabbing animate-shake' : 'hover:-translate-y-1 cursor-pointer'
+    ]"
   >
     <div
         class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
@@ -118,9 +143,9 @@ const handleClick = (e: MouseEvent) => {
         borderRadius: store.config.theme.radius + 'px'
       }"
     >
-
+      <!-- auto 图标 -->
       <img
-          v-if="(item.iconType === 'auto' || !item.iconType) && autoIconUrl"
+          v-if="isAuto && autoIconUrl"
           :src="autoIconUrl"
           class="w-full h-full object-cover bg-white"
           loading="lazy"
@@ -129,19 +154,24 @@ const handleClick = (e: MouseEvent) => {
           alt="icon"
       />
 
+      <!-- auto 的占位图标（未加载/无url） -->
       <PhGlobe
-          v-if="(item.iconType === 'auto' || !item.iconType) && (!isLoaded || !autoIconUrl)"
+          v-if="isAuto && (!isLoaded || !autoIconUrl)"
           :size="Number(store.config.theme.iconSize) * 0.5"
           weight="duotone"
           class="absolute z-[-1]"
       />
 
-      <span v-else-if="item.iconType === 'text'"
-            class="font-bold select-none leading-none flex items-center justify-center text-center break-all px-0.5"
-            :style="{ fontSize: dynamicFontSize + 'px' }">
+      <!-- text 模式 -->
+      <span
+          v-else-if="item.iconType === 'text'"
+          class="font-bold select-none leading-none flex items-center justify-center text-center break-all px-0.5"
+          :style="{ fontSize: dynamicFontSize + 'px' }"
+      >
         {{ displayIconValue }}
       </span>
 
+      <!-- icon 模式 -->
       <component
           v-else
           :is="PhosphorIcon"
@@ -149,23 +179,30 @@ const handleClick = (e: MouseEvent) => {
           weight="fill"
       />
 
-      <div v-if="isEditMode"
-           class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10 animate-fade-in">
+      <!-- 编辑遮罩 -->
+      <div
+          v-if="isEditMode"
+          class="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex items-center justify-center z-10 animate-fade-in"
+      >
         <PhPencilSimple size="24" class="text-white drop-shadow-md"/>
       </div>
     </div>
 
-    <span v-if="store.config.theme.showIconName"
-          class="font-medium opacity-80 group-hover:opacity-100 transition-opacity truncate text-center leading-tight"
-          :style="{
-            width: (Number(store.config.theme.iconSize) + 16) + 'px',
-            fontSize: store.config.theme.iconTextSize + 'px',
-            color: 'var(--text-primary)',
-            textShadow: '0 1px 2px rgba(0,0,0,0.5)'
-          }">
+    <!-- 名称 -->
+    <span
+        v-if="store.config.theme.showIconName"
+        class="font-medium opacity-80 group-hover:opacity-100 transition-opacity truncate text-center leading-tight"
+        :style="{
+        width: (Number(store.config.theme.iconSize) + 16) + 'px',
+        fontSize: store.config.theme.iconTextSize + 'px',
+        color: 'var(--text-primary)',
+        textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+      }"
+    >
       {{ item.title }}
     </span>
 
+    <!-- 删除按钮 -->
     <button
         v-if="isEditMode"
         @click.prevent.stop="$emit('delete')"
@@ -177,7 +214,6 @@ const handleClick = (e: MouseEvent) => {
 </template>
 
 <style scoped>
-/* ✨ 抖动动画 */
 @keyframes shake {
   0% {
     transform: rotate(0deg);
@@ -200,7 +236,6 @@ const handleClick = (e: MouseEvent) => {
   animation: shake 0.25s infinite ease-in-out;
 }
 
-/* 按钮弹出动画 */
 @keyframes popIn {
   0% {
     transform: scale(0);

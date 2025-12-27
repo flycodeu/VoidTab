@@ -1,16 +1,24 @@
 <script setup lang="ts">
+import {computed, onUnmounted} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
-import {PhMonitor, PhPlus, PhGear} from '@phosphor-icons/vue';
+import {useUiStore} from '../../stores/useUiStore';
+import {PhMonitor, PhPlus, PhGear, PhSquaresFour} from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
-import {computed} from 'vue';
 
+const ui = useUiStore();
 const store = useConfigStore();
-const props = defineProps<{ activeGroupId: string, isFocusMode: boolean }>();
+
+const props = defineProps<{ activeGroupId: string; isFocusMode: boolean }>();
 const emit = defineEmits(['update:activeGroupId', 'openSettings', 'openGroupDialog']);
 
 let hoverTimer: any = null;
 
-// 样式逻辑
+onUnmounted(() => {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  hoverTimer = null;
+});
+
+/** 样式逻辑 */
 const sidebarStyle = computed(() => {
   const isDark = store.config.theme.mode === 'dark';
   return {
@@ -21,9 +29,15 @@ const sidebarStyle = computed(() => {
   };
 });
 
-// 拖拽逻辑
+/** group icon fallback */
+const getGroupIcon = (iconName: string) => {
+  const name = 'Ph' + String(iconName || '').replace(/^Ph/, '');
+  return (PhIcons as any)[name] || PhSquaresFour;
+};
+
+/** 拖拽逻辑：hover 切换 active group */
 const handleDragEnter = (groupId: string) => {
-  if (store.dragState && store.dragState.isDragging && groupId !== props.activeGroupId) {
+  if (ui.dragState?.isDragging && groupId !== props.activeGroupId) {
     if (hoverTimer) clearTimeout(hoverTimer);
     hoverTimer = setTimeout(() => {
       emit('update:activeGroupId', groupId);
@@ -31,25 +45,43 @@ const handleDragEnter = (groupId: string) => {
     }, 600);
   }
 };
+
 const handleDragLeave = () => {
   if (hoverTimer) clearTimeout(hoverTimer);
   hoverTimer = null;
 };
+
 const handleDrop = (targetGroupId: string) => {
   if (hoverTimer) clearTimeout(hoverTimer);
-  if (store.dragState && store.dragState.isDragging && store.dragState.item) {
-    store.moveSite(store.dragState.fromGroupId, targetGroupId, store.dragState.item.id);
+  hoverTimer = null;
+
+  if (ui.dragState?.isDragging && ui.dragState.item) {
+    const from = ui.dragState.fromGroupId;
+    const siteId = ui.dragState.item.id;
+
+    // ✅ 同组 drop 不做 move
+    if (from && from !== targetGroupId) {
+      store.moveSite(from, targetGroupId, siteId);
+    }
+
     emit('update:activeGroupId', targetGroupId);
-    store.setDragState(false);
+    ui.setDragState(false);
   }
+};
+
+const handleGroupContextMenu = (e: MouseEvent, group: any) => {
+  e.preventDefault();
+  e.stopPropagation();
+  ui.openContextMenu(e, group, 'group', group.id);
 };
 </script>
 
 <template>
-  <div v-if="!isFocusMode"
-       class="absolute top-0 h-full z-40 pointer-events-none flex flex-col justify-center"
-       :class="store.config.theme.sidebarPos === 'right' ? 'right-0' : 'left-0'">
-
+  <div
+      v-if="!isFocusMode"
+      class="absolute top-0 h-full z-40 pointer-events-none flex flex-col justify-center"
+      :class="store.config.theme.sidebarPos === 'right' ? 'right-0' : 'left-0'"
+  >
     <transition :name="store.config.theme.sidebarPos === 'right' ? 'slide-fade-right' : 'slide-fade'">
       <aside
           class="hidden md:flex pointer-events-auto w-[90px] h-[96%] rounded-[24px] flex-col items-center py-6 shadow-2xl transition-all duration-300"
@@ -57,7 +89,8 @@ const handleDrop = (targetGroupId: string) => {
           :style="sidebarStyle"
       >
         <div
-            class="mb-6 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+            class="mb-6 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg"
+        >
           <PhMonitor weight="fill" size="24"/>
         </div>
 
@@ -66,47 +99,59 @@ const handleDrop = (targetGroupId: string) => {
               v-for="group in store.config.layout"
               :key="group.id"
               @click="emit('update:activeGroupId', group.id)"
-
-              @contextmenu.stop="(e) => store.openContextMenu(e, group, 'group')"
-
+              @contextmenu="(e) => handleGroupContextMenu(e, group)"
               @dragenter.prevent="handleDragEnter(group.id)"
               @dragleave.prevent="handleDragLeave"
               @dragover.prevent
               @drop="handleDrop(group.id)"
               class="sidebar-drop-zone relative w-full aspect-square rounded-2xl transition-all flex flex-col items-center justify-center gap-1 group/btn border-2"
               :class="[
-                activeGroupId === group.id
-                  ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)] border-transparent'
-                  : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100 border-transparent',
-                { 'effect-breathe': store.config.theme.breathingLight && activeGroupId === group.id },
-                (store.dragState && store.dragState.isDragging && activeGroupId !== group.id)
-                  ? '!opacity-100 border-dashed border-[var(--accent-color)] bg-[var(--accent-color)]/10'
-                  : ''
-              ]"
+              activeGroupId === group.id
+                ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)] border-transparent'
+                : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100 border-transparent',
+              { 'effect-breathe': store.config.theme.breathingLight && activeGroupId === group.id },
+              (ui.dragState?.isDragging && activeGroupId !== group.id)
+                ? '!opacity-100 border-dashed border-[var(--accent-color)] bg-[var(--accent-color)]/10'
+                : ''
+            ]"
               :data-group-id="group.id"
           >
             <div class="pointer-events-none flex flex-col items-center gap-1">
-              <component :is="(PhIcons as any)['Ph' + group.icon]" size="26" weight="duotone"
-                         class="transition-transform group-hover/btn:scale-110"/>
-              <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">{{ group.title }}</span>
+              <component
+                  :is="getGroupIcon(group.icon)"
+                  size="26"
+                  weight="duotone"
+                  class="transition-transform group-hover/btn:scale-110"
+              />
+              <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">
+                {{ group.title }}
+              </span>
             </div>
-            <div v-if="activeGroupId === group.id"
-                 class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"></div>
+
+            <div
+                v-if="activeGroupId === group.id"
+                class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"
+            />
           </button>
 
-          <button @click="emit('openGroupDialog')"
-                  class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2">
+          <button
+              @click="emit('openGroupDialog')"
+              class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2"
+          >
             <PhPlus size="24"/>
           </button>
         </div>
 
-        <button @click="emit('openSettings')"
-                class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all">
+        <button
+            @click="emit('openSettings')"
+            class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all"
+        >
           <PhGear :size="26" weight="duotone"/>
         </button>
       </aside>
     </transition>
 
+    <!-- mobile nav 你原来用 ... 占位，我不动，避免你结构丢失 -->
     <transition name="slide-up">
       <nav class="md:hidden ...">...</nav>
     </transition>
@@ -114,30 +159,35 @@ const handleDrop = (targetGroupId: string) => {
 </template>
 
 <style scoped>
-/* 保持你的 Slide 动画样式不变 */
-.slide-fade-enter-active, .slide-fade-leave-active {
+.slide-fade-enter-active,
+.slide-fade-leave-active {
   transition: all 0.3s ease;
 }
 
-.slide-fade-enter-from, .slide-fade-leave-to {
+.slide-fade-enter-from,
+.slide-fade-leave-to {
   transform: translateX(-20px);
   opacity: 0;
 }
 
-.slide-fade-right-enter-active, .slide-fade-right-leave-active {
+.slide-fade-right-enter-active,
+.slide-fade-right-leave-active {
   transition: all 0.3s ease;
 }
 
-.slide-fade-right-enter-from, .slide-fade-right-leave-to {
+.slide-fade-right-enter-from,
+.slide-fade-right-leave-to {
   transform: translateX(20px);
   opacity: 0;
 }
 
-.slide-up-enter-active, .slide-up-leave-active {
+.slide-up-enter-active,
+.slide-up-leave-active {
   transition: all 0.3s ease;
 }
 
-.slide-up-enter-from, .slide-up-leave-to {
+.slide-up-enter-from,
+.slide-up-leave-to {
   transform: translateY(100%);
 }
 </style>
