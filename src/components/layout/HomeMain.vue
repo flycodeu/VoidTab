@@ -47,13 +47,6 @@ const mainPaddingClass = computed(() => {
 
     <transition name="fade">
       <div
-          class="sticky top-0 z-20 w-full h-[120px] -mb-[120px] pointer-events-none soft-mist-layer"
-          :class="isFocusMode ? 'translate-y-[20vh]' : ''"
-      ></div>
-    </transition>
-
-    <transition name="fade">
-      <div
           class="sticky top-0 z-30 w-full flex justify-center pt-6 pb-4 transition-all duration-300 pointer-events-none"
           :class="isFocusMode ? 'translate-y-[20vh]' : ''"
       >
