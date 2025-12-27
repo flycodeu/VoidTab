@@ -1,32 +1,15 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import {PhX, PhSquaresFour, PhWarningCircle} from '@phosphor-icons/vue';
+import {PhX, PhSquaresFour} from '@phosphor-icons/vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 
-// 引入 Widget 组件（已内置）
-import WeatherWidget from '../widgets/WeatherWidget.vue';
-import GitHubTrendsWidget from '../widgets/GitHubTrendsWidget.vue';
-import SystemWidget from '../widgets/SystemWidget.vue';
-import RSSWidget from '../widgets/RSSWidget.vue';
+import WidgetCard from './widget-panel/WidgetCard.vue';
 
 defineProps<{ isOpen: boolean }>();
 const emit = defineEmits(['close']);
 const store = useConfigStore();
 
-/**
- * ✅ Widget 注册表：后续你要开源/扩展，直接在这里新增
- * 也可以进一步抽到 core/widgets/registry.ts（后面步骤再做）
- */
-const widgetRegistry: Record<string, any> = {
-  weather: WeatherWidget,
-  github: GitHubTrendsWidget,
-  system: SystemWidget,
-  rss: RSSWidget
-};
-
-/**
- * ✅ 统一可见 widget 列表（容错 order）
- */
+/** ✅ 统一可见 widget 列表（容错 order） */
 const visibleWidgets = computed(() => {
   const list = Array.isArray(store.config.widgets) ? store.config.widgets : [];
   return list
@@ -38,13 +21,6 @@ const visibleWidgets = computed(() => {
         return ao - bo;
       });
 });
-
-/**
- * ✅ 获取 widget 组件（unknown 兜底）
- */
-const getWidgetComponent = (id: string) => {
-  return widgetRegistry[id] ?? null;
-};
 </script>
 
 <template>
@@ -55,6 +31,7 @@ const getWidgetComponent = (id: string) => {
       <div
           class="relative w-full max-w-7xl h-[85vh] md:h-[80vh] apple-glass rounded-[32px] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-white/10 bg-[var(--glass-surface)]"
       >
+        <!-- header -->
         <div
             class="flex items-center justify-between px-8 py-5 border-b border-[var(--glass-border)] bg-[var(--sidebar-active)] select-none shrink-0 z-10"
         >
@@ -75,41 +52,11 @@ const getWidgetComponent = (id: string) => {
           </button>
         </div>
 
+        <!-- body -->
         <div class="flex-1 overflow-y-auto p-6 md:p-8 custom-scroll">
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-10">
             <template v-for="widget in visibleWidgets" :key="widget.id">
-              <div
-                  class="w-full h-[400px] flex flex-col rounded-3xl transition-all duration-300 relative group"
-                  :class="[
-                  Number(widget.colSpan) >= 3
-                    ? 'lg:col-span-3'
-                    : Number(widget.colSpan) === 2
-                      ? 'lg:col-span-2'
-                      : 'lg:col-span-1',
-                  'hover:-translate-y-1 hover:shadow-xl'
-                ]"
-              >
-                <!-- ✅ 已注册的 widget -->
-                <component
-                    v-if="getWidgetComponent(widget.id)"
-                    :is="getWidgetComponent(widget.id)"
-                    :settings="widget.config"
-                    class="w-full flex-1 shadow-sm"
-                />
-
-                <!-- ✅ 未注册/未知 widget：兜底展示，不让页面崩 -->
-                <div
-                    v-else
-                    class="w-full flex-1 rounded-3xl border border-white/10 bg-white/5 flex flex-col items-center justify-center text-center p-6"
-                >
-                  <PhWarningCircle size="40" weight="duotone" class="opacity-60 mb-4"/>
-                  <div class="text-sm font-bold opacity-80 mb-1">未注册的小组件</div>
-                  <div class="text-xs opacity-50 leading-relaxed">
-                    ID: <span class="font-mono">{{ widget.id }}</span><br/>
-                    请在 <span class="font-mono">WidgetPanel.vue</span> 的 registry 中注册组件
-                  </div>
-                </div>
-              </div>
+              <WidgetCard :widget="widget"/>
             </template>
 
             <div

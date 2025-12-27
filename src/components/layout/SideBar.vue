@@ -1,24 +1,23 @@
 <script setup lang="ts">
-import {computed, onUnmounted} from 'vue';
+import {computed} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 import {useUiStore} from '../../stores/useUiStore';
-import {PhMonitor, PhPlus, PhGear, PhSquaresFour} from '@phosphor-icons/vue';
-import * as PhIcons from '@phosphor-icons/vue';
+import {PhMonitor, PhPlus, PhGear} from '@phosphor-icons/vue';
+
+import SidebarGroupButton from './sidebar/SidebarGroupButton.vue';
+import {useSidebarDragHandlers} from '../../composables/useSidebarDragHandlers';
 
 const ui = useUiStore();
 const store = useConfigStore();
 
 const props = defineProps<{ activeGroupId: string; isFocusMode: boolean }>();
-const emit = defineEmits(['update:activeGroupId', 'openSettings', 'openGroupDialog']);
+const emit = defineEmits<{
+  (e: 'update:activeGroupId', id: string): void;
+  (e: 'openSettings'): void;
+  (e: 'openGroupDialog'): void;
+}>();
 
-let hoverTimer: any = null;
-
-onUnmounted(() => {
-  if (hoverTimer) clearTimeout(hoverTimer);
-  hoverTimer = null;
-});
-
-/** 样式逻辑 */
+/** 玻璃样式（保留你的逻辑） */
 const sidebarStyle = computed(() => {
   const isDark = store.config.theme.mode === 'dark';
   return {
@@ -29,50 +28,26 @@ const sidebarStyle = computed(() => {
   };
 });
 
-/** group icon fallback */
-const getGroupIcon = (iconName: string) => {
-  const name = 'Ph' + String(iconName || '').replace(/^Ph/, '');
-  return (PhIcons as any)[name] || PhSquaresFour;
-};
-
-/** 拖拽逻辑：hover 切换 active group */
-const handleDragEnter = (groupId: string) => {
-  if (ui.dragState?.isDragging && groupId !== props.activeGroupId) {
-    if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => {
-      emit('update:activeGroupId', groupId);
-      hoverTimer = null;
-    }, 600);
-  }
-};
-
-const handleDragLeave = () => {
-  if (hoverTimer) clearTimeout(hoverTimer);
-  hoverTimer = null;
-};
-
-const handleDrop = (targetGroupId: string) => {
-  if (hoverTimer) clearTimeout(hoverTimer);
-  hoverTimer = null;
-
-  if (ui.dragState?.isDragging && ui.dragState.item) {
-    const from = ui.dragState.fromGroupId;
-    const siteId = ui.dragState.item.id;
-
-    // ✅ 同组 drop 不做 move
-    if (from && from !== targetGroupId) {
-      store.moveSite(from, targetGroupId, siteId);
-    }
-
-    emit('update:activeGroupId', targetGroupId);
-    ui.setDragState(false);
-  }
-};
-
+/** 右键菜单 */
 const handleGroupContextMenu = (e: MouseEvent, group: any) => {
   e.preventDefault();
   e.stopPropagation();
   ui.openContextMenu(e, group, 'group', group.id);
+};
+
+/** 拖拽：hover 切组 + drop 移动（抽到 composable） */
+const {handleDragEnter, handleDragLeave, handleDrop} = useSidebarDragHandlers({
+  dragState: ui.dragState,
+  getActiveGroupId: () => props.activeGroupId,
+  setActiveGroupId: (id) => emit('update:activeGroupId', id),
+  moveSite: (from, to, siteId) => store.moveSite(from, to, siteId),
+  endDrag: () => ui.setDragState(false),
+  hoverDelay: 600
+});
+
+/** 计算某个 group 是否显示 drop hint（你原逻辑：拖拽中且不是 active） */
+const shouldShowDropHint = (groupId: string) => {
+  return !!(ui.dragState?.isDragging && props.activeGroupId !== groupId);
 };
 </script>
 
@@ -88,52 +63,31 @@ const handleGroupContextMenu = (e: MouseEvent, group: any) => {
           :class="store.config.theme.sidebarPos === 'right' ? 'mr-4' : 'ml-4'"
           :style="sidebarStyle"
       >
+        <!-- 顶部 Logo -->
         <div
             class="mb-6 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg"
         >
           <PhMonitor weight="fill" size="24"/>
         </div>
 
+        <!-- 分组列表 -->
         <div class="flex-1 flex flex-col gap-3 w-full px-2 overflow-y-auto no-scrollbar">
-          <button
+          <SidebarGroupButton
               v-for="group in store.config.layout"
               :key="group.id"
-              @click="emit('update:activeGroupId', group.id)"
-              @contextmenu="(e) => handleGroupContextMenu(e, group)"
-              @dragenter.prevent="handleDragEnter(group.id)"
-              @dragleave.prevent="handleDragLeave"
-              @dragover.prevent
-              @drop="handleDrop(group.id)"
-              class="sidebar-drop-zone relative w-full aspect-square rounded-2xl transition-all flex flex-col items-center justify-center gap-1 group/btn border-2"
-              :class="[
-              activeGroupId === group.id
-                ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)] border-transparent'
-                : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100 border-transparent',
-              { 'effect-breathe': store.config.theme.breathingLight && activeGroupId === group.id },
-              (ui.dragState?.isDragging && activeGroupId !== group.id)
-                ? '!opacity-100 border-dashed border-[var(--accent-color)] bg-[var(--accent-color)]/10'
-                : ''
-            ]"
-              :data-group-id="group.id"
-          >
-            <div class="pointer-events-none flex flex-col items-center gap-1">
-              <component
-                  :is="getGroupIcon(group.icon)"
-                  size="26"
-                  weight="duotone"
-                  class="transition-transform group-hover/btn:scale-110"
-              />
-              <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">
-                {{ group.title }}
-              </span>
-            </div>
+              :group="group"
+              :active="props.activeGroupId === group.id"
+              :isDragging="!!ui.dragState?.isDragging"
+              :showDropHint="shouldShowDropHint(group.id)"
+              :breathingLight="!!store.config.theme.breathingLight"
+              :onSelect="(id) => emit('update:activeGroupId', id)"
+              :onContextMenu="handleGroupContextMenu"
+              :onDragEnter="handleDragEnter"
+              :onDragLeave="handleDragLeave"
+              :onDrop="handleDrop"
+          />
 
-            <div
-                v-if="activeGroupId === group.id"
-                class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"
-            />
-          </button>
-
+          <!-- 新建分组 -->
           <button
               @click="emit('openGroupDialog')"
               class="w-full aspect-square rounded-2xl border-2 border-dashed border-current opacity-20 hover:opacity-60 flex items-center justify-center mt-2"
@@ -142,6 +96,7 @@ const handleGroupContextMenu = (e: MouseEvent, group: any) => {
           </button>
         </div>
 
+        <!-- 设置 -->
         <button
             @click="emit('openSettings')"
             class="mt-4 p-3 rounded-xl hover:bg-[var(--sidebar-active)] opacity-70 hover:opacity-100 transition-all"
