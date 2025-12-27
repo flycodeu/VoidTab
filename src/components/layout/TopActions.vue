@@ -48,7 +48,6 @@ const emit = defineEmits<{
         title="AI 助手"
     >
       <PhRobot size="20" weight="bold"/>
-      <span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
     </button>
     <button
         @click="emit('toggleEdit')"

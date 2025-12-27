@@ -26,9 +26,10 @@ export const defaultConfig: Config = {
 
     ai: {
         enabled: true,
-        provider: 'deepseek',
+        // 默认预设为 DeepSeek
+        baseUrl: 'https://api.deepseek.com',
         apiKey: '',
-        model: 'deepseek-chat', // DeepSeek V3/R1
+        model: 'deepseek-chat',
         temperature: 0.7,
         maxHistory: 10
     },

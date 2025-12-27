@@ -65,11 +65,12 @@ export interface SearchEngine {
 
 export interface AiConfig {
     enabled: boolean;
-    provider: 'deepseek' | 'openai'; // 预留扩展
+    // 移除 provider 枚举，改为通用配置
+    baseUrl: string;  // 新增：接口地址 (例如 https://api.deepseek.com)
     apiKey: string;
-    model: string;
+    model: string;    // 模型名称 (例如 deepseek-chat)
     temperature: number;
-    maxHistory: number; // 上下文携带条数
+    maxHistory: number;
 }
 
 
