@@ -84,7 +84,8 @@ export interface Config {
     searchEngines: SearchEngine[];
     currentEngineId: string;
 
-    ai: AiConfig
+    ai: AiConfig,
+    focusMode: boolean;
 }
 
 

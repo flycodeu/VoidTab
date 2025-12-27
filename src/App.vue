@@ -34,10 +34,17 @@ const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
 
-const isFocusMode = ref(false);
 const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
 
+
+const isFocusMode = computed({
+  get: () => store.config.focusMode,
+  set: (val: boolean) => {
+    store.config.focusMode = val;
+    store.saveConfig(); // 触发保存（会自动同步到 WebDAV）
+  }
+});
 //  拆分后的对话框逻辑
 const dialogs = useDialogs(store, ui);
 

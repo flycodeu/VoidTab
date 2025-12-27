@@ -150,6 +150,12 @@ export function normalizeConfig(raw: any): Config {
         ...(input.theme || {})
     };
 
+
+    // 如果 input 里有布尔值就用，没有就用默认(false)
+    out.focusMode = typeof input.focusMode === 'boolean'
+        ? input.focusMode
+        : base.focusMode;
+
     // 🟢 ai: 确保 AI 配置即使是旧数据也能补全
     out.ai = {
         ...base.ai,

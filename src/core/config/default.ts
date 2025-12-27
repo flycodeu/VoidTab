@@ -107,5 +107,7 @@ export const defaultConfig: Config = {
         {id: 'google', name: 'Google', url: 'https://www.google.com/search?q=', icon: 'Globe'},
         {id: 'baidu', name: 'Baidu', url: 'https://www.baidu.com/s?wd=', icon: 'PawPrint'}
     ],
-    currentEngineId: 'bing'
+    currentEngineId: 'bing',
+
+    focusMode: false,
 };
