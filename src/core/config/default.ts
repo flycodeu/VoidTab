@@ -75,7 +75,6 @@ export const defaultConfig: Config = {
                 ]
             }
         },
-        {id: 'greeting', name: '问候语', visible: true, order: 0, colSpan: 1, config: {}}
     ],
 
     theme: {
