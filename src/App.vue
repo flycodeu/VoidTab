@@ -56,11 +56,8 @@ import {useDialogs} from './composables/useDialogs';
 
 const dialogLogic = useDialogs(store, ui);
 
-// ------------------------------
-// ✅ 滚轮切组：仅“非整理模式”接管
-// ------------------------------
-const WHEEL_THRESHOLD = 90;
-const WHEEL_COOLDOWN = 380;
+const WHEEL_THRESHOLD = 80;
+const WHEEL_COOLDOWN = 360;
 
 let wheelAcc = 0;
 let lastWheelTs = 0;
@@ -71,7 +68,7 @@ function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
 
-  // ✅ 整理模式：不接管滚轮（你要求自由滚动）
+  // ✅ 整理模式：不接管滚轮（允许滚动 + 拖拽边缘滚动）
   if (isGlobalEditMode.value) return false;
 
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
@@ -105,13 +102,10 @@ function onWheelCapture(e: WheelEvent) {
   if (!canWheelSwitchGroup()) return;
 
   const target = e.target as HTMLElement | null;
-
-  // 允许特定区域放行滚轮（如果你以后需要）
+  if (isTypingTarget(target)) return;
   if (target?.closest?.('[data-wheel-allow="true"]')) return;
 
-  if (isTypingTarget(target)) return;
-
-  // ✅ 非整理模式：接管滚轮（主页也不需要滚动）
+  // ✅ 非整理模式：禁止页面滚动
   e.preventDefault();
 
   if (wheelLocked) return;
@@ -146,7 +140,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  if (wheelHandler) window.removeEventListener('wheel', wheelHandler, {capture: true} as any);
+  if (wheelHandler) window.removeEventListener('wheel', wheelHandler, true);
 });
 </script>
 

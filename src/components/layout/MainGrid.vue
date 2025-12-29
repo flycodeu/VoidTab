@@ -27,10 +27,8 @@ const ui = useUiStore();
 const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | undefined;
 const openAddDialog = (gid: string) => dialog?.openAddDialog?.(gid);
 
-// grid styles
 const {gridStyle, itemContainerStyle} = useGridLayout(store.config.theme);
 
-// groups filter
 const {visibleGroups} = useVisibleGroups({
   groups: store.config.layout || [],
   isEditMode: () => props.isEditMode,
@@ -38,7 +36,6 @@ const {visibleGroups} = useVisibleGroups({
   dragState: ui.dragState
 });
 
-// drag logic
 const onDragStart = (event: any, group: any) => {
   const item = group.items?.[event.oldIndex];
   if (item) ui.setDragState(true, group.id, item);
@@ -54,7 +51,7 @@ const handleContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   ui.openContextMenu(e, item, 'site', groupId);
 };
 
-// delete modal state
+// 右键删除（如果你的右键菜单里已经有删除，这里保留不影响）
 const showDeleteModal = ref(false);
 const deleteTarget = ref<{ groupId: string; siteId: string } | null>(null);
 
@@ -75,7 +72,6 @@ const confirmDelete = () => {
     <div class="w-full transition-all duration-300 px-4" :style="{ maxWidth: store.config.theme.gridMaxWidth + 'px' }">
       <template v-for="group in visibleGroups" :key="group.id">
         <div class="transition-all duration-300 mb-8 animate-fade-in">
-          <!-- 编辑模式显示 group 标题 -->
           <div
               v-if="isEditMode"
               class="px-2 mb-3 text-[var(--accent-color)] font-bold tracking-wider text-sm flex items-center gap-2"
@@ -110,7 +106,6 @@ const confirmDelete = () => {
             >
               <div class="site-wrap">
                 <GlassCard
-                    class="site-card-root"
                     :item="item"
                     :isEditMode="isEditMode"
                     @delete="handleDelete(group.id, item.id, item.title)"
@@ -119,7 +114,6 @@ const confirmDelete = () => {
               </div>
             </div>
 
-            <!-- 添加卡片 -->
             <div :style="itemContainerStyle" class="site-tile ignore-drag" :class="{ 'arrange-mode': isEditMode }">
               <div class="site-wrap">
                 <AddCard
@@ -163,13 +157,13 @@ const confirmDelete = () => {
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.25s ease-out;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -177,7 +171,6 @@ const confirmDelete = () => {
   }
 }
 
-/* ✅ 轻 hover（不夸张） */
 .site-tile {
   transition: transform 120ms ease;
   will-change: transform;
@@ -187,59 +180,33 @@ const confirmDelete = () => {
   transform: translateY(-1px);
 }
 
-/* ✅ 关键：默认“完全透明”，只在 hover / 整理模式给极轻微色差 */
 .site-wrap {
   border-radius: 18px;
   padding: 6px;
-
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
 }
 
-/* hover 才出现一点点差异（非常克制） */
+/* hover：只有一点点色差（非常轻） */
 .site-tile:hover .site-wrap {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 :global(.dark) .site-tile:hover .site-wrap {
-  background: rgba(0, 0, 0, 0.10);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
+/* 整理模式：也只给一点点色差，仍然很透明 */
 .arrange-mode .site-wrap {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 :global(.dark) .arrange-mode .site-wrap {
-  background: rgba(0, 0, 0, 0.12);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-
-:deep(.site-card-root) {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-
-.arrange-mode :deep([class*="bg-red"]) {
-  display: none !important;
-}
-
-.arrange-mode :deep([class*="bg-rose"]) {
-  display: none !important;
-}
-
-.arrange-mode :deep(button[title*="编辑"]),
-.arrange-mode :deep(button[aria-label*="编辑"]),
-.arrange-mode :deep(button[title*="Edit"]),
-.arrange-mode :deep(button[aria-label*="Edit"]) {
-  display: none !important;
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 </style>
