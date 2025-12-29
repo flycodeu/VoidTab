@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import {useConfigStore} from '../../stores/useConfigStore';
 
 import TimeWidget from '../widgets/TimeWidget.vue';
 import SearchBar from '../widgets/SearchBar.vue';
@@ -19,73 +18,90 @@ const emit = defineEmits<{
   (e: 'openSettings'): void;
 }>();
 
- useConfigStore();
-
+// 侧栏变窄后主区域 padding 同步变小
 const mainPaddingClass = computed(() => {
   if (props.isFocusMode) return '';
-  if (props.sidebarPos === 'left') return 'md:pl-28';
-  return 'md:pr-28';
+  if (props.sidebarPos === 'left') return 'md:pl-24';
+  return 'md:pr-24';
 });
 </script>
 
 <template>
-  <main
-      class="flex-1 w-full h-full relative overflow-y-auto overflow-x-hidden scroll-smooth custom-main-scroll transition-all duration-300"
+  <main class="flex-1 w-full h-full relative overflow-y-auto overflow-x-hidden scroll-smooth custom-main-scroll"
       :class="mainPaddingClass"
   >
-    <transition name="fade">
-      <div
-          :class="isFocusMode ? 'scale-110 translate-y-[20vh]' : ''"
-          class="transition-all duration-500 w-full flex flex-col items-center pt-16 md:pt-24 pb-4 shrink-0"
-      >
-        <TimeWidget/>
-        <div v-if="showGreeting && !isFocusMode" class="mt-4 mb-2">
-          <GreetingWidget/>
-        </div>
+    <!-- 顶部：时间 + 问候 -->
+    <div
+        class="w-full flex flex-col items-center pt-16 md:pt-24 pb-6 shrink-0 transition-all duration-500"
+        :class="isFocusMode ? 'scale-110 translate-y-[18vh] opacity-95' : ''"
+    >
+      <TimeWidget/>
+      <div v-if="showGreeting && !isFocusMode" class="mt-4">
+        <GreetingWidget/>
       </div>
-    </transition>
+    </div>
 
-    <transition name="fade">
-      <div
-          class="sticky top-0 z-30 w-full flex justify-center pt-6 pb-4 transition-all duration-300 pointer-events-none"
-          :class="isFocusMode ? 'translate-y-[20vh]' : ''"
-      >
-        <div class="pointer-events-auto w-full flex justify-center px-4">
-          <SearchBar @openSettings="emit('openSettings')"/>
-        </div>
+    <!-- 搜索：居中 -->
+    <div
+        class="w-full flex justify-center pb-8 transition-all duration-300 pointer-events-none"
+        :class="isFocusMode ? 'translate-y-[18vh]' : ''"
+    >
+      <div class="pointer-events-auto w-full flex justify-center px-4">
+        <SearchBar @openSettings="emit('openSettings')"/>
       </div>
-    </transition>
+    </div>
 
-    <transition name="fade">
-      <div v-if="!isFocusMode" class="w-full px-4 md:px-12 pb-32 md:pb-20 pt-2 min-h-[500px]">
+    <div v-if="!isFocusMode" class="w-full flex justify-center px-4 md:px-10 pb-16">
+      <div class="w-full max-w-6xl">
         <MainGrid :activeGroupId="activeGroupId" :isEditMode="isEditMode"/>
       </div>
-    </transition>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
+
+:deep(.site-tile) {
+  transition: transform 160ms ease, opacity 160ms ease;
+  will-change: transform;
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+:deep(.site-tile:hover) {
+  transform: translateY(-3px) scale(1.03);
 }
 
-/* ✨✨✨ 单独定义的磨砂层样式 ✨✨✨ */
-.soft-mist-layer {
-  background-color: rgba(0, 0, 0, 0.02);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-
-  -webkit-mask-image: -webkit-linear-gradient(top, black 20%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 20%, transparent 100%);
+:deep(.site-tile:active) {
+  transform: translateY(-1px) scale(1.01);
 }
 
-:global(.dark) .soft-mist-layer {
-  background-color: rgba(0, 0, 0, 0.2);
+/* “图标+文字”整体承托层（你可以放在 site-tile 内部的 .site-unit 上） */
+:deep(.site-unit) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+:global(.dark) :deep(.site-unit) {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+
+:deep(.site-title) {
+  max-width: 110px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 </style>

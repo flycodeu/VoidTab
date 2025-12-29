@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import { computed } from 'vue';
 import * as PhIcons from '@phosphor-icons/vue';
-import {PhSquaresFour} from '@phosphor-icons/vue';
+import { PhSquaresFour } from '@phosphor-icons/vue';
 
 const props = defineProps<{
   group: any;
   active: boolean;
 
-  // 拖拽态：由父组件传入（逻辑集中在 composable）
   isDragging: boolean;
-  showDropHint: boolean; // 非当前 active 的按钮，在拖拽时显示虚线提示
+  showDropHint: boolean;
   breathingLight: boolean;
 
   onSelect: (groupId: string) => void;
@@ -33,26 +32,41 @@ const IconComp = computed(() => {
       @dragleave.prevent="onDragLeave"
       @dragover.prevent
       @drop="onDrop(group.id)"
-      class="sidebar-drop-zone relative w-full aspect-square rounded-2xl transition-all flex flex-col items-center justify-center gap-1 group/btn border-2"
+      class="relative w-full h-[54px] rounded-2xl transition-all flex flex-col items-center justify-center gap-[3px] border"
       :class="[
-      active ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)] border-transparent' : 'hover:bg-[var(--sidebar-active)] opacity-60 hover:opacity-100 border-transparent',
+      active
+        ? 'bg-[var(--sidebar-active)] text-[var(--accent-color)] border-transparent'
+        : 'hover:bg-[var(--sidebar-active)] border-transparent opacity-70 hover:opacity-100',
       { 'effect-breathe': breathingLight && active },
       showDropHint ? '!opacity-100 border-dashed border-[var(--accent-color)] bg-[var(--accent-color)]/10' : ''
     ]"
       :data-group-id="group.id"
+      :aria-current="active ? 'page' : undefined"
+      :title="group.title"
   >
-    <div class="pointer-events-none flex flex-col items-center gap-1">
+    <!-- icon + text 做成整体，文字增强清晰度 -->
+    <div class="pointer-events-none flex flex-col items-center leading-none">
       <component
           :is="IconComp"
-          size="26"
+          size="22"
           weight="duotone"
-          class="transition-transform group-hover/btn:scale-110"
+          class="transition-transform duration-200"
+          :class="active ? '' : 'group-hover:scale-110'"
       />
-      <span class="text-[10px] font-bold tracking-wide truncate max-w-full px-1">
+      <span
+          class="mt-1 text-[11px] font-semibold tracking-wide truncate max-w-full px-1"
+          style="text-shadow: 0 1px 2px rgba(0,0,0,0.25);"
+      >
         {{ group.title }}
       </span>
     </div>
 
-    <div v-if="active" class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"/>
+    <div
+        v-if="active"
+        class="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3 bg-[var(--accent-color)] rounded-full"
+    />
   </button>
 </template>
+
+<style scoped>
+</style>

@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onMounted, ref} from 'vue';
+import {computed, defineAsyncComponent, onMounted, onUnmounted, ref} from 'vue';
 import {useTheme} from './composables/useTheme';
 import {useConfigStore} from './stores/useConfigStore';
 import {useUiStore} from './stores/useUiStore';
 import {PhSpinner} from '@phosphor-icons/vue';
 
-// 组件引入
 import CustomCursor from './components/ui/CustomCursor.vue';
 import SideBar from './components/layout/SideBar.vue';
 import ContextMenu from './components/ui/context-menu/ContextMenu.vue';
@@ -15,22 +14,20 @@ import HomeMain from './components/layout/HomeMain.vue';
 import MobileGroupNav from './components/layout/MobileGroupNav.vue';
 import DeleteConfirmHost from './components/ui/DeleteConfirmHost.vue';
 
-// 异步组件
 const SettingsModal = defineAsyncComponent(() => import('./components/settings/SettingsModal.vue'));
 const WidgetPanel = defineAsyncComponent(() => import('./components/layout/WidgetPanel.vue'));
 const SiteDialog = defineAsyncComponent(() => import('./components/ui/dialogs/SiteDialog.vue'));
 const GroupDialog = defineAsyncComponent(() => import('./components/ui/dialogs/GroupDialog.vue'));
 const AiChatPanel = defineAsyncComponent(() => import('./components/layout/AiChatPanel.vue'));
 
-// Hook 初始化
 const store = useConfigStore();
 const ui = useUiStore();
-useTheme(); // 初始化主题监听
+useTheme();
 
-// 状态
 const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
+
 const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
 
@@ -51,17 +48,105 @@ const toggleSidebarPos = () => {
   store.config.theme.sidebarPos = store.config.theme.sidebarPos === 'left' ? 'right' : 'left';
 };
 
-// Dialogs 逻辑 (如果你没有抽离 hook，这里保持原样即可，为了代码整洁我简化了展示)
+const setActiveGroupId = (id: string) => {
+  activeGroupId.value = id;
+};
+
 import {useDialogs} from './composables/useDialogs';
 
 const dialogLogic = useDialogs(store, ui);
 
+// ------------------------------
+// ✅ 滚轮切组：仅“非整理模式”接管
+// ------------------------------
+const WHEEL_THRESHOLD = 90;
+const WHEEL_COOLDOWN = 380;
+
+let wheelAcc = 0;
+let lastWheelTs = 0;
+let wheelLocked = false;
+let wheelHandler: ((e: WheelEvent) => void) | null = null;
+
+function canWheelSwitchGroup() {
+  if (!store.isLoaded) return false;
+  if (isFocusMode.value) return false;
+
+  // ✅ 整理模式：不接管滚轮（你要求自由滚动）
+  if (isGlobalEditMode.value) return false;
+
+  if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
+  if (ui.dragState?.isDragging) return false;
+  return true;
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName?.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if ((el as any).isContentEditable) return true;
+  return false;
+}
+
+function switchGroup(dir: 1 | -1) {
+  const groups = store.config.layout || [];
+  if (groups.length <= 1) return;
+
+  const current = activeGroupId.value;
+  const idx = groups.findIndex(g => g.id === current);
+  const base = idx >= 0 ? idx : 0;
+  const nextIdx = (base + dir + groups.length) % groups.length;
+  const nextId = groups[nextIdx]?.id;
+  if (nextId) activeGroupId.value = nextId;
+}
+
+function onWheelCapture(e: WheelEvent) {
+  if (!e.cancelable) return;
+  if (!canWheelSwitchGroup()) return;
+
+  const target = e.target as HTMLElement | null;
+
+  // 允许特定区域放行滚轮（如果你以后需要）
+  if (target?.closest?.('[data-wheel-allow="true"]')) return;
+
+  if (isTypingTarget(target)) return;
+
+  // ✅ 非整理模式：接管滚轮（主页也不需要滚动）
+  e.preventDefault();
+
+  if (wheelLocked) return;
+
+  const now = performance.now();
+  if (now - lastWheelTs > 180) wheelAcc = 0;
+  lastWheelTs = now;
+
+  wheelAcc += e.deltaY;
+  if (Math.abs(wheelAcc) < WHEEL_THRESHOLD) return;
+
+  const dir = wheelAcc > 0 ? (1 as const) : (-1 as const);
+  wheelAcc = 0;
+
+  wheelLocked = true;
+  switchGroup(dir);
+
+  window.setTimeout(() => {
+    wheelLocked = false;
+  }, WHEEL_COOLDOWN);
+}
+
 onMounted(async () => {
   await store.loadConfig();
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
-  // 强制一次主题类名同步，防止初始闪烁
+
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
   document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
+
+  wheelHandler = (e: WheelEvent) => onWheelCapture(e);
+  window.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
+});
+
+onUnmounted(() => {
+  if (wheelHandler) window.removeEventListener('wheel', wheelHandler, {capture: true} as any);
 });
 </script>
 
@@ -76,9 +161,7 @@ onMounted(async () => {
   <div
       v-else
       class="h-screen w-full relative overflow-hidden font-sans"
-      :class="[
-        { 'cursor-none': store.config.theme.customCursor }
-      ]"
+      :class="[{ 'cursor-none': store.config.theme.customCursor }]"
       @click="ui.closeContextMenu()"
       @contextmenu="ui.closeContextMenu()"
       style="color: var(--text-primary);"
@@ -93,7 +176,6 @@ onMounted(async () => {
         class="relative z-10 w-full h-full flex flex-col transition-all duration-500"
         :class="store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row'"
     >
-
       <div class="absolute top-0 left-0 right-0 z-50 pointer-events-none">
         <TopActions
             class="pointer-events-auto"
@@ -112,7 +194,7 @@ onMounted(async () => {
           class="hidden md:flex z-40"
           :activeGroupId="activeGroupId"
           :isFocusMode="isFocusMode"
-          @update:activeGroupId="id => (activeGroupId = id)"
+          @update:activeGroupId="setActiveGroupId"
           @openSettings="showSettings = true"
           @openGroupDialog="dialogLogic.openAddGroupDialog"
       />
@@ -137,7 +219,7 @@ onMounted(async () => {
         :show="!isFocusMode"
         :groups="store.config.layout"
         :activeGroupId="activeGroupId"
-        @update:activeGroupId="id => (activeGroupId = id)"
+        @update:activeGroupId="setActiveGroupId"
         @openSettings="showSettings = true"
     />
 
@@ -173,12 +255,11 @@ onMounted(async () => {
       <DeleteConfirmHost/>
     </div>
 
-    <ContextMenu @edit="dialogLogic.handleContextMenuEdit" class="z-[999]"/>
+    <ContextMenu @edit="dialogLogic.handleContextMenuEdit"/>
   </div>
 </template>
 
 <style scoped>
-/* 保持你的滚动条样式 */
 .slide-fade-enter-active,
 .slide-fade-leave-active {
   transition: all 0.3s ease;
