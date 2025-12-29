@@ -68,7 +68,7 @@ function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
 
-  // ✅ 整理模式：不接管滚轮（允许滚动 + 拖拽边缘滚动）
+  //  整理模式：不接管滚轮（允许滚动 + 拖拽边缘滚动）
   if (isGlobalEditMode.value) return false;
 
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
@@ -99,13 +99,17 @@ function switchGroup(dir: 1 | -1) {
 
 function onWheelCapture(e: WheelEvent) {
   if (!e.cancelable) return;
-  if (!canWheelSwitchGroup()) return;
 
   const target = e.target as HTMLElement | null;
-  if (isTypingTarget(target)) return;
+
+  // 最高优先级：在允许滚动区域内，永远放行（不拦截、不切组）
   if (target?.closest?.('[data-wheel-allow="true"]')) return;
 
-  // ✅ 非整理模式：禁止页面滚动
+  // 下面才是“切分组”的逻辑
+  if (!canWheelSwitchGroup()) return;
+  if (isTypingTarget(target)) return;
+
+  //  非整理模式：禁止页面滚动
   e.preventDefault();
 
   if (wheelLocked) return;
@@ -127,6 +131,7 @@ function onWheelCapture(e: WheelEvent) {
     wheelLocked = false;
   }, WHEEL_COOLDOWN);
 }
+
 
 onMounted(async () => {
   await store.loadConfig();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {inject, ref} from 'vue';
+import {inject, onBeforeUnmount, onMounted, ref} from 'vue';
 import {VueDraggable} from 'vue-draggable-plus';
 
 import {useConfigStore} from '../../stores/useConfigStore';
@@ -36,12 +36,108 @@ const {visibleGroups} = useVisibleGroups({
   dragState: ui.dragState
 });
 
+/** ------------------------------
+ *自定义拖拽自动滚动（滚动 HomeMain 的 <main>）
+ * 只在拖拽期间启用，结束即销毁监听，资源占用很低
+ * ------------------------------ */
+const scrollEl = ref<HTMLElement | null>(null);
+
+let autoScrollOn = false;
+let rafId = 0;
+let lastClientY = -1;
+
+const EDGE = 90;       // 顶/底触发区域高度
+const MIN_SPEED = 6;   // 最小滚动速度
+const MAX_SPEED = 22;  // 最大滚动速度
+
+function findScrollEl() {
+  scrollEl.value = document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
+}
+
+function updatePointerY(e: any) {
+  if (typeof e?.clientY === 'number') lastClientY = e.clientY;
+  if (typeof e?.originalEvent?.clientY === 'number') lastClientY = e.originalEvent.clientY;
+}
+
+function calcSpeed(distance: number) {
+  // distance: 离边缘有多深（0..EDGE）
+  const t = Math.min(1, Math.max(0, distance / EDGE));
+  return Math.max(MIN_SPEED, Math.floor(MIN_SPEED + (MAX_SPEED - MIN_SPEED) * t));
+}
+
+function tickAutoScroll() {
+  if (!autoScrollOn || !scrollEl.value) return;
+
+  const el = scrollEl.value;
+  const rect = el.getBoundingClientRect();
+  const y = lastClientY;
+
+  if (y >= 0) {
+    const topZone = rect.top + EDGE;
+    const bottomZone = rect.bottom - EDGE;
+
+    let dy = 0;
+
+    if (y < topZone) {
+      dy = -calcSpeed(topZone - y);
+    } else if (y > bottomZone) {
+      dy = calcSpeed(y - bottomZone);
+    }
+
+    if (dy !== 0) {
+      el.scrollTop += dy;
+    }
+  }
+
+  rafId = requestAnimationFrame(tickAutoScroll);
+}
+
+function startAutoScroll(e?: any) {
+  if (autoScrollOn) return;
+  findScrollEl();
+  if (!scrollEl.value) return;
+
+  autoScrollOn = true;
+  updatePointerY(e);
+
+  window.addEventListener('pointermove', updatePointerY, {passive: true});
+  window.addEventListener('dragover', updatePointerY, {passive: true});
+
+  rafId = requestAnimationFrame(tickAutoScroll);
+}
+
+function stopAutoScroll() {
+  if (!autoScrollOn) return;
+  autoScrollOn = false;
+
+  window.removeEventListener('pointermove', updatePointerY as any);
+  window.removeEventListener('dragover', updatePointerY as any);
+
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = 0;
+  lastClientY = -1;
+}
+
+onMounted(() => {
+  findScrollEl();
+});
+
+onBeforeUnmount(() => {
+  stopAutoScroll();
+});
+
+// drag logic
 const onDragStart = (event: any, group: any) => {
   const item = group.items?.[event.oldIndex];
   if (item) ui.setDragState(true, group.id, item);
+
+  // 开启自动滚动（整理模式才会拖拽）
+  startAutoScroll(event?.originalEvent || event);
 };
 
 const onDragEnd = () => {
+  stopAutoScroll();
+
   requestAnimationFrame(() => {
     setTimeout(() => ui.setDragState(false), 200);
   });
@@ -51,7 +147,7 @@ const handleContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   ui.openContextMenu(e, item, 'site', groupId);
 };
 
-// 右键删除（如果你的右键菜单里已经有删除，这里保留不影响）
+// delete modal state（你如果右键删除已经实现，可后续删掉这个 Dialog）
 const showDeleteModal = ref(false);
 const deleteTarget = ref<{ groupId: string; siteId: string } | null>(null);
 
@@ -92,7 +188,6 @@ const confirmDelete = () => {
               @end="onDragEnd"
               :style="gridStyle"
               :disabled="!isEditMode"
-
               :scroll="true"
               :scrollSensitivity="90"
               :scrollSpeed="14"
@@ -188,7 +283,6 @@ const confirmDelete = () => {
   box-shadow: none;
 }
 
-/* hover：只有一点点色差（非常轻） */
 .site-tile:hover .site-wrap {
   background: rgba(255, 255, 255, 0.02);
   border-color: rgba(255, 255, 255, 0.04);
@@ -199,7 +293,6 @@ const confirmDelete = () => {
   border-color: rgba(255, 255, 255, 0.04);
 }
 
-/* 整理模式：也只给一点点色差，仍然很透明 */
 .arrange-mode .site-wrap {
   background: rgba(255, 255, 255, 0.025);
   border-color: rgba(255, 255, 255, 0.05);

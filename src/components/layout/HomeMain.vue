@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, ref} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 
 import TimeWidget from '../widgets/TimeWidget.vue';
@@ -26,15 +26,17 @@ const mainPaddingClass = computed(() => {
   if (props.sidebarPos === 'left') return 'md:pl-28';
   return 'md:pr-28';
 });
+
+const mainRef = ref<HTMLElement | null>(null);
 </script>
 
 <template>
   <main
+      ref="mainRef"
+      data-main-scroll="1"
+      :data-wheel-allow="isEditMode ? 'true' : null"
       class="flex-1 w-full h-full relative overflow-x-hidden transition-all duration-300"
-      :class="[
-      mainPaddingClass,
-      isEditMode ? 'overflow-y-auto no-scrollbar' : 'overflow-hidden'
-    ]"
+      :class="[mainPaddingClass, isEditMode ? 'overflow-y-auto no-scrollbar' : 'overflow-hidden']"
   >
     <transition name="fade">
       <div
