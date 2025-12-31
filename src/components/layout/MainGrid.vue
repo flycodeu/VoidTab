@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {inject, onBeforeUnmount, onMounted, ref} from 'vue';
+import {inject, onBeforeUnmount, onMounted, ref, computed} from 'vue';
 import {VueDraggable} from 'vue-draggable-plus';
 
 import {useConfigStore} from '../../stores/useConfigStore';
@@ -7,6 +7,7 @@ import {useUiStore} from '../../stores/useUiStore';
 
 import GlassCard from './GlassCard.vue';
 import AddCard from './AddCard.vue';
+import GroupHeaderBar from '../layout/widget-panel/GroupHeaderBar.vue';
 
 import {useGridLayout} from '../../composables/useGridLayout';
 import {useVisibleGroups} from '../../composables/useVisibleGroups';
@@ -34,6 +35,12 @@ const {visibleGroups} = useVisibleGroups({
   isEditMode: () => props.isEditMode,
   activeGroupId: () => props.activeGroupId,
   dragState: ui.dragState
+});
+
+// ✅ 新增：计算当前激活的分组信息（用于 Header 展示）
+// 如果 activeGroupId 为空或其他情况，尝试取 layout 第一个或返回 null
+const activeGroupData = computed(() => {
+  return store.config.layout.find(g => g.id === props.activeGroupId);
 });
 
 /** ------------------------------
@@ -220,8 +227,17 @@ const confirmDelete = () => {
 <template>
   <div class="w-full flex flex-col items-center pb-20">
     <div class="w-full transition-all duration-300 px-4" :style="{ maxWidth: store.config.theme.gridMaxWidth + 'px' }">
+
+      <GroupHeaderBar
+          v-if="!isEditMode && activeGroupData"
+          :group-name="activeGroupData.title"
+          :count="activeGroupData.items?.length || 0"
+          :key="activeGroupId"
+      />
+
       <template v-for="group in visibleGroups" :key="group.id">
         <div class="transition-all duration-300 mb-8 animate-fade-in">
+
           <div
               v-if="isEditMode"
               class="px-2 mb-3 text-[var(--accent-color)] font-bold tracking-wider text-sm flex items-center gap-2"
