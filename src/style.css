@@ -63,6 +63,8 @@
     --settings-text: #ffffff;
     --settings-text-secondary: rgba(255, 255, 255, 0.6);
     --settings-input-bg: rgba(0, 0, 0, 0.2);
+
+    --accent-color-rgb: 10, 132, 255;
 }
 
 /* === 浅色模式 (Light Mode) === */
@@ -108,6 +110,8 @@ html.light {
     --settings-text: #1d1d1f;
     --settings-text-secondary: rgba(60, 60, 67, 0.75);
     --settings-input-bg: rgba(0, 0, 0, 0.05);
+
+    --accent-color-rgb: 0, 122, 255;
 }
 
 /* -------------------------------------------------------------------------- */
