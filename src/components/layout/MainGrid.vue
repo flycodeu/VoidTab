@@ -37,27 +37,50 @@ const {visibleGroups} = useVisibleGroups({
   dragState: ui.dragState
 });
 
-// ✅ 新增：计算当前激活的分组信息（用于 Header 展示）
-// 如果 activeGroupId 为空或其他情况，尝试取 layout 第一个或返回 null
 const activeGroupData = computed(() => {
   return store.config.layout.find(g => g.id === props.activeGroupId);
 });
 
+// ✅ 新增：根据密度模式动态调整网格样式
+const densityStyle = computed(() => {
+  const mode = store.config.theme.density || 'normal';
+  const baseGap = store.config.theme.gap;
+
+  if (mode === 'compact') {
+    return {
+      // 紧凑模式：减小间距
+      gap: `${Math.max(8, baseGap * 0.6)}px`,
+      // 保持列宽逻辑不变，但因为间距小了，会更紧密
+      ...gridStyle.value
+    };
+  } else if (mode === 'comfortable') {
+    return {
+      // 舒适模式：增大间距，强制拉宽列宽以容纳长卡片
+      gap: `${baseGap * 1.2}px`,
+      gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))'
+    };
+  }
+  // Normal 模式：使用默认配置
+  return gridStyle.value;
+});
+
+// ✅ 新增：传递给卡片的容器样式（用于舒适模式）
+const densityItemClass = computed(() => {
+  const mode = store.config.theme.density || 'normal';
+  return `density-mode-${mode}`;
+});
+
 /** ------------------------------
- * ✅ 拖拽/按住期间：自动滚动（边缘）+ 滚轮强制滚动 main 容器
- * 滚动容器是 HomeMain 的 <main data-main-scroll="1">
+ * 滚动逻辑保持不变
  * ------------------------------ */
 const scrollEl = ref<HTMLElement | null>(null);
-
 let autoScrollOn = false;
 let holdActive = false;
 let rafId = 0;
 let lastClientY = -1;
-
-// 边缘自动滚动参数
-const EDGE = 90;       // 顶/底触发区域高度
-const MIN_SPEED = 6;   // 最小滚动速度
-const MAX_SPEED = 22;  // 最大滚动速度
+const EDGE = 90;
+const MIN_SPEED = 6;
+const MAX_SPEED = 22;
 
 function findScrollEl() {
   scrollEl.value = document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
@@ -75,54 +98,40 @@ function calcSpeed(distance: number) {
 
 function tickAutoScroll() {
   if (!autoScrollOn || !scrollEl.value) return;
-
   const el = scrollEl.value;
   const rect = el.getBoundingClientRect();
   const y = lastClientY;
-
   if (y >= 0) {
     const topZone = rect.top + EDGE;
     const bottomZone = rect.bottom - EDGE;
-
     let dy = 0;
     if (y < topZone) dy = -calcSpeed(topZone - y);
     else if (y > bottomZone) dy = calcSpeed(y - bottomZone);
-
     if (dy !== 0) el.scrollTop += dy;
   }
-
   rafId = requestAnimationFrame(tickAutoScroll);
 }
 
-/** ✅ 关键：按住/拖拽期间，滚轮强制滚动 main（即便库阻止了默认滚动） */
 let wheelBound = false;
 
 function onWheelWhileHoldOrDrag(e: WheelEvent) {
   if (!scrollEl.value) return;
-  // 只在整理模式且「按住图标」或「正在拖拽」时接管
   if (!props.isEditMode) return;
   if (!holdActive && !autoScrollOn) return;
   if (!e.cancelable) return;
-
   e.preventDefault();
   e.stopPropagation();
-
-  // 让滚轮控制视口移动
   scrollEl.value.scrollTop += e.deltaY;
-
-  // 同步一下 pointerY，边缘自动滚动更稳
   updatePointerY(e);
 }
 
 function bindWheel() {
   if (wheelBound) return;
   wheelBound = true;
-  // capture + passive:false 才能 preventDefault
   window.addEventListener('wheel', onWheelWhileHoldOrDrag, {capture: true, passive: false});
 }
 
 function unbindWheelIfIdle() {
-  // 如果既不按住也不拖拽，就撤掉 wheel 监听，避免常驻消耗
   if (holdActive || autoScrollOn) return;
   if (!wheelBound) return;
   wheelBound = false;
@@ -133,13 +142,10 @@ function startAutoScroll(e?: any) {
   if (autoScrollOn) return;
   findScrollEl();
   if (!scrollEl.value) return;
-
   autoScrollOn = true;
   updatePointerY(e);
-
   window.addEventListener('pointermove', updatePointerY, {passive: true});
   window.addEventListener('dragover', updatePointerY, {passive: true});
-
   bindWheel();
   rafId = requestAnimationFrame(tickAutoScroll);
 }
@@ -147,24 +153,18 @@ function startAutoScroll(e?: any) {
 function stopAutoScroll() {
   if (!autoScrollOn) return;
   autoScrollOn = false;
-
   window.removeEventListener('pointermove', updatePointerY as any);
   window.removeEventListener('dragover', updatePointerY as any);
-
   if (rafId) cancelAnimationFrame(rafId);
   rafId = 0;
   lastClientY = -1;
-
   unbindWheelIfIdle();
 }
 
-/** ✅ 新增：按住图标（未拖拽也算）也可以滚轮滚动 */
 function onHoldStart(e: PointerEvent) {
   if (!props.isEditMode) return;
   holdActive = true;
   bindWheel();
-
-  // 松开鼠标时取消 hold
   const end = () => {
     holdActive = false;
     unbindWheelIfIdle();
@@ -173,49 +173,36 @@ function onHoldStart(e: PointerEvent) {
   };
   window.addEventListener('pointerup', end as any, true);
   window.addEventListener('pointercancel', end as any, true);
-
   updatePointerY(e);
 }
 
 onMounted(() => {
   findScrollEl();
 });
-
 onBeforeUnmount(() => {
   stopAutoScroll();
   holdActive = false;
   unbindWheelIfIdle();
 });
-
-// drag logic
 const onDragStart = (event: any, group: any) => {
   const item = group.items?.[event.oldIndex];
   if (item) ui.setDragState(true, group.id, item);
-
-  // ✅ 拖拽开始：开启边缘自动滚动 + 滚轮滚动
   startAutoScroll(event?.originalEvent || event);
 };
-
 const onDragEnd = () => {
   stopAutoScroll();
-
   requestAnimationFrame(() => {
     setTimeout(() => ui.setDragState(false), 200);
   });
 };
-
 const handleContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   ui.openContextMenu(e, item, 'site', groupId);
 };
-
-// delete modal state（如果右键删除已处理，可后续删掉）
 const showDeleteModal = ref(false);
 const deleteTarget = ref<{ groupId: string; siteId: string } | null>(null);
-
 const handleDelete = (groupId: string, siteId: string, title?: string) => {
   del.open({kind: 'site', groupId, siteId, title});
 };
-
 const confirmDelete = () => {
   if (!deleteTarget.value) return;
   store.removeSite(deleteTarget.value.groupId, deleteTarget.value.siteId);
@@ -252,11 +239,11 @@ const confirmDelete = () => {
               group="voidtab-shared-group"
               filter=".ignore-drag"
               class="grid items-start content-start min-h-[100px]"
-              :class="{ 'bg-white/5 rounded-xl border border-dashed border-white/10 p-4': isEditMode }"
+              :class="[{ 'bg-white/5 rounded-xl border border-dashed border-white/10 p-4': isEditMode }]"
               ghost-class="sortable-ghost"
               @start="(e) => onDragStart(e, group)"
               @end="onDragEnd"
-              :style="gridStyle"
+              :style="densityStyle"
               :disabled="!isEditMode"
               :scroll="true"
               :scrollSensitivity="90"
@@ -267,13 +254,14 @@ const confirmDelete = () => {
                 :key="item.id"
                 :style="itemContainerStyle"
                 class="site-tile"
-                :class="{ 'arrange-mode': isEditMode }"
+                :class="[{ 'arrange-mode': isEditMode }, densityItemClass]"
                 @pointerdown="onHoldStart"
             >
               <div class="site-wrap">
                 <GlassCard
                     :item="item"
                     :isEditMode="isEditMode"
+                    :density="store.config.theme.density"
                     @delete="handleDelete(group.id, item.id, item.title)"
                     @contextmenu.prevent.stop="(e:any) => handleContextMenu(e, item, group.id)"
                 />
@@ -356,6 +344,9 @@ const confirmDelete = () => {
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
+  /* 确保 comfortable 模式下容器充满 */
+  height: 100%;
+  width: 100%;
 }
 
 .site-tile:hover .site-wrap {
@@ -376,5 +367,11 @@ const confirmDelete = () => {
 :global(.dark) .arrange-mode .site-wrap {
   background: rgba(0, 0, 0, 0.08);
   border-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ✅ Comfortable 模式下的特殊样式：强制卡片左对齐（假设 GlassCard 内部布局能响应宽度） */
+.density-mode-comfortable .site-wrap {
+  padding: 8px;
+  border-radius: 12px;
 }
 </style>

@@ -2,7 +2,7 @@
 import type {SyncProfile} from '../sync/types';
 
 export const CURRENT_CONFIG_VERSION = 1 as const;
-
+export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 export interface SiteItem {
     id: string;
     title: string;
@@ -54,6 +54,8 @@ export interface ThemeConfig {
     iconTextSize: number;
 
     icon: 'Folder';
+
+    density: BookmarkDensity;
 }
 
 export interface SearchEngine {

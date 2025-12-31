@@ -98,7 +98,9 @@ export const defaultConfig: Config = {
 
         showIconName: true,
         iconTextSize: 12,
-        icon: 'Folder'
+        icon: 'Folder',
+
+        density: 'normal',
     },
 
     searchEngines: [
