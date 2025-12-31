@@ -25,6 +25,8 @@ export interface Group {
     icon: string;
     items: SiteItem[];
     sortKey?: GroupSortKey;
+    iconColor?: string;   // 图标颜色 (fg)
+    iconBgColor?: string; // 背景颜色 (bg)
 }
 
 export interface WidgetItem {

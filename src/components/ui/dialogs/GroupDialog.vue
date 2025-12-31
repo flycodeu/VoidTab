@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import {ref, watch, nextTick, onMounted, onUnmounted} from 'vue';
 import GroupDialogForm from './GroupDialogForm.vue';
-import { groupIconNames } from '../../../core/registry/groupIcons';
+import {groupIconNames} from '../../../core/registry/groupIcons';
 
-type GroupForm = { title: string; icon: string };
+// ✅ 扩展表单类型，包含颜色字段
+type GroupForm = {
+  title: string;
+  icon: string;
+  iconColor?: string;
+  iconBgColor?: string;
+};
 
 const props = defineProps<{
   show: boolean;
@@ -18,7 +24,8 @@ const emit = defineEmits<{
 
 const formRef = ref<InstanceType<typeof GroupDialogForm> | null>(null);
 
-const formData = ref<GroupForm>({ title: '', icon: 'Folder' });
+// 初始化数据
+const formData = ref<GroupForm>({title: '', icon: 'Folder'});
 const errorMsg = ref('');
 
 watch(
@@ -29,12 +36,16 @@ watch(
       errorMsg.value = '';
 
       if (props.isEdit && props.initialData) {
+        // ✅ 编辑模式：回填颜色数据
         formData.value = {
           title: String(props.initialData.title ?? ''),
-          icon: String(props.initialData.icon ?? 'Folder')
+          icon: String(props.initialData.icon ?? 'Folder'),
+          iconColor: props.initialData.iconColor,
+          iconBgColor: props.initialData.iconBgColor
         };
       } else {
-        formData.value = { title: '', icon: 'Folder' };
+        // 新建模式：重置
+        formData.value = {title: '', icon: 'Folder'};
       }
 
       await nextTick();
@@ -52,13 +63,20 @@ const handleSubmit = () => {
     return;
   }
   errorMsg.value = '';
-  emit('submit', { title, icon: formData.value.icon || 'Folder' });
+
+  // ✅ 提交所有字段，包括颜色
+  emit('submit', {
+    title,
+    icon: formData.value.icon || 'Folder',
+    iconColor: formData.value.iconColor,
+    iconBgColor: formData.value.iconBgColor
+  });
+
   emit('close');
 };
 
 const onKeydown = (e: KeyboardEvent) => {
   if (!props.show) return;
-
   if (e.key === 'Escape') {
     e.preventDefault();
     close();

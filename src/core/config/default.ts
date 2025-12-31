@@ -39,6 +39,8 @@ export const defaultConfig: Config = {
             title: '常用工具',
             icon: 'Briefcase',
             sortKey: 'custom',
+            iconColor: '#0ea5e9', // Sky blue
+            iconBgColor: 'rgba(14, 165, 233, 0.15)',
             items: [
                 {id: 'site-1', title: 'GitHub', url: 'https://github.com', icon: 'https://github.com/favicon.ico'},
                 {

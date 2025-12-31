@@ -67,11 +67,20 @@ function normalizeSiteItem(rawItem: any): SiteItem {
     return item;
 }
 
+// ✅ 核心修复：确保颜色字段和排序字段被保留
 function normalizeGroup(rawGroup: any): Group {
     const group: Group = {
         id: String(rawGroup?.id ?? Date.now()),
         title: String(rawGroup?.title ?? '未命名'),
         icon: String(rawGroup?.icon ?? 'Folder'),
+
+        // 1. 补回排序字段 (否则排序功能也会失效)
+        sortKey: rawGroup?.sortKey || 'custom',
+
+        // 2. 新增颜色字段透传
+        iconColor: rawGroup?.iconColor || undefined,
+        iconBgColor: rawGroup?.iconBgColor || undefined,
+
         items: Array.isArray(rawGroup?.items) ? rawGroup.items.map(normalizeSiteItem) : []
     };
     return group;
@@ -156,7 +165,7 @@ export function normalizeConfig(raw: any): Config {
         ? input.focusMode
         : base.focusMode;
 
-    // 🟢 ai: 确保 AI 配置即使是旧数据也能补全
+    // ai
     out.ai = {
         ...base.ai,
         ...(input.ai || {})

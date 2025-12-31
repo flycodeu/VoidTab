@@ -1,9 +1,9 @@
 import {defineStore} from 'pinia';
-import { ref, watch} from 'vue';
+import {ref, watch} from 'vue';
 import {parseBookmarkContent} from '../utils/bookmarkImporter';
 import {SyncScheduler, syncService} from '../core/sync';
 
-import type {Config} from '../core/config/types';
+import type {Config, Group} from '../core/config/types';
 import {defaultConfig} from '../core/config/default';
 import {migrateConfig} from '../core/config/migrate';
 import {normalizeConfig} from '../core/config/normalize';
@@ -108,9 +108,13 @@ export const useConfigStore = defineStore('config', () => {
         config.value.layout = config.value.layout.filter((g: any) => g.id !== groupId);
     };
 
-    const updateGroup = (groupId: string, data: any) => {
+    const updateGroup = (groupId: string, data: Partial<Group>) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
-        if (group) Object.assign(group, data);
+        if (group) {
+            // ✅ 必须使用 Object.assign 或手动赋值，确保所有字段都更新
+            Object.assign(group, data);
+            saveConfig();
+        }
     };
 
     const addSite = (groupId: string, site: any) => {

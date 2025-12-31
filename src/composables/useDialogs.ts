@@ -1,4 +1,3 @@
-// src/composables/useDialogs.ts
 import {provide, reactive} from 'vue';
 
 export interface DialogState {
@@ -66,14 +65,29 @@ export function useDialogs(store: any, ui: any) {
         } else {
             store.addSite(siteDialog.groupId, data);
         }
+        // 提交站点后关闭弹窗
+        setDialog(siteDialog, {show: false});
     };
 
+    // ✅ 核心修复：确保颜色数据被传递，且弹窗关闭
     const onGroupSubmit = (data: any) => {
+        // 1. 构造完整数据对象 (防止 data 缺失字段)
+        const payload = {
+            title: data.title,
+            icon: data.icon,
+            iconColor: data.iconColor,     // 确保颜色被传递
+            iconBgColor: data.iconBgColor  // 确保背景色被传递
+        };
+
+        // 2. 根据模式调用 Store
         if (groupDialog.isEdit && groupDialog.initialData) {
-            store.updateGroup(groupDialog.initialData.id, data);
+            store.updateGroup(groupDialog.initialData.id, payload);
         } else {
-            store.addGroup(data);
+            store.addGroup(payload);
         }
+
+        // 3. 提交后自动关闭弹窗
+        setDialog(groupDialog, {show: false});
     };
 
     const closeSiteDialog = () => setDialog(siteDialog, {show: false});
