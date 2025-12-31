@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import {inject, onBeforeUnmount, onMounted, ref, computed, watch} from 'vue';
+import {inject, onBeforeUnmount, onMounted, ref, computed} from 'vue';
 import {VueDraggable} from 'vue-draggable-plus';
 
+// Stores
 import {useConfigStore} from '../../stores/useConfigStore';
 import {useUiStore} from '../../stores/useUiStore';
+import {useStatsStore} from '../../stores/useStatsStore'; // ✅ 引入统计 Store
 
+// Components
 import GlassCard from './GlassCard.vue';
 import AddCard from './AddCard.vue';
 import GroupHeaderBar from '../layout/widget-panel/GroupHeaderBar.vue';
-
-import {useGridLayout} from '../../composables/useGridLayout';
-import {useVisibleGroups} from '../../composables/useVisibleGroups';
 import ConfirmDialog from '../ui/dialogs/ConfirmDialog.vue';
 import {PhTrash} from '@phosphor-icons/vue';
+
+// Composables
+import {useGridLayout} from '../../composables/useGridLayout';
+import {useVisibleGroups} from '../../composables/useVisibleGroups';
 import {useDeleteConfirm} from '../../composables/useDeleteConfirm';
 
 const del = useDeleteConfirm();
@@ -24,6 +28,7 @@ const props = defineProps<{
 
 const store = useConfigStore();
 const ui = useUiStore();
+const statsStore = useStatsStore(); // ✅ 初始化统计 Store
 
 const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | undefined;
 const openAddDialog = (gid: string) => dialog?.openAddDialog?.(gid);
@@ -53,26 +58,17 @@ const densityStyle = computed(() => {
   }
   return gridStyle.value;
 });
+
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || 'normal'}`);
 
 /** ------------------------------
- * 排序核心逻辑
+ * ✅ 排序核心逻辑 (Store 响应式版)
  * ------------------------------ */
 
-// 1. 获取当前 SortKey
+// 1. 获取当前 SortKey (默认为 custom)
 const currentSortKey = computed(() => activeGroupData.value?.sortKey || 'custom');
 
-// 2. 读取统计数据
-const siteStats = ref<Record<string, { lastVisited: number }>>({});
-const loadStats = () => {
-  try {
-    const raw = localStorage.getItem('voidtab_site_stats');
-    if (raw) siteStats.value = JSON.parse(raw);
-  } catch (e) {
-  }
-};
-
-// 3. 计算最终显示列表 (仅用于浏览模式)
+// 2. 计算最终显示列表
 const displayItems = computed({
   get() {
     if (!activeGroupData.value) return [];
@@ -81,38 +77,42 @@ const displayItems = computed({
     const items = [...activeGroupData.value.items];
     const key = currentSortKey.value;
 
+    // 按名称 A-Z
     if (key === 'name') {
       return items.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh-CN'));
     }
 
+    // 按最近访问 (降序)
     if (key === 'lastVisited') {
       return items.sort((a, b) => {
-        const timeA = siteStats.value[a.id]?.lastVisited || 0;
-        const timeB = siteStats.value[b.id]?.lastVisited || 0;
+        // ✅ 直接从 Store 获取响应式数据
+        const timeA = statsStore.getLastVisited(a.id);
+        const timeB = statsStore.getLastVisited(b.id);
+
+        // 时间相同则按名称兜底 (防止顺序随机跳动)
         if (timeB !== timeA) return timeB - timeA;
         return (a.title || '').localeCompare(b.title || '');
       });
     }
 
+    // custom: 返回原始顺序
     return items;
   },
   set(val) {
-    // 浏览模式下，只有 custom 允许回写（虽然浏览模式通常不拖拽，但为了兼容性保留）
+    // 只有 custom 模式允许回写 Store
     if (currentSortKey.value === 'custom' && activeGroupData.value) {
       activeGroupData.value.items = val;
     }
   }
 });
 
+// 仅在 custom 模式且编辑模式下允许拖拽 (用于 displayItems 的绑定)
 const isDragEnabled = computed(() => {
-  // 浏览模式下，只有 custom 排序允许拖拽（实际上浏览模式一般不拖拽，这里主要控制样式）
-  return props.isEditMode || currentSortKey.value === 'custom';
+  return !props.isEditMode && currentSortKey.value === 'custom';
 });
-
-watch(() => props.activeGroupId, loadStats);
-
+console.log(isDragEnabled)
 /** ------------------------------
- * 滚动与拖拽逻辑
+ * 滚动与拖拽辅助逻辑
  * ------------------------------ */
 const scrollEl = ref<HTMLElement | null>(null);
 let autoScrollOn = false;
@@ -200,7 +200,8 @@ function stopAutoScroll() {
 
 function onHoldStart(e: PointerEvent) {
   if (!props.isEditMode) return;
-  // 整理模式下强制允许拖拽
+  // 仅在 Custom 模式下允许长按
+  if (currentSortKey.value !== 'custom') return;
   holdActive = true;
   bindWheel();
   const end = () => {
@@ -216,7 +217,6 @@ function onHoldStart(e: PointerEvent) {
 
 onMounted(() => {
   findScrollEl();
-  loadStats();
 });
 onBeforeUnmount(() => {
   stopAutoScroll();
@@ -311,20 +311,11 @@ const confirmDelete = () => {
               </div>
             </div>
 
-            <div
-                :style="itemContainerStyle"
-                class="site-tile ignore-drag"
-                :class="{ 'arrange-mode': isEditMode }"
-            >
+            <div :style="itemContainerStyle" class="site-tile ignore-drag" :class="{ 'arrange-mode': isEditMode }">
               <div class="site-wrap">
-                <AddCard
-                    class="ignore-drag"
-                    :size="Number(store.config.theme.iconSize)"
-                    :radius="Number(store.config.theme.radius)"
-                    :showName="!!store.config.theme.showIconName"
-                    :textSize="Number(store.config.theme.iconTextSize)"
-                    @click="openAddDialog(group.id)"
-                />
+                <AddCard class="ignore-drag" :size="Number(store.config.theme.iconSize)"
+                         :radius="Number(store.config.theme.radius)" :showName="!!store.config.theme.showIconName"
+                         :textSize="Number(store.config.theme.iconTextSize)" @click="openAddDialog(group.id)"/>
               </div>
             </div>
           </VueDraggable>
@@ -339,7 +330,7 @@ const confirmDelete = () => {
               class="grid items-start content-start min-h-[100px]"
               ghost-class="sortable-ghost"
               :style="densityStyle"
-              :disabled="!isDragEnabled"
+              :disabled="true"
           >
             <div
                 v-for="item in displayItems"
@@ -360,14 +351,9 @@ const confirmDelete = () => {
 
             <div :style="itemContainerStyle" class="site-tile ignore-drag">
               <div class="site-wrap">
-                <AddCard
-                    class="ignore-drag"
-                    :size="Number(store.config.theme.iconSize)"
-                    :radius="Number(store.config.theme.radius)"
-                    :showName="!!store.config.theme.showIconName"
-                    :textSize="Number(store.config.theme.iconTextSize)"
-                    @click="openAddDialog(group.id)"
-                />
+                <AddCard class="ignore-drag" :size="Number(store.config.theme.iconSize)"
+                         :radius="Number(store.config.theme.radius)" :showName="!!store.config.theme.showIconName"
+                         :textSize="Number(store.config.theme.iconTextSize)" @click="openAddDialog(group.id)"/>
               </div>
             </div>
           </VueDraggable>

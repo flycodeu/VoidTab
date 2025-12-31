@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import {computed} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
+// ✅ 引入新的统计 Store
+import {useStatsStore} from '../../stores/useStatsStore';
 import type {SiteItem, BookmarkDensity} from '../../core/config/types';
 import SiteIcon from './SiteIcon.vue';
 import {useAutoIcon} from '../../composables/useAutoIcon';
 
 const store = useConfigStore();
+const statsStore = useStatsStore(); // ✅ 初始化
 
 const props = defineProps<{
   item: SiteItem;
@@ -41,32 +44,15 @@ const {autoIconUrl, isLoaded, handleImgLoad, triggerFallback} = useAutoIcon({
   onFallback: () => store.setIconFallback(props.item.id)
 });
 
-// ✅ 数据埋点：记录点击时间
-const recordVisit = () => {
-  const statsKey = 'voidtab_site_stats';
-  try {
-    const raw = localStorage.getItem(statsKey);
-    const stats = raw ? JSON.parse(raw) : {};
-
-    stats[props.item.id] = {
-      lastVisited: Date.now(),
-      count: (stats[props.item.id]?.count || 0) + 1
-    };
-
-    localStorage.setItem(statsKey, JSON.stringify(stats));
-  } catch (e) {
-    console.warn('Failed to record site visit', e);
-  }
-};
-
+// ✅ 点击处理：使用 Store 记录
 const handleClick = (e: MouseEvent) => {
   if (props.isEditMode) {
     e.preventDefault();
     e.stopPropagation();
     return;
   }
-  // ✅ 触发记录
-  recordVisit();
+  // 记录访问数据
+  statsStore.recordVisit(props.item.id);
 };
 </script>
 
@@ -106,3 +92,6 @@ const handleClick = (e: MouseEvent) => {
     </span>
   </a>
 </template>
+
+<style scoped>
+</style>
