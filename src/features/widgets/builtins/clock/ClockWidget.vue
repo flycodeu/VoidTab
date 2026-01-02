@@ -95,11 +95,6 @@ const displayData = computed(() => {
             <span :key="mStr">{{ mStr }}</span>
           </Transition>
         </div>
-
-        <template v-if="layout.showSeconds">
-          <span class="mx-0.5 opacity-20 text-[0.6em]">:</span>
-          <span class="text-[0.6em] opacity-40 italic">{{ sStr }}</span>
-        </template>
       </div>
 
       <div v-if="layout.showDate" class="flex items-center gap-2 font-medium opacity-80" :class="layout.subTextClass">
