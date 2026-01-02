@@ -5,7 +5,7 @@ export const CURRENT_CONFIG_VERSION = 1 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 // 新增排序类型定义
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
-export type WidgetType = 'clock' | 'weather' | 'calendar' | 'todo';
+export type WidgetType = 'todo' | 'clock' | 'calendar' | 'weather' | 'system_monitor' | string;
 
 export interface SiteItem {
     id: string;
