@@ -40,54 +40,84 @@ const {visibleGroups} = useVisibleGroups({
   groups: store.config.layout || [],
   isEditMode: () => props.isEditMode,
   activeGroupId: () => props.activeGroupId,
-  dragState: ui.dragState
+  dragState: ui.dragState,
 });
 
 const activeGroupData = computed(() => {
-  return store.config.layout.find(g => g.id === props.activeGroupId);
+  return store.config.layout.find((g) => g.id === props.activeGroupId);
 });
+
+/** ✅ 移动端判定 */
+const isMobile = ref(false);
+let mq: MediaQueryList | null = null;
+const onMqChange = () => (isMobile.value = !!mq?.matches);
+
+onMounted(() => {
+  mq = window.matchMedia('(max-width: 767px)');
+  onMqChange();
+  mq.addEventListener?.('change', onMqChange);
+});
+onBeforeUnmount(() => {
+  mq?.removeEventListener?.('change', onMqChange);
+});
+
+/** ✅ 移动端固定列数：确保 span 不会撑出屏幕 */
+const MOBILE_COLS = 4;
 
 // --- 样式计算：支持 Grid Span 和 Dense ---
 const densityStyle = computed(() => {
   const mode = store.config.theme.density || 'normal';
-  const baseGap = store.config.theme.gap;
-  const iconSize = store.config.theme.iconSize;
+  const baseGap = Number(store.config.theme.gap || 12);
+  const iconSize = Number(store.config.theme.iconSize || 72);
 
-  // 计算行高：iconSize + 标题预留空间(约24px)，确保 grid rows 对齐
-  // 关键：grid-auto-flow: dense 让小组件自动填补大组件留下的空隙
-  const baseStyle = {
+  const baseStyle: any = {
     ...gridStyle.value,
     gridAutoRows: `minmax(${iconSize}px, auto)`,
     gridAutoFlow: 'dense',
-    alignItems: 'stretch'
+    alignItems: 'stretch',
+    width: '100%',
+    minWidth: 0,
   };
 
+  // ✅ 关键修复：移动端强制 4 列且用 minmax(0,1fr) 防撑宽
+  if (isMobile.value) {
+    baseStyle.gridTemplateColumns = `repeat(${MOBILE_COLS}, minmax(0, 1fr))`;
+    baseStyle.gap = `${Math.max(10, Math.floor(baseGap * 0.8))}px`;
+  }
+
   if (mode === 'compact') {
-    return {...baseStyle, gap: `${Math.max(8, baseGap * 0.6)}px`};
+    return {...baseStyle, gap: `${Math.max(8, Math.floor(baseGap * 0.6))}px`};
   } else if (mode === 'comfortable') {
     return {
       ...baseStyle,
-      gap: `${baseGap * 1.2}px`,
-      // comfortable 模式下列宽自适应，可能不太兼容 span，建议固定列宽或保留 gridTemplateColumns
-      gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))'
+      gap: `${Math.floor(baseGap * 1.2)}px`,
+      gridTemplateColumns: isMobile.value
+          ? `repeat(${MOBILE_COLS}, minmax(0, 1fr))`
+          : 'repeat(auto-fill, minmax(180px, 1fr))',
     };
   }
+
   return baseStyle;
 });
 
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || 'normal'}`);
 
-// 计算单个 Item 的跨度样式
+// ✅ 计算单个 Item 的跨度样式（移动端 clamp，防止 span 溢出）
 const getItemStyle = (item: any) => {
-  const w = item.w || 1;
-  const h = item.h || 1;
+  const w = Number(item.w || 1);
+  const h = Number(item.h || 1);
+
+  const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : w;
+  const spanH = h;
+
   return {
     ...itemContainerStyle.value,
-    gridColumn: `span ${w}`,
-    gridRow: `span ${h}`,
-    // 只有 1x1 且是站点时强制正方形，组件自由拉伸
-    aspectRatio: (w === 1 && h === 1 && item.kind !== 'widget') ? '1 / 1' : 'auto',
-  }
+    minWidth: 0, // ✅ 防止内部撑开
+    gridColumn: `span ${spanW}`,
+    gridRow: `span ${spanH}`,
+    // 只有 1x1 且是站点时强制正方形
+    aspectRatio: spanW === 1 && spanH === 1 && item.kind !== 'widget' ? '1 / 1' : 'auto',
+  };
 };
 
 /** ------------------------------
@@ -118,7 +148,7 @@ const displayItems = computed({
     if (currentSortKey.value === 'custom' && activeGroupData.value) {
       activeGroupData.value.items = val;
     }
-  }
+  },
 });
 
 /** ------------------------------
@@ -246,21 +276,17 @@ const onDragEnd = () => {
 };
 
 // --- Context Menu 处理 ---
-
-// 空白区域右键
 const handleBlankContextMenu = (e: MouseEvent, groupId: string) => {
-  // 触发 'blank' 类型菜单
   ui.openContextMenu(e, null, 'blank', groupId);
 };
 
-// Item 右键
 const handleItemContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   const type = item.kind === 'widget' ? 'widget' : 'site';
   ui.openContextMenu(e, item, type, groupId);
 };
 
-// 删除逻辑
-const showDeleteModal = ref(false);
+// 删除逻辑（保留原样）
+const showDeleteModal = ref({value: false} as any);
 const deleteTarget = ref<{ groupId: string; siteId: string } | null>(null);
 const handleDelete = (groupId: string, siteId: string, title?: string) => {
   del.open({kind: 'site', groupId, siteId, title});
@@ -274,9 +300,16 @@ const confirmDelete = () => {
 </script>
 
 <template>
-  <div class="w-full flex flex-col items-center pb-20">
-    <div class="w-full transition-all duration-300 px-4" :style="{ maxWidth: store.config.theme.gridMaxWidth + 'px' }">
-
+  <!-- ✅ 移动端底部留出 TabBar 空间 -->
+  <div
+      class="w-full flex flex-col items-center md:pb-20"
+      :style="{ paddingBottom: `calc(env(safe-area-inset-bottom) + 96px)` }"
+  >
+    <!-- ✅ 移动端不要让内部出现横向溢出 -->
+    <div
+        class="w-full transition-all duration-300 px-4 overflow-x-hidden"
+        :style="{ maxWidth: isMobile ? '100%' : store.config.theme.gridMaxWidth + 'px' }"
+    >
       <GroupHeaderBar
           v-if="!isEditMode && activeGroupData"
           :group-name="activeGroupData.title"
@@ -288,7 +321,6 @@ const confirmDelete = () => {
 
       <template v-for="group in visibleGroups" :key="group.id">
         <div class="transition-all duration-300 mb-8 animate-fade-in">
-
           <div
               v-if="isEditMode"
               class="px-2 mb-3 text-[var(--accent-color)] font-bold tracking-wider text-sm flex items-center gap-2"
@@ -342,11 +374,17 @@ const confirmDelete = () => {
               </div>
             </div>
 
-            <div :style="itemContainerStyle" class="site-tile ignore-drag" :class="{ 'arrange-mode': isEditMode }">
+            <div :style="{ ...itemContainerStyle, minWidth: 0 }" class="site-tile ignore-drag"
+                 :class="{ 'arrange-mode': isEditMode }">
               <div class="site-wrap">
-                <AddCard class="ignore-drag" :size="Number(store.config.theme.iconSize)"
-                         :radius="Number(store.config.theme.radius)" :showName="!!store.config.theme.showIconName"
-                         :textSize="Number(store.config.theme.iconTextSize)" @click="openAddDialog(group.id)"/>
+                <AddCard
+                    class="ignore-drag"
+                    :size="Number(store.config.theme.iconSize)"
+                    :radius="Number(store.config.theme.radius)"
+                    :showName="!!store.config.theme.showIconName"
+                    :textSize="Number(store.config.theme.iconTextSize)"
+                    @click="openAddDialog(group.id)"
+                />
               </div>
             </div>
           </VueDraggable>
@@ -388,27 +426,31 @@ const confirmDelete = () => {
               </div>
             </div>
 
-            <div :style="itemContainerStyle" class="site-tile ignore-drag">
+            <div :style="{ ...itemContainerStyle, minWidth: 0 }" class="site-tile ignore-drag">
               <div class="site-wrap">
-                <AddCard class="ignore-drag" :size="Number(store.config.theme.iconSize)"
-                         :radius="Number(store.config.theme.radius)" :showName="!!store.config.theme.showIconName"
-                         :textSize="Number(store.config.theme.iconTextSize)" @click="openAddDialog(group.id)"/>
+                <AddCard
+                    class="ignore-drag"
+                    :size="Number(store.config.theme.iconSize)"
+                    :radius="Number(store.config.theme.radius)"
+                    :showName="!!store.config.theme.showIconName"
+                    :textSize="Number(store.config.theme.iconTextSize)"
+                    @click="openAddDialog(group.id)"
+                />
               </div>
             </div>
           </VueDraggable>
-
         </div>
       </template>
     </div>
 
     <ConfirmDialog
-        :show="showDeleteModal"
+        :show="(showDeleteModal as any).value"
         title="确认删除？"
         :message="['删除后无法恢复，', '确定要移除这个图标吗？']"
         confirmText="确认删除"
         cancelText="取消"
         :danger="true"
-        @cancel="showDeleteModal = false"
+        @cancel="(showDeleteModal as any).value = false"
         @confirm="confirmDelete"
     >
       <template #icon>
@@ -441,13 +483,11 @@ const confirmDelete = () => {
   }
 }
 
+/* ✅ 关键：防止 grid item 被内容撑出 */
 .site-tile {
   transition: transform 120ms ease;
   will-change: transform;
-}
-
-.site-tile:hover {
-  transform: translateY(-1px);
+  min-width: 0;
 }
 
 .site-wrap {
@@ -458,6 +498,12 @@ const confirmDelete = () => {
   box-shadow: none;
   height: 100%;
   width: 100%;
+  min-width: 0;
+  overflow: hidden; /* ✅ 防止 widget 内部撑破 */
+}
+
+.site-tile:hover {
+  transform: translateY(-1px);
 }
 
 .site-tile:hover .site-wrap {
