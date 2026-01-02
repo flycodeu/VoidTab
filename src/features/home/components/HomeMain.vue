@@ -6,13 +6,11 @@ import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import TimeWidget from '../../widgets/builtins/clock/TimeWidget.vue';
 import SearchBar from '../../widgets/builtins/search/SearchBar.vue';
 import MainGrid from './MainGrid.vue';
-import GreetingWidget from '../../widgets/builtins/greeting/GreetingWidget.vue';
 
 const props = defineProps<{
   isFocusMode: boolean;
   activeGroupId: string;
   isEditMode: boolean;
-  showGreeting: boolean;
   sidebarPos: 'left' | 'right';
 }>();
 
@@ -88,19 +86,6 @@ const handleGlobalContextMenu = (e: MouseEvent) => {
         <MainGrid :activeGroupId="activeGroupId" :isEditMode="isEditMode"/>
       </div>
     </transition>
-
-    <div
-        v-if="!isFocusMode && showGreeting"
-        class="absolute bottom-6 left-0 right-0 flex justify-center pointer-events-none"
-    >
-      <div class="max-w-[820px] px-6 opacity-55">
-        <div class="truncate text-center">
-          <div class="origin-center scale-[0.72]">
-            <GreetingWidget/>
-          </div>
-        </div>
-      </div>
-    </div>
   </main>
 </template>
 

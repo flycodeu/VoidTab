@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { useConfigStore } from '../../../../stores/useConfigStore.ts';
 
 const store = useConfigStore();
-const greetingWidget = computed(() => (store.config.widgets as any[])?.find((w: any) => w.id === 'greeting'));
 </script>
 
 <template>
@@ -27,11 +25,6 @@ const greetingWidget = computed(() => (store.config.widgets as any[])?.find((w: 
     <div class="flex justify-between items-center">
       <label class="font-bold text-sm">时间组件</label>
       <input type="checkbox" v-model="store.config.theme.showTime" class="w-5 h-5 accent-[var(--accent-color)]"/>
-    </div>
-
-    <div v-if="greetingWidget" class="flex justify-between items-center">
-      <label class="font-bold text-sm">问候语组件</label>
-      <input type="checkbox" v-model="greetingWidget.visible" class="w-5 h-5 accent-[var(--accent-color)]"/>
     </div>
 
     <div class="flex justify-between items-center">

@@ -39,10 +39,6 @@ const isFocusMode = computed({
   }
 });
 
-const showGreeting = computed(() => {
-  const widget = store.config.widgets.find((w: any) => w.id === 'greeting');
-  return widget ? widget.visible : true;
-});
 
 const toggleSidebarPos = () => {
   store.config.theme.sidebarPos = store.config.theme.sidebarPos === 'left' ? 'right' : 'left';
@@ -238,7 +234,6 @@ onUnmounted(() => {
           :isFocusMode="isFocusMode"
           :activeGroupId="activeGroupId"
           :isEditMode="isGlobalEditMode"
-          :showGreeting="showGreeting"
           :sidebarPos="store.config.theme.sidebarPos"
           @openSettings="showSettings = true"
       />

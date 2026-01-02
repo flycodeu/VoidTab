@@ -1,5 +1,5 @@
 // src/core/config/normalize.ts
-import type {Config, Group, SiteItem, WidgetItem, WidgetType} from './types';
+import type {Config, Group, SiteItem, WidgetType} from './types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 
@@ -110,58 +110,6 @@ function normalizeGroup(rawGroup: any): Group {
     return group;
 }
 
-function normalizeWidgets(rawWidgets: any): WidgetItem[] {
-    const defList = defaultConfig.widgets || [];
-    const defMap = new Map(defList.map(w => [w.id, w]));
-
-    const result: WidgetItem[] = [];
-    const seen = new Set<string>();
-
-    const input = Array.isArray(rawWidgets) ? rawWidgets : [];
-
-    for (const w of input) {
-        if (!w?.id) continue;
-        const id = String(w.id);
-
-        const def = defMap.get(id);
-        if (def) {
-            const merged: WidgetItem = {
-                ...deepClone(def),
-                ...w,
-                config: {
-                    ...(def as any).config,
-                    ...(w as any).config
-                }
-            };
-            if (merged.colSpan === undefined) merged.colSpan = (def as any).colSpan ?? 1;
-            if (merged.order === undefined) merged.order = (def as any).order ?? 0;
-            if (merged.visible === undefined) merged.visible = (def as any).visible ?? true;
-            if (!merged.name) merged.name = (def as any).name ?? id;
-
-            result.push(merged);
-        } else {
-            const custom: WidgetItem = {
-                id,
-                name: String(w.name ?? id),
-                visible: Boolean(w.visible ?? true),
-                order: Number(w.order ?? 999),
-                colSpan: Number(w.colSpan ?? 1),
-                config: (w as any).config ?? {}
-            };
-            result.push(custom);
-        }
-        seen.add(id);
-    }
-
-    for (const def of defList) {
-        if (!seen.has(def.id)) {
-            result.push(deepClone(def));
-        }
-    }
-
-    return result;
-}
-
 export function normalizeConfig(raw: any): Config {
     const base = deepClone(defaultConfig);
 
@@ -209,8 +157,6 @@ export function normalizeConfig(raw: any): Config {
     const exists = out.searchEngines.some((e: any) => e.id === curId);
     out.currentEngineId = exists ? curId : out.searchEngines[0]?.id ?? base.currentEngineId;
 
-    // widgets
-    out.widgets = normalizeWidgets(input.widgets);
 
     // layout
     out.layout = Array.isArray(input.layout) ? input.layout.map(normalizeGroup) : deepClone(base.layout);
