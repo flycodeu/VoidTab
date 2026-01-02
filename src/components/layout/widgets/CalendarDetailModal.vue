@@ -3,19 +3,15 @@ import {computed, ref} from 'vue';
 import {Solar, SolarUtil, HolidayUtil} from 'lunar-typescript';
 import {PhX, PhCaretLeft, PhCaretRight} from '@phosphor-icons/vue';
 
-
 // ==========================================================
 
 const props = defineProps<{ show: boolean }>();
-console.log(props)
 const emit = defineEmits(['close']);
 
 const selectedDate = ref(new Date());
 const panelDate = ref(new Date());
 
-// 动画方向控制
 const transitionName = ref('slide-up');
-// 滚动冷却时间戳
 const lastWheelTime = ref(0);
 
 const weeks = ['一', '二', '三', '四', '五', '六', '日'];
@@ -138,9 +134,7 @@ const detail = computed(() => {
 });
 
 const changeMonth = (delta: number) => {
-  // 动画方向：往后翻(1)是向上滑，往前翻(-1)是向下滑
   transitionName.value = delta > 0 ? 'slide-up' : 'slide-down';
-
   const d = new Date(panelDate.value);
   d.setMonth(d.getMonth() + delta);
   panelDate.value = d;
@@ -152,42 +146,40 @@ const selectDay = (item: any) => {
   if (item.type === 'next') changeMonth(1);
 };
 
-// ✅ 修复：滚轮事件处理
 const handleWheel = (e: WheelEvent) => {
   const now = Date.now();
-  // 冷却时间 250ms，避免一次滚动触发多次翻页
   if (now - lastWheelTime.value < 250) return;
-
-  // 只要有滚动幅度就触发，不再设置最小阈值，适配精密触摸板
   if (e.deltaY === 0) return;
 
   lastWheelTime.value = now;
 
   if (e.deltaY > 0) {
-    changeMonth(1); // 下滚 -> 下个月
+    changeMonth(1);
   } else {
-    changeMonth(-1); // 上滚 -> 上个月
+    changeMonth(-1);
   }
 };
 </script>
 
 <template>
   <Transition name="fade">
-    <div v-if="show" class="fixed inset-0 z-[99999] flex items-center justify-center p-4" @click.self="emit('close')">
-      <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+    <div v-if="show" class="fixed inset-0 z-[99999] flex items-center justify-center p-4">
 
-      <div class="relative w-[900px] h-[600px] bg-[#FDFDFD] rounded-2xl shadow-2xl flex overflow-hidden text-[#333]">
+      <div class="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-default" @click="emit('close')"></div>
+
+      <div
+          class="relative w-[900px] h-[600px] bg-[#FDFDFD] rounded-2xl shadow-2xl flex overflow-hidden text-[#333]"
+          @wheel.prevent.stop="handleWheel"
+      >
 
         <button
-            class="absolute top-4 right-4 z-10 p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition"
-            @click="emit('close')">
+            class="absolute top-4 right-4 z-50 p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition cursor-pointer"
+            @click="emit('close')"
+        >
           <PhX size="20"/>
         </button>
 
-        <div
-            class="flex-1 p-8 border-r border-gray-100 flex flex-col relative h-full"
-            @wheel.prevent.stop="handleWheel"
-        >
+        <div class="flex-1 p-8 border-r border-gray-100 flex flex-col relative h-full">
           <div class="flex items-center gap-4 mb-6 relative z-10">
             <div class="flex items-center bg-gray-100 rounded-lg p-1">
               <button @click="changeMonth(-1)" class="p-1 hover:bg-white rounded shadow-sm transition active:scale-95">
@@ -248,7 +240,7 @@ const handleWheel = (e: WheelEvent) => {
           </div>
         </div>
 
-        <div class="w-[320px] bg-[#FAFAFA] p-8 flex flex-col z-10">
+        <div class="w-[320px] bg-[#FAFAFA] p-8 flex flex-col z-10 relative">
           <div class="text-center mb-6">
             <div class="text-sm text-gray-500 mb-2">{{ detail.year }}-{{
                 String(detail.month).padStart(2, '0')
@@ -303,10 +295,9 @@ const handleWheel = (e: WheelEvent) => {
 .slide-up-leave-active,
 .slide-down-enter-active,
 .slide-down-leave-active {
-  transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1); /* 更顺滑的缓动 */
+  transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-/* Slide Up (Next Month) */
 .slide-up-enter-from {
   transform: translateY(100%);
   opacity: 0;
@@ -317,7 +308,6 @@ const handleWheel = (e: WheelEvent) => {
   opacity: 0;
 }
 
-/* Slide Down (Prev Month) */
 .slide-down-enter-from {
   transform: translateY(-100%);
   opacity: 0;
