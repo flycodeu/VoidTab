@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import {PhPencilSimple, PhTrash, PhFolderNotch, PhArrowRight, PhCheck, PhPlus, PhAppWindow} from '@phosphor-icons/vue';
+import {
+  PhPencilSimple,
+  PhTrash,
+  PhFolderNotch,
+  PhArrowRight,
+  PhCheck,
+  PhPlus,
+  PhAppWindow,
+} from '@phosphor-icons/vue';
 
 defineProps<{
   show: boolean;
@@ -24,7 +32,8 @@ const emit = defineEmits<{
   <Transition name="scale">
     <div
         v-if="show"
-        class="fixed z-[9999] min-w-[170px] p-1.5 rounded-xl flex flex-col gap-1 origin-top-left select-none text-sm font-medium"
+        class="context-menu-panel-root fixed z-[99999] min-w-[170px] p-1.5 rounded-xl flex flex-col gap-1
+             origin-top-left select-none text-sm font-medium"
         :style="styleObj"
         @click.stop
         @contextmenu.prevent
@@ -37,6 +46,7 @@ const emit = defineEmits<{
           <PhPlus size="16" class="opacity-70"/>
           添加图标
         </button>
+
         <button
             @click="emit('addWidget')"
             class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
@@ -114,8 +124,12 @@ const emit = defineEmits<{
                 <span class="truncate max-w-[90px]">{{ group.title }}</span>
               </div>
               <PhCheck v-if="group.id === currentGroupId" size="12" weight="bold"/>
-              <PhArrowRight v-else size="12" weight="bold"
-                            class="opacity-0 group-hover:opacity-100 transition-opacity"/>
+              <PhArrowRight
+                  v-else
+                  size="12"
+                  weight="bold"
+                  class="opacity-0 group-hover:opacity-100 transition-opacity"
+              />
             </div>
           </div>
         </div>
@@ -148,42 +162,40 @@ const emit = defineEmits<{
           删除分组
         </button>
       </template>
-
     </div>
   </Transition>
 </template>
 
 <style scoped>
-.scale-enter-active, .scale-leave-active {
+.scale-enter-active,
+.scale-leave-active {
   transition: opacity 0.1s ease, transform 0.1s ease;
 }
 
-.scale-enter-from, .scale-leave-to {
+.scale-enter-from,
+.scale-leave-to {
   opacity: 0;
   transform: scale(0.95);
 }
 
-/* ✅ 修复滚动条样式 */
 .custom-scrollbar {
-  /* 防止滚动到底部时触发页面滚动 */
   overscroll-behavior: contain;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px; /* 加宽到 6px，方便抓取 */
+  width: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.4); /* 加深颜色 */
+  background: rgba(128, 128, 128, 0.4);
   border-radius: 4px;
   cursor: pointer;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.6); /* hover 时更深 */
+  background: rgba(128, 128, 128, 0.6);
 }
 
-/* 暗色模式适配 */
 :global(.dark) .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
 }

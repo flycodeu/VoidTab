@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, inject, onMounted, onUnmounted, ref} from 'vue';
+import {computed, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/useUiStore.ts';
 import {useDeleteConfirm} from '../../../composables/useDeleteConfirm';
@@ -12,8 +12,7 @@ import {PhTrash} from '@phosphor-icons/vue';
 
 const store = useConfigStore();
 const ui = useUiStore();
-const del = useDeleteConfirm();
-console.log(del)
+useDeleteConfirm(); // 保留你原来的调用（不影响逻辑）
 const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | undefined;
 
 // 菜单容器 Ref
@@ -27,43 +26,38 @@ const showWidgetModal = ref(false);
 
 // ========== 删除弹窗状态 ==========
 type DeleteTarget =
-    | { type: 'site' | 'widget'; groupId: string; siteId: string; title?: string } // ✅ 扩展支持 widget
+    | { type: 'site' | 'widget'; groupId: string; siteId: string; title?: string }
     | { type: 'group'; groupId: string; title?: string }
     | null;
 
 const showDeleteModal = ref(false);
 const deleteTarget = ref<DeleteTarget>(null);
 
-// ✅ 核心修复：处理删除请求
 const openDeleteModal = () => {
   if (!ui.contextMenu?.show) return;
 
   const {type, groupId, item} = ui.contextMenu;
 
-  // 1. 处理图标(site) 和 组件(widget)
   if (type === 'site' || type === 'widget') {
     deleteTarget.value = {
-      type: type,
-      groupId: groupId,
+      type,
+      groupId,
       siteId: item?.id,
-      title: item?.title || (type === 'widget' ? item?.widgetType : '未命名')
+      title: item?.title || (type === 'widget' ? item?.widgetType : '未命名'),
     };
-    showDeleteModal.value = true; // ✅ 显式打开本地弹窗
-  }
-  // 2. 处理分组
-  else if (type === 'group') {
+    showDeleteModal.value = true;
+  } else if (type === 'group') {
     deleteTarget.value = {
       type: 'group',
       groupId: item?.id,
-      title: item?.title
+      title: item?.title,
     };
-    showDeleteModal.value = true; // ✅ 显式打开本地弹窗
+    showDeleteModal.value = true;
   }
 
   ui.closeContextMenu();
 };
 
-// ✅ 核心修复：确认删除
 const confirmDelete = () => {
   if (!deleteTarget.value) {
     showDeleteModal.value = false;
@@ -71,7 +65,6 @@ const confirmDelete = () => {
   }
 
   if (deleteTarget.value.type === 'site' || deleteTarget.value.type === 'widget') {
-    // Store 中的 removeSite 本质是移除 group.items 里的条目，所以对 widget 也通用
     store.removeSite(deleteTarget.value.groupId, deleteTarget.value.siteId);
   } else if (deleteTarget.value.type === 'group') {
     store.removeGroup(deleteTarget.value.groupId);
@@ -86,21 +79,112 @@ const cancelDelete = () => {
   deleteTarget.value = null;
 };
 
-// ========== 菜单样式 ==========
+// =====================
+// ✅ 自动避让：位置状态
+// =====================
+const PAD = 12;
+
+const menuPos = ref({
+  top: 0,
+  left: 0,
+  origin: 'top left',
+  maxH: 0,
+});
+
+/** 读取菜单根节点（用于测量真实宽高） */
+function getPanelEl() {
+  // ContextMenuPanel 根节点我们会加 .context-menu-panel-root
+  return menuRef.value?.querySelector('.context-menu-panel-root') as HTMLElement | null;
+}
+
+/** 根据 viewport 纠偏位置，避免被底部/右侧裁切 */
+async function recomputeMenuPosition() {
+  if (!ui.contextMenu?.show) return;
+
+  // 先用“鼠标点”做初始定位（保证能渲染出来）
+  const rawTop = ui.contextMenu.y;
+  const rawLeft = ui.contextMenu.x;
+
+  menuPos.value.top = rawTop;
+  menuPos.value.left = rawLeft;
+  menuPos.value.origin = 'top left';
+  menuPos.value.maxH = Math.max(120, window.innerHeight - PAD * 2);
+
+  await nextTick();
+
+  const el = getPanelEl();
+  if (!el) return;
+
+  const rect = el.getBoundingClientRect();
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+
+  let top = rawTop;
+  let left = rawLeft;
+
+  // ---------- 横向：优先靠右展开，超出则往左挪 ----------
+  let originX: 'left' | 'right' = 'left';
+  if (left + rect.width > winW - PAD) {
+    left = winW - rect.width - PAD;
+    originX = 'right';
+  }
+  left = Math.max(PAD, left);
+
+  // ---------- 纵向：优先向下展开；超出底部则“翻到上方” ----------
+  let originY: 'top' | 'bottom' = 'top';
+  if (top + rect.height > winH - PAD) {
+    const candidate = rawTop - rect.height; // 在鼠标上方展开
+    if (candidate >= PAD) {
+      top = candidate;
+      originY = 'bottom';
+    } else {
+      // 实在放不下就贴底，并靠 maxHeight 滚动兜底
+      top = winH - rect.height - PAD;
+      originY = 'bottom';
+    }
+  }
+  top = Math.max(PAD, top);
+
+  menuPos.value = {
+    top,
+    left,
+    origin: `${originY} ${originX}`,
+    maxH: Math.max(120, winH - PAD * 2),
+  };
+}
+
+// ✅ 打开菜单 / 坐标变化时自动纠偏
+watch(
+    () => [ui.contextMenu.show, ui.contextMenu.x, ui.contextMenu.y, ui.contextMenu.type],
+    async ([show]) => {
+      if (show) await recomputeMenuPosition();
+    }
+);
+
+// ✅ 窗口变化时如果菜单开着，也要重算
+const handleResize = async () => {
+  if (ui.contextMenu.show) await recomputeMenuPosition();
+};
+
+// ========== 菜单样式（现在使用纠偏后的 menuPos） ==========
 const menuStyle = computed(() => {
   const isDark = store.config.theme.mode === 'dark';
-  let top = ui.contextMenu.y;
-  let left = ui.contextMenu.x;
-
   return {
-    top: top + 'px',
-    left: left + 'px',
+    top: menuPos.value.top + 'px',
+    left: menuPos.value.left + 'px',
+    transformOrigin: menuPos.value.origin,
+
     backgroundColor: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
     border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)',
     color: isDark ? '#fff' : '#333',
     backdropFilter: 'blur(12px)',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
-  };
+    WebkitBackdropFilter: 'blur(12px)',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+
+    // ✅ 兜底：防止菜单太高导致底部按钮“消失”
+    maxHeight: menuPos.value.maxH + 'px',
+    overflowY: 'auto',
+  } as Record<string, any>;
 });
 
 const currentGroupName = computed(() => {
@@ -120,9 +204,7 @@ const moveTo = (targetGroupId: string) => {
 };
 
 const handleAddSite = () => {
-  if (dialog && ui.contextMenu.groupId) {
-    dialog.openAddDialog(ui.contextMenu.groupId);
-  }
+  if (dialog && ui.contextMenu.groupId) dialog.openAddDialog(ui.contextMenu.groupId);
   ui.closeContextMenu();
 };
 
@@ -132,12 +214,10 @@ const handleAddWidgetRequest = () => {
 };
 
 const handleConfirmAddWidget = (type: string) => {
-  if (ui.contextMenu.groupId) {
-    store.addWidget(ui.contextMenu.groupId, type);
-  }
+  if (ui.contextMenu.groupId) store.addWidget(ui.contextMenu.groupId, type);
 };
 
-const handleResize = (w: number, h: number) => {
+const handleResizeItem = (w: number, h: number) => {
   if (ui.contextMenu.item && ui.contextMenu.groupId) {
     store.updateItemSize(ui.contextMenu.groupId, ui.contextMenu.item.id, w, h);
   }
@@ -147,52 +227,51 @@ const handleResize = (w: number, h: number) => {
 // 动态标题
 const deleteTitle = computed(() => '确认删除？');
 const deleteMessage = computed(() => {
-  const t = deleteTarget.value?.type === 'group' ? '分组' : (deleteTarget.value?.type === 'widget' ? '组件' : '图标');
+  const t =
+      deleteTarget.value?.type === 'group'
+          ? '分组'
+          : deleteTarget.value?.type === 'widget'
+              ? '组件'
+              : '图标';
   return ['删除后无法恢复，', `确定要移除这个${t}吗？`];
 });
 
 // 点击外部关闭
-// 修改参数类型为 Event，以兼容 resize 和 mousedown
 const handleClickOutside = (event: Event) => {
   if (!ui.contextMenu.show) return;
-
-  // resize 事件通常直接关闭，或者其 target 是 Window 不是 Node
-  // 所以我们需要判断 target 是否真的是一个 DOM 节点
   const target = event.target;
-
-  if (menuRef.value && target instanceof Node && menuRef.value.contains(target)) {
-    return;
-  }
-
+  if (menuRef.value && target instanceof Node && menuRef.value.contains(target)) return;
   ui.closeContextMenu();
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    // 优先关闭弹窗，再关闭菜单
-    if (showDeleteModal.value) {
-      showDeleteModal.value = false;
-      return;
-    }
-    ui.closeContextMenu();
+  if (e.key !== 'Escape') return;
+  if (showDeleteModal.value) {
+    showDeleteModal.value = false;
+    return;
   }
+  ui.closeContextMenu();
 };
 
 onMounted(() => {
-  window.addEventListener('resize', handleClickOutside);
-  window.addEventListener('mousedown', handleClickOutside);
+  window.addEventListener('resize', handleResize);
+  window.addEventListener('mousedown', handleClickOutside, true); // ✅ capture 更稳
   window.addEventListener('keydown', handleKeydown);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleClickOutside);
-  window.removeEventListener('mousedown', handleClickOutside);
+  window.removeEventListener('resize', handleResize);
+  window.removeEventListener('mousedown', handleClickOutside, true);
   window.removeEventListener('keydown', handleKeydown);
 });
 </script>
 
 <template>
-  <div ref="menuRef" class="fixed z-[9999]" :style="{ pointerEvents: ui.contextMenu.show ? 'auto' : 'none' }">
+  <div
+      ref="menuRef"
+      class="fixed z-[99999]"
+      :style="{ pointerEvents: ui.contextMenu.show ? 'auto' : 'none' }"
+  >
     <ContextMenuPanel
         :show="ui.contextMenu.show"
         :styleObj="menuStyle"
@@ -203,7 +282,7 @@ onUnmounted(() => {
         @edit="() => { emit('edit'); ui.closeContextMenu(); }"
         @move="moveTo"
         @delete="openDeleteModal"
-        @resize="handleResize"
+        @resize="handleResizeItem"
         @addSite="handleAddSite"
         @addWidget="handleAddWidgetRequest"
     />
