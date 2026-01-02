@@ -100,7 +100,6 @@ export interface Config {
     sync: SyncProfile;
 
     layout: Group[];
-    widgets: WidgetItem[];
     theme: ThemeConfig;
 
     searchEngines: SearchEngine[];

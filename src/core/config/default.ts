@@ -53,33 +53,6 @@ export const defaultConfig: Config = {
         }
     ],
 
-    widgets: [
-        {id: 'weather', name: '天气信息', visible: true, order: 1, colSpan: 1, config: {city: 'Shanghai'}},
-        {
-            id: 'github',
-            name: 'GitHub 趋势',
-            visible: true,
-            order: 2,
-            colSpan: 2,
-            config: {language: 'javascript', since: 'daily'}
-        },
-        {id: 'system', name: '系统监控', visible: true, order: 3, colSpan: 1},
-        {
-            id: 'rss',
-            name: 'RSS 阅读器',
-            visible: true,
-            order: 4,
-            colSpan: 2,
-            config: {
-                feeds: [
-                    {name: '少数派', url: 'https://sspai.com/feed'},
-                    {name: 'V2EX', url: 'https://www.v2ex.com/index.xml'},
-                    {name: '36Kr', url: 'https://36kr.com/feed'}
-                ]
-            }
-        },
-    ],
-
     theme: {
         mode: 'light',
         sidebarPos: 'left',

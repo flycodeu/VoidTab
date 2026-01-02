@@ -64,22 +64,38 @@ onBeforeUnmount(() => {
 /** ✅ 移动端固定列数：确保 span 不会撑出屏幕 */
 const MOBILE_COLS = 4;
 
+/** ✅ 核心修复：给图标“文字行”预留高度（桌面模式被遮盖就是因为缺这个） */
+function calcRowUnit(iconSize: number) {
+  const showName = !!store.config.theme.showIconName;
+  const textSize = Number(store.config.theme.iconTextSize || 12);
+
+  // 经验值：一行文字 + 间距 + padding 预留
+  // textSize 越大，这个 reserve 也跟着涨
+  const titleReserve = showName ? Math.max(24, Math.ceil(textSize * 2.2 + 8)) : 10;
+
+  return iconSize + titleReserve;
+}
+
 // --- 样式计算：支持 Grid Span 和 Dense ---
 const densityStyle = computed(() => {
   const mode = store.config.theme.density || 'normal';
   const baseGap = Number(store.config.theme.gap || 12);
   const iconSize = Number(store.config.theme.iconSize || 72);
 
+  const rowUnit = calcRowUnit(iconSize);
+
   const baseStyle: any = {
     ...gridStyle.value,
-    gridAutoRows: `minmax(${iconSize}px, auto)`,
+    // ✅ 关键：用 rowUnit（iconSize + 文本预留）作为网格单位高度
+    // 否则 1x1 只够放图标，文字就会被下一行遮住/裁掉
+    gridAutoRows: `${rowUnit}px`,
     gridAutoFlow: 'dense',
     alignItems: 'stretch',
     width: '100%',
     minWidth: 0,
   };
 
-  // ✅ 关键修复：移动端强制 4 列且用 minmax(0,1fr) 防撑宽
+  // ✅ 移动端强制 4 列且用 minmax(0,1fr) 防撑宽
   if (isMobile.value) {
     baseStyle.gridTemplateColumns = `repeat(${MOBILE_COLS}, minmax(0, 1fr))`;
     baseStyle.gap = `${Math.max(10, Math.floor(baseGap * 0.8))}px`;
@@ -112,10 +128,10 @@ const getItemStyle = (item: any) => {
 
   return {
     ...itemContainerStyle.value,
-    minWidth: 0, // ✅ 防止内部撑开
+    minWidth: 0,
     gridColumn: `span ${spanW}`,
     gridRow: `span ${spanH}`,
-    // 只有 1x1 且是站点时强制正方形
+    // 只有 1x1 且是站点时强制正方形（保留你的逻辑）
     aspectRatio: spanW === 1 && spanH === 1 && item.kind !== 'widget' ? '1 / 1' : 'auto',
   };
 };
@@ -300,12 +316,10 @@ const confirmDelete = () => {
 </script>
 
 <template>
-  <!-- ✅ 移动端底部留出 TabBar 空间 -->
   <div
       class="w-full flex flex-col items-center md:pb-20"
       :style="{ paddingBottom: `calc(env(safe-area-inset-bottom) + 96px)` }"
   >
-    <!-- ✅ 移动端不要让内部出现横向溢出 -->
     <div
         class="w-full transition-all duration-300 px-4 overflow-x-hidden"
         :style="{ maxWidth: isMobile ? '100%' : store.config.theme.gridMaxWidth + 'px' }"
@@ -329,6 +343,7 @@ const confirmDelete = () => {
             {{ group.title }}
           </div>
 
+          <!-- 编辑模式 -->
           <VueDraggable
               v-if="isEditMode"
               :key="'edit-' + group.id"
@@ -356,7 +371,8 @@ const confirmDelete = () => {
                 :class="[{ 'arrange-mode': isEditMode }, densityItemClass]"
                 @pointerdown="onHoldStart"
             >
-              <div class="site-wrap">
+              <!-- ✅ 关键：只裁 widget，别裁 site 的文字 -->
+              <div class="site-wrap" :class="{ 'clip-content': item.kind === 'widget' }">
                 <WidgetCard
                     v-if="item.kind === 'widget'"
                     :item="item"
@@ -389,6 +405,7 @@ const confirmDelete = () => {
             </div>
           </VueDraggable>
 
+          <!-- 浏览模式 -->
           <VueDraggable
               v-else
               :key="'view-' + group.id + '-' + currentSortKey"
@@ -409,7 +426,8 @@ const confirmDelete = () => {
                 class="site-tile"
                 :class="densityItemClass"
             >
-              <div class="site-wrap">
+              <!-- ✅ 关键：只裁 widget，别裁 site 的文字 -->
+              <div class="site-wrap" :class="{ 'clip-content': item.kind === 'widget' }">
                 <WidgetCard
                     v-if="item.kind === 'widget'"
                     :item="item"
@@ -483,11 +501,15 @@ const confirmDelete = () => {
   }
 }
 
-/* ✅ 关键：防止 grid item 被内容撑出 */
+/* ✅ 防止 grid item 被内容撑出 */
 .site-tile {
   transition: transform 120ms ease;
   will-change: transform;
   min-width: 0;
+}
+
+.site-tile:hover {
+  transform: translateY(-1px);
 }
 
 .site-wrap {
@@ -499,11 +521,14 @@ const confirmDelete = () => {
   height: 100%;
   width: 100%;
   min-width: 0;
-  overflow: hidden; /* ✅ 防止 widget 内部撑破 */
+
+  /* ✅ 默认不要裁剪：否则图标文字容易被裁掉 */
+  overflow: visible;
 }
 
-.site-tile:hover {
-  transform: translateY(-1px);
+/* ✅ 只对 widget 裁剪：避免 widget 内部撑破布局 */
+.site-wrap.clip-content {
+  overflow: hidden;
 }
 
 .site-tile:hover .site-wrap {

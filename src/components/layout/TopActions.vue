@@ -2,7 +2,6 @@
 import {
   PhEye,
   PhEyeSlash,
-  PhCards,
   PhArrowsLeftRight,
   PhPencilSimple,
   PhCheck
@@ -19,7 +18,6 @@ props;
 const emit = defineEmits<{
   (e: 'toggleSidebarPos'): void;
   (e: 'toggleEdit'): void;
-  (e: 'openWidgets'): void;
   (e: 'toggleFocus'): void;
   (e: 'toggleAi'): void;
 }>();
@@ -56,14 +54,6 @@ const emit = defineEmits<{
         title="整理桌面"
     >
       <component :is="isEditMode ? PhCheck : PhPencilSimple" size="20" weight="bold"/>
-    </button>
-
-    <button
-        @click="emit('openWidgets')"
-        class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95"
-        title="小组件控制台"
-    >
-      <PhCards size="20" weight="bold"/>
     </button>
 
     <button

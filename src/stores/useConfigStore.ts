@@ -243,33 +243,6 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
-    const toggleWidget = (widgetId: string, isVisible: boolean) => {
-        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
-        if (widget) widget.visible = isVisible;
-    };
-
-    const updateWidgetConfig = (widgetId: string, settings: any) => {
-        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
-        if (widget) {
-            widget.config = {...(widget.config || {}), ...settings};
-        }
-    };
-
-    const addRssFeed = (widgetId: string, name: string, url: string) => {
-        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
-        if (widget && widget.config && widget.config.feeds) {
-            widget.config.feeds.push({name, url});
-        }
-    };
-
-    const removeRssFeed = (widgetId: string, url: string) => {
-        const widget = config.value.widgets.find((w: any) => w.id === widgetId);
-        if (widget && widget.config && widget.config.feeds) {
-            widget.config.feeds = widget.config.feeds.filter((f: any) => f.url !== url);
-        }
-    };
-
-
     const importBookmarks = (htmlContent: string) => {
         const result = parseBookmarkContent(htmlContent);
         if (result.success && result.groups.length > 0) {
@@ -394,11 +367,6 @@ export const useConfigStore = defineStore('config', () => {
 
         addEngine,
         removeEngine,
-
-        toggleWidget,
-        updateWidgetConfig,
-        addRssFeed,
-        removeRssFeed,
 
         importBookmarks,
 

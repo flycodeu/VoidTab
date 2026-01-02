@@ -2,14 +2,13 @@
 import {computed, ref} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 import {
-  PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage, PhMagicWand, PhDatabase, PhGlobe, PhPuzzlePiece, PhCloudArrowUp
+  PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage, PhMagicWand, PhDatabase, PhGlobe, PhCloudArrowUp
 } from '@phosphor-icons/vue';
 
 // Import Tabs
 import IconTab from '../layout/settings/IconTab.vue';
 import LayoutTab from '../layout/settings/LayoutTab.vue';
 import ThemeTab from '../layout/settings/ThemeTab.vue';
-import WidgetsTab from '../layout/settings/WidgetsTab.vue';
 import EffectsTab from '../layout/settings/EffectsTab.vue';
 import SearchTab from '../layout/settings/SearchTab.vue';
 import DataTab from '../layout/settings/DataTab.vue';
@@ -23,7 +22,6 @@ const menuItems = [
   {id: 'icon', label: '图标', icon: PhSquaresFour},
   {id: 'layout', label: '布局', icon: PhFrameCorners},
   {id: 'theme', label: '主题', icon: PhImage},
-  {id: 'widgets', label: '组件', icon: PhPuzzlePiece},
   {id: 'effects', label: '特效', icon: PhMagicWand},
   {id: 'search', label: '搜索', icon: PhGlobe},
   {id: 'data', label: '数据', icon: PhDatabase},
@@ -37,7 +35,6 @@ const tabMap: Record<TabType, any> = {
   icon: IconTab,
   layout: LayoutTab,
   theme: ThemeTab,
-  widgets: WidgetsTab,
   effects: EffectsTab,
   search: SearchTab,
   data: DataTab,
