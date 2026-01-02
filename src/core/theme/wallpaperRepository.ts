@@ -1,5 +1,5 @@
 // src/core/theme/wallpaperRepository.ts
-import {storage} from '../../utils/storage.ts';
+import {storage} from '../../shared/utils/storage.ts';
 import {LOCAL_WALLPAPER_MARKER} from '../config/default.ts';
 import type {Config} from '../config/types.ts';
 

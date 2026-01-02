@@ -1,6 +1,6 @@
 // src/core/sync/providers/webdav.ts
 import type {SyncProfile, SyncOpResult, SyncTestResult, WebDavProfile, SyncProvider} from '../types';
-import {checkWebDavConnection, uploadToWebDav, downloadFromWebDav} from '../../../utils/webdav';
+import {checkWebDavConnection, uploadToWebDav, downloadFromWebDav} from '../../../shared/utils/webdav';
 
 function asWebDav(profile: SyncProfile): WebDavProfile | null {
     return profile.provider === 'webdav' ? (profile as WebDavProfile) : null;

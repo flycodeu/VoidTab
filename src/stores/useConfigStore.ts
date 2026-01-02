@@ -1,6 +1,6 @@
 import {defineStore} from 'pinia';
 import {ref, watch} from 'vue';
-import {parseBookmarkContent} from '../utils/bookmarkImporter';
+import {parseBookmarkContent} from '../shared/utils/bookmarkImporter';
 import {SyncScheduler, syncService} from '../core/sync';
 
 import type {Config, Group, SiteItem, WidgetType} from '../core/config/types';

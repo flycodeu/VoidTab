@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import {computed, defineAsyncComponent, onMounted, onUnmounted, ref} from 'vue';
-import {useTheme} from './composables/useTheme';
+import {useTheme} from './shared/composables/theme/useTheme.ts';
 import {useConfigStore} from './stores/useConfigStore';
-import {useUiStore} from './stores/useUiStore';
+import {useUiStore} from './stores/ui/useUiStore.ts';
 import {PhSpinner} from '@phosphor-icons/vue';
 
-import CustomCursor from './components/ui/CustomCursor.vue';
-import SideBar from './components/layout/SideBar.vue';
-import ContextMenu from './components/ui/context-menu/ContextMenu.vue';
-import WallpaperLayer from './components/layout/WallpaperLayer.vue';
-import TopActions from './components/layout/TopActions.vue';
-import HomeMain from './components/layout/HomeMain.vue';
-import MobileGroupNav from './components/layout/MobileGroupNav.vue';
-import DeleteConfirmHost from './components/ui/DeleteConfirmHost.vue';
+import CustomCursor from './shared/ui/cursor/CustomCursor.vue';
+import SideBar from './features/navigation/components/SideBar.vue';
+import ContextMenu from './features/context-menu/components/ContextMenu.vue';
+import WallpaperLayer from './app/shell/WallpaperLayer.vue';
+import TopActions from './features/navigation/components/TopActions.vue';
+import HomeMain from './features/home/components/HomeMain.vue';
+import MobileGroupNav from './features/navigation/components/MobileGroupNav.vue';
+import DeleteConfirmHost from './features/confirm-delete/components/DeleteConfirmHost.vue';
 
-const SettingsModal = defineAsyncComponent(() => import('./components/settings/SettingsModal.vue'));
-const WidgetPanel = defineAsyncComponent(() => import('./components/layout/WidgetPanel.vue'));
-const SiteDialog = defineAsyncComponent(() => import('./components/ui/dialogs/SiteDialog.vue'));
-const GroupDialog = defineAsyncComponent(() => import('./components/ui/dialogs/GroupDialog.vue'));
-const AiChatPanel = defineAsyncComponent(() => import('./components/layout/AiChatPanel.vue'));
+const SettingsModal = defineAsyncComponent(() => import('./features/settings/components/SettingsModal.vue'));
+const WidgetPanel = defineAsyncComponent(() => import('./features/widgets/components/WidgetPanel.vue'));
+const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDialog.vue'));
+const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/GroupDialog.vue'));
+const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -52,7 +52,7 @@ const setActiveGroupId = (id: string) => {
   activeGroupId.value = id;
 };
 
-import {useDialogs} from './composables/useDialogs';
+import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
 
 const dialogLogic = useDialogs(store, ui);
 
