@@ -358,7 +358,7 @@ const confirmDelete = () => {
               :animation="200"
               group="voidtab-shared-group"
               filter=".ignore-drag"
-              class="grid items-start content-start min-h-[100px] h-full"
+              class="grid items-start content-start min-h-[100px] h-full pointer-events-auto"
               ghost-class="sortable-ghost"
               :style="densityStyle"
               :disabled="true"

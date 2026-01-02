@@ -33,7 +33,7 @@ const mainPaddingClass = computed(() => {
       data-main-scroll="1"
       :data-wheel-allow="isEditMode ? 'true' : null"
       class="flex-1 w-full h-full relative overflow-x-hidden transition-all duration-300"
-      :class="[mainPaddingClass, isEditMode ? 'overflow-y-auto no-scrollbar' : 'overflow-hidden']"
+      :class="[mainPaddingClass,'overflow-y-auto no-scrollbar']"
   >
     <!-- ✅ 顶部信息区：压缩高度（不再占半屏） -->
     <transition name="fade">

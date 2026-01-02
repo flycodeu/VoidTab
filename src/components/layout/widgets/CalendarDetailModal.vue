@@ -6,6 +6,7 @@ import {PhX, PhCaretLeft, PhCaretRight} from '@phosphor-icons/vue';
 // ==========================================================
 
 const props = defineProps<{ show: boolean }>();
+console.log(props)
 const emit = defineEmits(['close']);
 
 const selectedDate = ref(new Date());

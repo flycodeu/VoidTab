@@ -7,8 +7,7 @@ const props = defineProps<{
   isEditMode: boolean;
 }>();
 
-// ✅ 使用异步组件 (Async Components)
-// 只有当组件需要显示时才会加载对应的代码文件，优化性能
+
 const ClockWidget = defineAsyncComponent(() => import('../widgets/ClockWidget.vue'));
 const WeatherWidget = defineAsyncComponent(() => import('../widgets/WeatherWidget.vue'));
 const CalendarWidget = defineAsyncComponent(() => import('../widgets/CalendarWidget.vue'));
@@ -25,9 +24,9 @@ const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET
 
     <div class="relative z-10 w-full h-full text-white/90">
 
-      <ClockWidget v-if="item.widgetType === 'clock'" :item="item"/>
+      <ClockWidget v-if="item.widgetType === 'clock'" :item="item" />
 
-      <WeatherWidget v-else-if="item.widgetType === 'weather'" :item="item"/>
+      <WeatherWidget v-else-if="item.widgetType === 'weather'" :item="item" />
 
       <CalendarWidget v-else-if="item.widgetType === 'calendar'" :item="item"/>
 
