@@ -50,8 +50,10 @@ const activeGroupData = computed(() => {
 /** ✅ 移动端判定 */
 const isMobile = ref(false);
 let mq: MediaQueryList | null = null;
-const onMqChange = () => (isMobile.value = !!mq?.matches);
-
+const onMqChange = () => {
+  isMobile.value = !!mq?.matches;
+  recalcGrid();
+};
 onMounted(() => {
   mq = window.matchMedia('(max-width: 767px)');
   onMqChange();
@@ -64,55 +66,63 @@ onBeforeUnmount(() => {
 /**  移动端固定列数：确保 span 不会撑出屏幕 */
 const MOBILE_COLS = 4;
 
-/**  核心修复：给图标“文字行”预留高度（桌面模式被遮盖就是因为缺这个） */
-function calcRowUnit(iconSize: number) {
-  const showName = !!store.config.theme.showIconName;
-  const textSize = Number(store.config.theme.iconTextSize || 12);
-
-  // 经验值：一行文字 + 间距 + padding 预留
-  // textSize 越大，这个 reserve 也跟着涨
-  const titleReserve = showName ? Math.max(24, Math.ceil(textSize * 2.2 + 8)) : 10;
-
-  return iconSize + titleReserve;
-}
-
 const gridHostEl = ref<HTMLElement | null>(null);
 
-const gridCols = ref(6);
-const gridCell = ref(120);
+const gridCols = ref(12);
+const gridCell = ref(96);
 
 let ro: ResizeObserver | null = null;
+
+function calcLabelReserve() {
+  const showName = !!store.config.theme.showIconName;
+  const textSize = Number(store.config.theme.iconTextSize || 12);
+  if (!showName) return 0;
+
+  // ✅ 单行文字高度预估：比你之前 2.2*textSize 小很多（你之前太保守导致格子变大、列数上不去）
+  return Math.max(18, Math.ceil(textSize * 1.35 + 6)); // 约等于 18~24
+}
 
 function recalcGrid() {
   const el = gridHostEl.value;
   if (!el) return;
 
-  const baseGap = Number(store.config.theme.gap || 12);
-  const mode = store.config.theme.density || "normal";
-
-  // 你原来的 rowUnit（之前用来当 row 高度的那个）
-  const iconSize = Number(store.config.theme.iconSize || 72);
-  const rowUnit = calcRowUnit(iconSize);
-
-  // 你原来 comfortable 用 180px 作为列最小值，这里也保留逻辑
-  const minCell = mode === "comfortable" ? Math.max(180, rowUnit) : rowUnit;
-
-  const width = el.clientWidth; // 容器可用宽度（不含滚动条）
+  const gap = Number(store.config.theme.gap || 12);
+  const width = el.clientWidth;
   if (width <= 0) return;
 
   if (isMobile.value) {
     gridCols.value = MOBILE_COLS;
-    gridCell.value = Math.floor((width - baseGap * (MOBILE_COLS - 1)) / MOBILE_COLS);
+    gridCell.value = Math.floor((width - gap * (MOBILE_COLS - 1)) / MOBILE_COLS);
     return;
   }
 
-  // 自动列数：根据 minCell 估算能放几列
-  const cols = Math.max(1, Math.floor((width + baseGap) / (minCell + baseGap)));
-  const cell = Math.floor((width - baseGap * (cols - 1)) / cols);
+  const iconSize = Number(store.config.theme.iconSize || 72);
+  const labelH = calcLabelReserve();
 
-  gridCols.value = cols;
+  // ✅ 关键：一个 1×1 cell 必须能放下 icon + label + 少量上下间距
+  const innerPad = 8;   // 上下留白
+  const minCell = Math.max(iconSize + 6, iconSize + labelH + innerPad);
+
+  const DESKTOP_CHOICES = [12, 11, 10];
+
+  // ✅ 优先 12 列，不够就降到 11/10
+  for (const colsTry of DESKTOP_CHOICES) {
+    const cellTry = Math.floor((width - gap * (colsTry - 1)) / colsTry);
+    if (cellTry >= minCell) {
+      gridCols.value = colsTry;
+      gridCell.value = cellTry;
+      return;
+    }
+  }
+
+  // ✅ 再不行就按 minCell 自适应（小屏/窄窗时兜底）
+  const fit = Math.max(4, Math.floor((width + gap) / (minCell + gap)));
+  const cell = Math.floor((width - gap * (fit - 1)) / fit);
+
+  gridCols.value = fit;
   gridCell.value = cell;
 }
+
 
 onMounted(() => {
   recalcGrid();
@@ -125,57 +135,70 @@ onBeforeUnmount(() => {
   ro = null;
 });
 
+
+onBeforeUnmount(() => {
+  ro?.disconnect();
+  ro = null;
+});
+
 // --- 样式计算：支持 Grid Span 和 Dense ---
 const densityStyle = computed(() => {
   const mode = store.config.theme.density || "normal";
   const baseGap = Number(store.config.theme.gap || 12);
 
-  const baseStyle: any = {
+  const style: any = {
     ...gridStyle.value,
     gridAutoFlow: "dense",
     alignItems: "stretch",
     width: "100%",
     minWidth: 0,
 
-    // ✅ 关键：行高 = cell
+    // ✅ 关键：单位统一
     gridAutoRows: `${gridCell.value}px`,
-    // ✅ 关键：列宽 = cell
     gridTemplateColumns: `repeat(${gridCols.value}, ${gridCell.value}px)`,
-    // ✅ 剩余空间怎么处理（建议 start，或者 center）
-    justifyContent: "start",
   };
 
-  // gap 仍用你原来的密度策略
-  if (isMobile.value) {
-    baseStyle.gap = `${Math.max(10, Math.floor(baseGap * 0.8))}px`;
-  } else if (mode === "compact") {
-    baseStyle.gap = `${Math.max(8, Math.floor(baseGap * 0.6))}px`;
-  } else if (mode === "comfortable") {
-    baseStyle.gap = `${Math.floor(baseGap * 1.2)}px`;
-  } else {
-    baseStyle.gap = `${baseGap}px`;
-  }
+  if (isMobile.value) style.gap = `${Math.max(10, Math.floor(baseGap * 0.8))}px`;
+  else if (mode === "compact") style.gap = `${Math.max(8, Math.floor(baseGap * 0.6))}px`;
+  else if (mode === "comfortable") style.gap = `${Math.floor(baseGap * 1.2)}px`;
+  else style.gap = `${baseGap}px`;
 
-  return baseStyle;
+  return style;
 });
 
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || 'normal'}`);
 
 // ✅ 计算单个 Item 的跨度样式（移动端 clamp，防止 span 溢出）
 const getItemStyle = (item: any) => {
+  const isWidget = item.kind === "widget";
+
+  if (!isWidget) {
+    // ✅ 图标（site）永远固定 1×1
+    return {
+      ...itemContainerStyle.value,
+      minWidth: 0,
+      minHeight: 0,
+      gridColumn: `span 1`,
+      gridRow: `span 1`,
+    };
+  }
+
+  // ✅ widget 才允许 span
   const w = Number(item.w || 1);
   const h = Number(item.h || 1);
 
-  const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : w;
-  const spanH = h;
+  const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : Math.min(w, gridCols.value);
+  const spanH = Math.max(1, h);
 
   return {
     ...itemContainerStyle.value,
     minWidth: 0,
+    minHeight: 0,
     gridColumn: `span ${spanW}`,
     gridRow: `span ${spanH}`,
   };
 };
+
 
 /** ------------------------------
  * 排序逻辑
@@ -548,6 +571,7 @@ const confirmDelete = () => {
   transition: transform 120ms ease;
   will-change: transform;
   min-width: 0;
+  min-height: 0;
 }
 
 .site-tile:hover {
@@ -556,13 +580,14 @@ const confirmDelete = () => {
 
 .site-wrap {
   border-radius: 18px;
-  padding: 6px;
+  padding: 0;
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
   height: 100%;
   width: 100%;
   min-width: 0;
+  min-height: 0;
 
   /* ✅ 默认不要裁剪：否则图标文字容易被裁掉 */
   overflow: visible;

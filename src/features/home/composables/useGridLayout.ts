@@ -1,26 +1,21 @@
-import { computed } from 'vue';
-import type { ComputedRef } from 'vue';
+import {computed} from "vue";
+import type {ComputedRef} from "vue";
 
-export function useGridLayout(theme: {
-    iconSize: number | string;
-    gap: number | string;
-}) {
+export function useGridLayout(theme: { gap: number | string }) {
     const gridStyle: ComputedRef<Record<string, string>> = computed(() => {
-        const size = Number(theme.iconSize) || 60;
-        const gap = Number(theme.gap) || 20;
-        const colMinSize = size + 16;
-
+        const gap = Number(theme.gap) || 12;
         return {
+            display: "grid",
             gap: `${gap}px`,
-            gridTemplateColumns: `repeat(auto-fill, minmax(${colMinSize}px, 1fr))`,
+            justifyContent: "center", // 图2是整体居中更像
         };
     });
 
     const itemContainerStyle = computed(() => ({
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
     }));
 
-    return { gridStyle, itemContainerStyle };
+    return {gridStyle, itemContainerStyle};
 }
