@@ -61,10 +61,10 @@ onBeforeUnmount(() => {
   mq?.removeEventListener?.('change', onMqChange);
 });
 
-/** ✅ 移动端固定列数：确保 span 不会撑出屏幕 */
+/**  移动端固定列数：确保 span 不会撑出屏幕 */
 const MOBILE_COLS = 4;
 
-/** ✅ 核心修复：给图标“文字行”预留高度（桌面模式被遮盖就是因为缺这个） */
+/**  核心修复：给图标“文字行”预留高度（桌面模式被遮盖就是因为缺这个） */
 function calcRowUnit(iconSize: number) {
   const showName = !!store.config.theme.showIconName;
   const textSize = Number(store.config.theme.iconTextSize || 12);
@@ -76,41 +76,84 @@ function calcRowUnit(iconSize: number) {
   return iconSize + titleReserve;
 }
 
+const gridHostEl = ref<HTMLElement | null>(null);
+
+const gridCols = ref(6);
+const gridCell = ref(120);
+
+let ro: ResizeObserver | null = null;
+
+function recalcGrid() {
+  const el = gridHostEl.value;
+  if (!el) return;
+
+  const baseGap = Number(store.config.theme.gap || 12);
+  const mode = store.config.theme.density || "normal";
+
+  // 你原来的 rowUnit（之前用来当 row 高度的那个）
+  const iconSize = Number(store.config.theme.iconSize || 72);
+  const rowUnit = calcRowUnit(iconSize);
+
+  // 你原来 comfortable 用 180px 作为列最小值，这里也保留逻辑
+  const minCell = mode === "comfortable" ? Math.max(180, rowUnit) : rowUnit;
+
+  const width = el.clientWidth; // 容器可用宽度（不含滚动条）
+  if (width <= 0) return;
+
+  if (isMobile.value) {
+    gridCols.value = MOBILE_COLS;
+    gridCell.value = Math.floor((width - baseGap * (MOBILE_COLS - 1)) / MOBILE_COLS);
+    return;
+  }
+
+  // 自动列数：根据 minCell 估算能放几列
+  const cols = Math.max(1, Math.floor((width + baseGap) / (minCell + baseGap)));
+  const cell = Math.floor((width - baseGap * (cols - 1)) / cols);
+
+  gridCols.value = cols;
+  gridCell.value = cell;
+}
+
+onMounted(() => {
+  recalcGrid();
+  ro = new ResizeObserver(() => recalcGrid());
+  if (gridHostEl.value) ro.observe(gridHostEl.value);
+});
+
+onBeforeUnmount(() => {
+  ro?.disconnect();
+  ro = null;
+});
+
 // --- 样式计算：支持 Grid Span 和 Dense ---
 const densityStyle = computed(() => {
-  const mode = store.config.theme.density || 'normal';
+  const mode = store.config.theme.density || "normal";
   const baseGap = Number(store.config.theme.gap || 12);
-  const iconSize = Number(store.config.theme.iconSize || 72);
-
-  const rowUnit = calcRowUnit(iconSize);
 
   const baseStyle: any = {
     ...gridStyle.value,
-    // ✅ 关键：用 rowUnit（iconSize + 文本预留）作为网格单位高度
-    // 否则 1x1 只够放图标，文字就会被下一行遮住/裁掉
-    gridAutoRows: `${rowUnit}px`,
-    gridAutoFlow: 'dense',
-    alignItems: 'stretch',
-    width: '100%',
+    gridAutoFlow: "dense",
+    alignItems: "stretch",
+    width: "100%",
     minWidth: 0,
+
+    // ✅ 关键：行高 = cell
+    gridAutoRows: `${gridCell.value}px`,
+    // ✅ 关键：列宽 = cell
+    gridTemplateColumns: `repeat(${gridCols.value}, ${gridCell.value}px)`,
+    // ✅ 剩余空间怎么处理（建议 start，或者 center）
+    justifyContent: "start",
   };
 
-  // ✅ 移动端强制 4 列且用 minmax(0,1fr) 防撑宽
+  // gap 仍用你原来的密度策略
   if (isMobile.value) {
-    baseStyle.gridTemplateColumns = `repeat(${MOBILE_COLS}, minmax(0, 1fr))`;
     baseStyle.gap = `${Math.max(10, Math.floor(baseGap * 0.8))}px`;
-  }
-
-  if (mode === 'compact') {
-    return {...baseStyle, gap: `${Math.max(8, Math.floor(baseGap * 0.6))}px`};
-  } else if (mode === 'comfortable') {
-    return {
-      ...baseStyle,
-      gap: `${Math.floor(baseGap * 1.2)}px`,
-      gridTemplateColumns: isMobile.value
-          ? `repeat(${MOBILE_COLS}, minmax(0, 1fr))`
-          : 'repeat(auto-fill, minmax(180px, 1fr))',
-    };
+  } else if (mode === "compact") {
+    baseStyle.gap = `${Math.max(8, Math.floor(baseGap * 0.6))}px`;
+  } else if (mode === "comfortable") {
+    baseStyle.gap = `${Math.floor(baseGap * 1.2)}px`;
+  } else {
+    baseStyle.gap = `${baseGap}px`;
   }
 
   return baseStyle;
@@ -131,8 +174,6 @@ const getItemStyle = (item: any) => {
     minWidth: 0,
     gridColumn: `span ${spanW}`,
     gridRow: `span ${spanH}`,
-    // 只有 1x1 且是站点时强制正方形（保留你的逻辑）
-    aspectRatio: spanW === 1 && spanH === 1 && item.kind !== 'widget' ? '1 / 1' : 'auto',
   };
 };
 
@@ -323,6 +364,7 @@ const confirmDelete = () => {
     <div
         class="w-full transition-all duration-300 px-4 overflow-x-hidden"
         :style="{ maxWidth: isMobile ? '100%' : store.config.theme.gridMaxWidth + 'px' }"
+        ref="gridHostEl"
     >
       <GroupHeaderBar
           v-if="!isEditMode && activeGroupData"
