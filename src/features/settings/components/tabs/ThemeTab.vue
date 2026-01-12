@@ -1,19 +1,12 @@
 <script setup lang="ts">
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
-import {PhSun, PhMoon, PhCheckCircle, PhUploadSimple} from '@phosphor-icons/vue';
+import {PhSun, PhMoon, PhMonitor, PhCheckCircle, PhUploadSimple} from '@phosphor-icons/vue';
 
 const store = useConfigStore();
 
 // 切换深浅主题
-const toggleTheme = (mode: 'light' | 'dark') => {
+const toggleTheme = (mode: 'light' | 'dark' | 'system') => {
   store.config.theme.mode = mode;
-  if (mode === 'dark') {
-    document.documentElement.classList.add('dark');
-    document.documentElement.classList.remove('light');
-  } else {
-    document.documentElement.classList.add('light');
-    document.documentElement.classList.remove('dark');
-  }
 };
 
 // 处理壁纸上传
@@ -33,7 +26,7 @@ const handleFileUpload = (event: Event) => {
 <template>
   <div class="space-y-6 animate-fade-in" style="color: var(--settings-text);">
 
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-3 gap-4">
       <button
           @click="toggleTheme('light')"
           class="relative flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
@@ -61,6 +54,22 @@ const handleFileUpload = (event: Event) => {
         <PhMoon weight="fill" size="32"/>
         <span class="font-bold text-sm">深色模式</span>
         <div v-if="store.config.theme.mode === 'dark'"
+             class="absolute top-3 right-3 text-[var(--accent-color)] pointer-events-none">
+          <PhCheckCircle size="20" weight="fill"/>
+        </div>
+      </button>
+
+      <button
+          @click="toggleTheme('system')"
+          class="relative flex flex-col items-center justify-center gap-3 py-6 rounded-2xl border-2 transition-all hover:scale-[1.02] active:scale-95"
+          :class="store.config.theme.mode === 'system'
+          ? 'border-[var(--accent-color)] bg-[var(--accent-color)] bg-opacity-10 text-[var(--accent-color)]'
+          : 'border-transparent opacity-70 hover:opacity-100'"
+          style="background-color: var(--settings-panel);"
+      >
+        <PhMonitor weight="fill" size="32"/>
+        <span class="font-bold text-sm">跟随系统</span>
+        <div v-if="store.config.theme.mode === 'system'"
              class="absolute top-3 right-3 text-[var(--accent-color)] pointer-events-none">
           <PhCheckCircle size="20" weight="fill"/>
         </div>

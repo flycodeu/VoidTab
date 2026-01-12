@@ -4,12 +4,14 @@ import {VueDraggable} from 'vue-draggable-plus';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {PhMonitor, PhPlus, PhGear} from '@phosphor-icons/vue';
+import { useSystemPrefersDark } from '../../../shared/composables/theme/systemColorScheme';
 
 import SidebarGroupButton from './sidebar/SidebarGroupButton.vue';
 import {useSidebarDragHandlers} from '../composables/useSidebarDragHandlers.ts';
 
 const ui = useUiStore();
 const store = useConfigStore();
+const { prefersDark: systemPrefersDark } = useSystemPrefersDark();
 
 const props = defineProps<{ activeGroupId: string; isFocusMode: boolean }>();
 const emit = defineEmits<{
@@ -20,7 +22,11 @@ const emit = defineEmits<{
 
 // 玻璃拟态样式
 const sidebarStyle = computed(() => {
-  const isDark = store.config.theme.mode === 'dark';
+  const isDark = store.config.theme.mode === 'dark'
+      ? true
+      : store.config.theme.mode === 'light'
+          ? false
+          : systemPrefersDark.value;
   return {
     backgroundColor: isDark ? 'rgba(20, 20, 23, 0.65)' : 'rgba(255, 255, 255, 0.65)',
     borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.06)',

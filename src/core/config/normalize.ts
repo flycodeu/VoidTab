@@ -165,6 +165,12 @@ export function normalizeConfig(raw: any): Config {
         showWidgetName: base.theme.showWidgetName ?? true,
     };
 
+    // theme.mode：规范化（避免旧数据或脏数据中的非法字符串）
+    const mode = (input?.theme as any)?.mode;
+    out.theme.mode = (mode === 'light' || mode === 'dark' || mode === 'system')
+        ? mode
+        : base.theme.mode;
+
 
     // 如果 input 里有布尔值就用，没有就用默认(false)
     out.focusMode = typeof input.focusMode === 'boolean'

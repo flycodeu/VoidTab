@@ -156,9 +156,6 @@ onMounted(async () => {
   await store.loadConfig();
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
 
-  document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
-  document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
-
   wheelHandler = (e: WheelEvent) => onWheelCapture(e);
   window.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
 });

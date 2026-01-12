@@ -54,7 +54,7 @@ export const defaultConfig: Config = {
     ],
 
     theme: {
-        mode: 'light',
+        mode: 'system',
         sidebarPos: 'left',
         showTime: true,
         gridMaxWidth: 2000,

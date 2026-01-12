@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
+import { useSystemPrefersDark } from '../../../shared/composables/theme/systemColorScheme';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useDeleteConfirm} from '../../confirm-delete/composables/useDeleteConfirm.ts';
 
@@ -12,6 +13,7 @@ import {PhTrash} from '@phosphor-icons/vue';
 
 const store = useConfigStore();
 const ui = useUiStore();
+const { prefersDark: systemPrefersDark } = useSystemPrefersDark();
 useDeleteConfirm();
 const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | undefined;
 
@@ -149,7 +151,11 @@ const handleResize = async () => {
 };
 
 const menuStyle = computed(() => {
-  const isDark = store.config.theme.mode === 'dark';
+  const isDark = store.config.theme.mode === 'dark'
+      ? true
+      : store.config.theme.mode === 'light'
+          ? false
+          : systemPrefersDark.value;
   return {
     top: menuPos.value.top + 'px',
     left: menuPos.value.left + 'px',

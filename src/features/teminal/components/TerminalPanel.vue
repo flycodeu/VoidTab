@@ -327,11 +327,9 @@ const handleConfig = (args: string[]) => {
 
 const handleTheme = (args: string[]) => {
   const mode = args[1];
-  if (mode !== 'light' && mode !== 'dark') throw new Error('Usage: theme [light|dark]');
+  if (mode !== 'light' && mode !== 'dark' && mode !== 'system') throw new Error('Usage: theme [light|dark|system]');
   store.config.theme.mode = mode;
   store.saveConfig();
-  document.documentElement.classList.remove('light', 'dark');
-  document.documentElement.classList.add(mode);
   logs.value.push({type: 'success', content: `Theme: ${mode}`});
 };
 

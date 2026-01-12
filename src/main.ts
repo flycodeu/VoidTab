@@ -6,10 +6,14 @@ import './style.css';
 // 1. 初始化主题逻辑
 (function initTheme() {
     try {
-        const storageKey = 'voidtab-config';
-        const saved = localStorage.getItem(storageKey);
+        // 尽力做一次“同步”的主题预热，减少首屏闪烁（FOUC）。
+        // WebStorageAdapter 下，配置存储键为：voidtab:local:voidtab-core-config
+        // （Chrome 扩展存储为异步，这里无法同步读取，所以先回退到系统主题偏好，待应用加载后再纠正。）
+        const saved =
+            localStorage.getItem('voidtab:local:voidtab-core-config')
+            ?? localStorage.getItem('voidtab-config'); // legacy
 
-        let userMode = 'system';
+        let userMode: 'light' | 'dark' | 'system' = 'system';
 
         if (saved) {
             const config = JSON.parse(saved);
@@ -21,14 +25,23 @@ import './style.css';
 
         const html = document.documentElement;
 
-        // 只有当用户明确指定了模式，才添加 force 类
-        if (userMode === 'light') {
-            html.classList.add('light');
-            html.classList.add('force-light');
-        } else if (userMode === 'dark') {
-            html.classList.remove('light');
-            html.classList.add('force-dark');
-        }
+        const prefersDark = (() => {
+            try {
+                return typeof window.matchMedia === 'function'
+                    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+                    : false;
+            } catch {
+                return false;
+            }
+        })();
+
+        const effectiveMode: 'light' | 'dark' =
+            userMode === 'system' ? (prefersDark ? 'dark' : 'light') : userMode;
+
+        // Tailwind（darkMode: 'class'） + CSS 变量（html.light 覆盖浅色变量）
+        html.classList.toggle('dark', effectiveMode === 'dark');
+        html.classList.toggle('light', effectiveMode === 'light');
+        (html.style as any).colorScheme = effectiveMode;
 
     } catch (e) {
         console.error('Theme init failed', e);

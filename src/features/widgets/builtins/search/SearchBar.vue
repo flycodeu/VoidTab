@@ -199,9 +199,10 @@ const handleSearch = () => {
 
         <transition name="scale">
           <div v-if="showEngineMenu"
-               class="absolute top-14 left-0 w-48 bg-[#1e1e1e]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 text-white">
+               class="absolute top-14 left-0 w-48 backdrop-blur-xl border rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50"
+               style="background-color: var(--glass-bg); color: var(--glass-text); border-color: var(--glass-border);">
             <div v-for="eng in store.config.searchEngines" :key="eng.id"
-                 class="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 cursor-pointer group/item transition-colors"
+                 class="flex items-center justify-between p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer group/item transition-colors"
                  @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
               <div class="flex items-center gap-3">
                 <component :is="(PhIcons as any)['Ph' + eng.icon] || PhIcons.PhGlobe" size="18"/>
@@ -212,7 +213,7 @@ const handleSearch = () => {
                 <PhTrash size="14"/>
               </button>
             </div>
-            <div class="h-[1px] bg-white/10 my-1"></div>
+            <div class="h-[1px] bg-black/10 dark:bg-white/10 my-1"></div>
             <button @click="emit('openSettings')"
                     class="text-xs font-bold opacity-60 hover:opacity-100 text-center py-2 transition-opacity">添加引擎...
             </button>

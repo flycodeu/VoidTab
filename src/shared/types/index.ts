@@ -25,7 +25,7 @@ export interface LinkGroup {
 
 export interface ThemeConfig {
     wallpaper: string;
-    mode: 'dark' | 'light';
+    mode: 'dark' | 'light' | 'system';
 
     // 视觉材质
     blur: number;

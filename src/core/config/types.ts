@@ -47,7 +47,7 @@ export interface WidgetItem {
 }
 
 export interface ThemeConfig {
-    mode: 'light' | 'dark';
+    mode: 'light' | 'dark' | 'system';
     sidebarPos: 'left' | 'right';
     showTime: boolean;
     gridMaxWidth: number;

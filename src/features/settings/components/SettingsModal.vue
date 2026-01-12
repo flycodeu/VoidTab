@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
+import { useSystemPrefersDark } from '../../../shared/composables/theme/systemColorScheme';
 import {
   PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage,
   PhMagicWand, PhDatabase, PhGlobe, PhCloudArrowUp,
@@ -35,6 +36,13 @@ const menuItems = [
 type TabType = typeof menuItems[number]['id'];
 const settingsTab = ref<TabType>('icon');
 
+const { prefersDark: systemPrefersDark } = useSystemPrefersDark();
+const isDark = computed(() => store.config.theme.mode === 'dark'
+  ? true
+  : store.config.theme.mode === 'light'
+    ? false
+    : systemPrefersDark.value);
+
 const tabMap: Record<TabType, any> = {
   icon: IconTab,
   layout: LayoutTab,
@@ -60,7 +68,7 @@ const ActiveTab = computed(() => tabMap[settingsTab.value]);
       <div
           class="relative w-full max-w-5xl h-[85vh] md:h-[82vh] flex flex-col md:flex-row overflow-hidden rounded-[2rem] shadow-2xl transition-all animate-scale-in border backdrop-blur-2xl backdrop-saturate-150"
           :class="[
-            store.config.theme.mode === 'dark' ? 'shadow-[0_0_50px_-10px_rgba(0,0,0,0.6)]' : 'shadow-2xl'
+            isDark ? 'shadow-[0_0_50px_-10px_rgba(0,0,0,0.6)]' : 'shadow-2xl'
           ]"
           style="
             background-color: var(--settings-surface);
