@@ -309,3 +309,53 @@ body {
     color: var(--modal-text);
     box-shadow: var(--modal-shadow);
 }
+
+/* ------------------------------------------------ */
+/* 1. 科技字体 (Tech Font)                          */
+/* ------------------------------------------------ */
+/* 只有当 body/div 有 .theme-tech-font 时才生效 */
+.theme-tech-font,
+.theme-tech-font * {
+    font-family: 'JetBrains Mono', 'Orbitron', monospace, sans-serif !important;
+    letter-spacing: 0.5px;
+}
+
+/* ------------------------------------------------ */
+/* 2. 霓虹边框 (Neon Glow)                          */
+/* ------------------------------------------------ */
+/* 假设你的卡片类名是 .glass-card 或 .widget-card */
+
+/* 默认状态（关闭特效时）：无发光 */
+.widget-card, .glass-card {
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+}
+
+/* ✅ 开启状态：当父级有 .theme-neon 时，添加发光 */
+.theme-neon .widget-card,
+.theme-neon .glass-card {
+    border-color: rgba(var(--accent-color-rgb), 0.5);
+    box-shadow: 0 0 10px rgba(var(--accent-color-rgb), 0.3),
+    inset 0 0 10px rgba(var(--accent-color-rgb), 0.1);
+    transition: all 0.3s ease;
+}
+
+/* ------------------------------------------------ */
+/* 3. 呼吸灯 (Breathing Light)                      */
+/* ------------------------------------------------ */
+/* 定义动画 */
+@keyframes sidebar-breath {
+    0%, 100% {
+        border-right-color: rgba(var(--accent-color-rgb), 0.1);
+    }
+    50% {
+        border-right-color: rgba(var(--accent-color-rgb), 0.6);
+        box-shadow: 5px 0 20px rgba(var(--accent-color-rgb), 0.2);
+    }
+}
+
+/* 假设侧边栏组件有类名 .sidebar-panel */
+.theme-breathing .sidebar-panel {
+    animation: sidebar-breath 3s infinite ease-in-out;
+    border-right: 1px solid transparent; /* 确保有边框用于动画 */
+}

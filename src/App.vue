@@ -190,7 +190,13 @@ const handleEditWidgetSettings = (item: any) => {
   <div
       v-else
       class="h-screen w-full relative overflow-hidden font-sans isolate"
-      :class="[{ 'cursor-none': store.config.theme.customCursor }]"
+      :class="[
+        { 'cursor-none': store.config.theme.customCursor },
+        // --- 新增以下绑定 ---
+        { 'theme-tech-font': store.config.theme.techFont },
+        { 'theme-breathing': store.config.theme.breathingLight },
+        { 'theme-neon': store.config.theme.neonGlow }
+      ]"
       @click="ui.closeContextMenu()"
       @contextmenu="ui.closeContextMenu()"
       style="color: var(--text-primary);"
@@ -299,7 +305,10 @@ const handleEditWidgetSettings = (item: any) => {
       </div>
     </div>
 
-    <div class="fixed inset-0 z-[10000] pointer-events-none">
+    <div
+        v-if="store.config.theme.customCursor"
+        class="fixed inset-0 z-[10000] pointer-events-none"
+    >
       <CustomCursor class="pointer-events-auto"/>
     </div>
 
