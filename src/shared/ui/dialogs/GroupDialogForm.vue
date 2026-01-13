@@ -94,37 +94,64 @@ defineExpose({
 <template>
   <Transition name="scale">
     <div v-if="show" class="fixed inset-0 z-[105] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" @click="emit('close')"/>
+      <!-- ✅ 遮罩：用主题 overlay 变量，不再写死黑雾 -->
+      <div
+          class="absolute inset-0 transition-opacity"
+          :style="{
+          background: 'rgba(var(--overlay-rgb), var(--overlay-alpha))',
+          backdropFilter: 'blur(14px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(14px) saturate(140%)'
+        }"
+          @click="emit('close')"
+      />
 
+      <!-- ✅ 弹窗主体 -->
       <div
           class="relative w-full max-w-[500px] rounded-3xl shadow-2xl flex flex-col border transition-all h-[85vh] max-h-[720px] overflow-hidden"
-          style="background-color: var(--modal-bg); color: var(--modal-text); border-color: var(--modal-border);"
+          :style="{
+          backgroundColor: 'var(--modal-bg)',
+          color: 'var(--modal-text)',
+          borderColor: 'var(--modal-border)',
+          boxShadow: 'var(--modal-shadow)'
+        }"
           @click.stop
       >
+        <!-- Header -->
+        <div
+            class="flex-shrink-0 flex justify-between items-center px-6 py-4 border-b"
+            :style="{ borderColor: 'var(--modal-border)' }"
+        >
+          <h3 class="text-lg font-bold" :style="{ color: 'var(--modal-text)' }">
+            {{ isEdit ? '编辑分类' : '新建分类' }}
+          </h3>
 
-        <div class="flex-shrink-0 flex justify-between items-center px-6 py-4 border-b border-white/5">
-          <h3 class="text-lg font-bold">{{ isEdit ? '编辑分类' : '新建分类' }}</h3>
           <button
               @click="emit('close')"
-              class="p-2 rounded-full transition-colors hover:bg-black/10 dark:hover:bg-white/10"
-              :style="{ color: 'var(--modal-text)' }"
+              class="icon-btn p-2 rounded-full transition-colors"
               aria-label="Close"
+              :style="{ color: 'var(--modal-text)' }"
           >
             <PhX size="20"/>
           </button>
         </div>
 
         <div class="flex-1 flex flex-col overflow-hidden">
-
-          <div class="flex-shrink-0 px-6 py-5 space-y-6 border-b border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
-
+          <!-- ✅ 上半部分：不再用 dark: / bg-black 写死 -->
+          <div
+              class="flex-shrink-0 px-6 py-5 space-y-6 border-b"
+              :style="{
+              borderColor: 'var(--modal-border)',
+              backgroundColor: 'rgba(127,127,127,0.06)'
+            }"
+          >
+            <!-- 标题 + 预览 -->
             <div class="flex gap-4 items-stretch h-[52px]">
               <div
                   class="aspect-square h-full rounded-xl flex items-center justify-center border transition-all flex-shrink-0"
                   :style="{
-                  backgroundColor: 'rgba(128,128,128,0.08)',
+                  backgroundColor: 'rgba(127,127,127,0.10)',
                   borderColor: 'var(--modal-border)',
-                  color: modelValue.iconColor || 'var(--text-primary)'
+                  color: modelValue.iconColor || 'var(--modal-text)'
                 }"
               >
                 <component :is="PreviewIcon" size="28" weight="duotone"/>
@@ -137,84 +164,116 @@ defineExpose({
                     @input="setTitle(($event.target as HTMLInputElement).value)"
                     type="text"
                     placeholder="分类名称..."
-                    class="w-full h-full rounded-xl px-4 text-sm font-bold outline-none transition-all border focus:border-[var(--accent-color)]"
-                    style="background-color: var(--modal-input-bg); color: var(--modal-text); border-color: transparent;"
+                    class="field w-full h-full rounded-xl px-4 text-sm font-bold outline-none transition-all border"
+                    :style="{
+                    backgroundColor: 'var(--modal-input-bg)',
+                    color: 'var(--modal-text)',
+                    borderColor: 'var(--modal-border)'
+                  }"
                 />
-                <div v-if="errorMsg" class="absolute right-3 top-1/2 -translate-y-1/2 text-red-500" :title="errorMsg">
+                <div
+                    v-if="errorMsg"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-red-500"
+                    :title="errorMsg"
+                >
                   <PhWarningCircle size="18" weight="fill"/>
                 </div>
               </div>
             </div>
 
+            <!-- 主题色 -->
             <div class="space-y-3">
               <div class="flex justify-between items-end">
-                <span class="text-xs font-bold opacity-50 uppercase tracking-wider">主题色</span>
+                <span class="text-xs font-bold uppercase tracking-wider" style="opacity: .55;">
+                  主题色
+                </span>
 
-                <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 transition-all shadow-sm
-                            bg-white dark:bg-black
-                            border-slate-200 dark:border-white/20
-                            focus-within:border-[var(--accent-color)] focus-within:ring-2 focus-within:ring-[var(--accent-color)]/20">
-                  <span class="text-[10px] font-bold opacity-50 select-none">自定义</span>
-                  <div class="w-px h-3 bg-current opacity-20"></div>
+                <!-- ✅ 自定义 HEX：不再 dark:bg-black / bg-white -->
+                <div class="hex-pill flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 transition-all shadow-sm">
+                  <span class="text-[10px] font-bold select-none" style="opacity:.55;">自定义</span>
+                  <div class="sep"></div>
+
                   <input
                       type="text"
                       v-model="customHex"
                       @input="onCustomHexInput"
                       placeholder="#HEX"
                       class="w-16 bg-transparent text-xs font-mono font-bold outline-none uppercase text-center"
-                      style="color: var(--modal-text);"
+                      :style="{ color: 'var(--modal-text)' }"
                       maxlength="7"
                   />
-                  <div class="w-3 h-3 rounded-full border border-black/10"
-                       :style="{ backgroundColor: customHex || 'transparent' }"></div>
+
+                  <!-- ✅ 预览小圆点：加边框，白色也清晰 -->
+                  <div
+                      class="w-3 h-3 rounded-full"
+                      :style="{
+                      backgroundColor: customHex || 'transparent',
+                      border: '1px solid var(--modal-border)'
+                    }"
+                  ></div>
                 </div>
               </div>
 
               <div class="flex flex-wrap gap-3">
+                <!-- 默认 -->
                 <button
                     @click="selectColor(null)"
-                    class="w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
-                    :class="!modelValue.iconColor ? 'border-[var(--text-primary)]' : 'border-transparent bg-black/5 dark:bg-white/10'"
+                    class="swatch w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+                    :style="{
+                    borderColor: !modelValue.iconColor ? 'rgba(var(--accent-color-rgb),0.55)' : 'var(--modal-border)',
+                    backgroundColor: !modelValue.iconColor ? 'rgba(var(--accent-color-rgb),0.10)' : 'rgba(127,127,127,0.10)',
+                    color: 'var(--modal-text)'
+                  }"
                     title="默认"
                 >
                   <PhX v-if="!modelValue.iconColor" size="14"/>
                 </button>
 
+                <!-- 预设色 -->
                 <button
                     v-for="c in presetColors"
                     :key="c.fg"
                     @click="selectColor(c)"
-                    class="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95 relative ring-offset-1 ring-offset-transparent focus:ring-2 focus:ring-[var(--accent-color)]"
-                    :style="{ backgroundColor: c.fg }"
+                    class="swatch w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95 relative focus-visible:outline-none"
+                    :style="{
+                    backgroundColor: c.fg,
+                    border: modelValue.iconColor === c.fg ? '2px solid rgba(0,0,0,0.10)' : '2px solid transparent'
+                  }"
                 >
-                  <PhCheck v-if="modelValue.iconColor === c.fg" size="16" class="text-white drop-shadow-md"
-                           weight="bold"/>
+                  <PhCheck
+                      v-if="modelValue.iconColor === c.fg"
+                      size="16"
+                      class="text-white drop-shadow-md"
+                      weight="bold"
+                  />
                 </button>
               </div>
             </div>
           </div>
 
+          <!-- Icon Picker -->
           <div class="flex-1 overflow-hidden px-6 pt-4 pb-2">
             <IconPicker :modelValue="modelValue.icon" @update:modelValue="setIcon" :icons="icons"/>
           </div>
-
         </div>
 
-        <div class="flex-shrink-0 p-5 border-t border-white/5 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md z-10">
+        <!-- ✅ Footer：不再 dark:bg / bg-white/90，彻底解决底部黑条 -->
+        <div
+            class="flex-shrink-0 p-5 border-t z-10"
+            :style="{
+            borderColor: 'var(--modal-border)',
+            backgroundColor: 'var(--modal-bg)'
+          }"
+        >
           <button
               @click="emit('submit')"
               :disabled="!canSubmit"
-              class="w-full py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
-              :class="[
-                canSubmit
-                  ? 'bg-[var(--accent-color)] text-white shadow-[var(--accent-color)]/30'
-                  : 'bg-black/10 dark:bg-white/10 text-[var(--text-tertiary)]'
-              ]"
+              class="modal-submit w-full py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed"
+              :class="canSubmit ? 'btn-primary' : 'btn-disabled'"
           >
             {{ isEdit ? '保存更改' : '立即创建' }}
           </button>
         </div>
-
       </div>
     </div>
   </Transition>
@@ -228,5 +287,60 @@ defineExpose({
 .scale-enter-from, .scale-leave-to {
   opacity: 0;
   transform: scale(0.95);
+}
+
+/* hover 背景：中性灰，不依赖 dark class */
+.icon-btn:hover {
+  background: rgba(127, 127, 127, 0.12);
+}
+
+/* 输入框 focus：统一用 accent */
+.field:focus {
+  border-color: rgba(var(--accent-color-rgb), 0.55) !important;
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
+}
+
+/* HEX pill：统一变量，避免黑块 */
+.hex-pill {
+  background: var(--modal-input-bg);
+  border-color: var(--modal-border);
+}
+
+.hex-pill:focus-within {
+  border-color: rgba(var(--accent-color-rgb), 0.55);
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.14);
+}
+
+.sep {
+  width: 1px;
+  height: 12px;
+  background: var(--modal-border);
+  opacity: .8;
+}
+
+/* 主题色圆点聚焦可视 */
+.swatch:focus-visible {
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
+}
+
+/* 底部按钮 */
+.modal-submit {
+  color: #fff;
+}
+
+.btn-primary {
+  background: var(--accent-color);
+  box-shadow: 0 12px 24px rgba(var(--accent-color-rgb), 0.25);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.06);
+}
+
+.btn-disabled {
+  background: rgba(127, 127, 127, 0.14);
+  color: rgba(127, 127, 127, 0.75);
+  box-shadow: none;
+  opacity: 0.9;
 }
 </style>

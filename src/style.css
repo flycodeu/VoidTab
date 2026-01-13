@@ -23,7 +23,7 @@
 
     --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 
-    /* ⚠️ Glass: 只给“玻璃效果专用 class”用，别让主面板 widget 默认用它 */
+    /* Glass: 只给“玻璃效果专用 class”用，别让主面板 widget 默认用它 */
     --glass-surface: rgba(255, 255, 255, 0.08);
     --glass-border: rgba(255, 255, 255, 0.12);
     --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
@@ -38,14 +38,14 @@
     --slider-track: rgba(255, 255, 255, 0.2);
     --slider-thumb: #ffffff;
 
-    /* ✅ 2. 弹窗专用 (Modal / 不透明) - 修复样式丢失的关键 */
+    /*  2. 弹窗专用 (Modal / 不透明) - 修复样式丢失的关键 */
     --modal-bg: #1e1e1e;
     --modal-text: #ffffff;
     --modal-border: rgba(255, 255, 255, 0.1);
     --modal-input-bg: #2a2a2a;
     --modal-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
 
-    /* ✅ 1. 右键菜单专用 (Glass / 半透明) */
+    /*  1. 右键菜单专用 (Glass / 半透明) */
     --glass-bg: rgba(30, 30, 30, 0.75);
     --glass-text: #ffffff;
 
@@ -61,13 +61,29 @@
     --settings-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
     --settings-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.30);
 
-    /* ✅ Widgets（主面板卡片：不透明） */
+    /*  Widgets（主面板卡片：不透明） */
     --widget-surface: #151518;
     --widget-surface-2: #1b1b1f;
     --widget-border: rgba(255, 255, 255, 0.10);
     --widget-text: rgba(255, 255, 255, 0.92);
     --widget-muted: rgba(255, 255, 255, 0.60);
     --widget-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+
+    /* Sidebar（深色） */
+    --sidebar-surface: #151518; /* 不透明面板，避免和壁纸冲突 */
+    --sidebar-surface-hover: #1b1b1f;
+    --sidebar-border: rgba(255, 255, 255, 0.10);
+    --sidebar-divider: rgba(255, 255, 255, 0.08);
+    --sidebar-footer: rgba(255, 255, 255, 0.03);
+    --sidebar-text: rgba(255, 255, 255, 0.92);
+    --sidebar-muted: rgba(255, 255, 255, 0.55);
+    --sidebar-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+
+    /* ================= Modal Fix Vars (dark) ================= */
+    --modal-footer-bg: rgba(255, 255, 255, 0.03);
+    --modal-pill-bg: var(--modal-input-bg);
+    --modal-pill-border: var(--modal-border);
+    --modal-swatch-border: rgba(255, 255, 255, 0.14);
 }
 
 html.light {
@@ -84,7 +100,7 @@ html.light {
     radial-gradient(at 50% 100%, rgba(240, 248, 255, 0.75) 0px, transparent 55%),
     linear-gradient(180deg, #eef2f6 0%, #e9edf3 100%);
 
-    /* ✅ Light overlay 应该是白雾而不是黑雾 */
+    /*  Light overlay 应该是白雾而不是黑雾 */
     --overlay-rgb: 255, 255, 255;
     --overlay-alpha: 0.55;
 
@@ -114,13 +130,29 @@ html.light {
     --settings-shadow: 0 22px 60px rgba(0, 0, 0, 0.14);
     --settings-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.10);
 
-    /* ✅ Widgets（主面板卡片：不透明，浅灰/浅白） */
+    /*  Widgets（主面板卡片：不透明，浅灰/浅白） */
     --widget-surface: #f3f4f6; /* 浅灰 */
     --widget-surface-2: #ffffff; /* 浅白 */
     --widget-border: rgba(0, 0, 0, 0.08);
     --widget-text: rgba(15, 23, 42, 0.92);
     --widget-muted: rgba(15, 23, 42, 0.55);
     --widget-shadow: 0 14px 28px rgba(0, 0, 0, 0.10);
+
+    /* Sidebar（浅色） */
+    --sidebar-surface: #ffffff;
+    --sidebar-surface-hover: #f3f4f6;
+    --sidebar-border: rgba(0, 0, 0, 0.08);
+    --sidebar-divider: rgba(0, 0, 0, 0.06);
+    --sidebar-footer: rgba(0, 0, 0, 0.02);
+    --sidebar-text: rgba(17, 24, 39, 0.92);
+    --sidebar-muted: rgba(17, 24, 39, 0.55);
+    --sidebar-shadow: 0 18px 40px rgba(0, 0, 0, 0.12);
+
+    /* ================= Modal Fix Vars (light) ================= */
+    --modal-footer-bg: rgba(0, 0, 0, 0.02);
+    --modal-pill-bg: var(--modal-input-bg);
+    --modal-pill-border: var(--modal-border);
+    --modal-swatch-border: rgba(0, 0, 0, 0.10);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -142,10 +174,10 @@ body {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✅ 关键：主面板 widget 统一用“不透明卡片”                                     */
+/*  关键：主面板 widget 统一用“不透明卡片”                                     */
 /* -------------------------------------------------------------------------- */
 .widget-card {
-    background: var(--widget-surface); /* ✅ 不要 mix transparent */
+    background: var(--widget-surface); /*  不要 mix transparent */
     border: 1px solid var(--widget-border);
     box-shadow: var(--widget-shadow);
     color: var(--widget-text);
@@ -248,7 +280,7 @@ body {
     padding: 10px 14px;
     font-size: 13px;
     font-weight: 700;
-    background: var(--settings-input-bg); /* ✅ 不透明 */
+    background: var(--settings-input-bg); /*  不透明 */
     border: 1px solid var(--settings-border-soft);
     color: var(--settings-text);
     outline: none;
@@ -308,6 +340,10 @@ body {
     border: 1px solid var(--modal-border);
     color: var(--modal-text);
     box-shadow: var(--modal-shadow);
+
+    /* ✅ FIX: 圆角 + overflow-hidden 防止底部黑条/黑底漏出 */
+    border-radius: 28px;
+    overflow: hidden;
 }
 
 /* ------------------------------------------------ */
@@ -323,15 +359,14 @@ body {
 /* ------------------------------------------------ */
 /* 2. 霓虹边框 (Neon Glow)                          */
 /* ------------------------------------------------ */
-/* 假设你的卡片类名是 .glass-card 或 .widget-card */
-
-/* 默认状态（关闭特效时）：无发光 */
-.widget-card, .glass-card {
+/* ✅ FIX: 你原来写了 .widget-card, .glass-card 会覆盖 widget-card 的不透明样式
+   这里改为只对 .glass-card 生效，避免 widget-card 被错误套上 glass-border/shadow */
+.glass-card {
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
 }
 
-/* ✅ 开启状态：当父级有 .theme-neon 时，添加发光 */
+/*  开启状态：当父级有 .theme-neon 时，添加发光 */
 .theme-neon .widget-card,
 .theme-neon .glass-card {
     border-color: rgba(var(--accent-color-rgb), 0.5);
@@ -358,4 +393,107 @@ body {
 .theme-breathing .sidebar-panel {
     animation: sidebar-breath 3s infinite ease-in-out;
     border-right: 1px solid transparent; /* 确保有边框用于动画 */
+}
+
+/* Sidebar rail：不透明 + 适配主题 */
+.sidebar-rail {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    box-shadow: var(--sidebar-shadow);
+    color: var(--sidebar-text);
+
+    /* 关键：不要 glass blur，避免压字/与壁纸混色 */
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+
+    transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.sidebar-rail:hover {
+    background: var(--sidebar-surface-hover);
+}
+
+/* 根据左右贴边，去掉贴边那一侧的边框（更像 Edge） */
+.sidebar-rail[data-side="left"] {
+    border-left: none;
+}
+
+.sidebar-rail[data-side="right"] {
+    border-right: none;
+}
+
+.sidebar-divider {
+    border-color: var(--sidebar-divider) !important;
+}
+
+.sidebar-muted {
+    color: var(--sidebar-muted) !important;
+}
+
+.sidebar-footer {
+    background: var(--sidebar-footer);
+    border-top: 1px solid var(--sidebar-divider);
+}
+
+/* ========================================================================== */
+/* ✅ Modal Fix Pack — 只在 .panel-modal 范围内修复：颜色黑 / 底部黑条 / 白色不可见 */
+/* 你没有 EditGroupModal 源码时，就用这个强制矫正（不会影响主页面）               */
+/* ========================================================================== */
+
+/* 统一弹窗内文字颜色，避免黑底黑字/白底白字 */
+.panel-modal,
+.panel-modal * {
+    color: var(--modal-text);
+}
+
+/* ✅ 修：颜色选择区域变黑（bg-black、bg-[#...] 这类写死） */
+.panel-modal [class*="bg-black"] {
+    background-color: var(--modal-input-bg) !important;
+}
+
+/* 处理 bg-[#0b0b0b] 这类写死颜色 */
+.panel-modal [class*="bg-[#"] {
+    background-color: var(--modal-input-bg) !important;
+}
+
+/* ✅ 修：浅色模式下 text-white 看不见（强制变回 modal-text） */
+html.light .panel-modal [class*="text-white"] {
+    color: var(--modal-text) !important;
+}
+
+/* ✅ 修：弹窗内 text-black 也统一为 modal-text（避免深色模式黑字） */
+.panel-modal [class*="text-black"] {
+    color: var(--modal-text) !important;
+}
+
+/* ✅ 修：底部黑条/黑边框（sticky bottom-0 / fixed bottom-0 常见 footer） */
+.panel-modal [class*="sticky"][class*="bottom-0"],
+.panel-modal [class*="fixed"][class*="bottom-0"] {
+    background: var(--modal-footer-bg) !important;
+    border-top: 1px solid var(--modal-border) !important;
+}
+
+/* ✅ 修：白色主题色圆点看不清（w-12 h-12 rounded-full 常见 swatch） */
+.panel-modal button[class*="w-12"][class*="h-12"][class*="rounded-full"] {
+    border: 1px solid var(--modal-swatch-border) !important;
+}
+
+/* 如果你的色块不是 w-12 h-12，而是别的尺寸，可以改用更宽松的版本：
+.panel-modal button[class*="rounded-full"] { border: 1px solid var(--modal-swatch-border) !important; }
+*/
+
+/* ✅ 修：如果“自定义 | #HEX” pill 是黑底圆角容器，统一变成 modal-pill */
+.panel-modal [class*="rounded"][class*="bg-black"],
+.panel-modal [class*="rounded"][class*="bg-[#"] {
+    background: var(--modal-pill-bg) !important;
+    border: 1px solid var(--modal-pill-border) !important;
+}
+
+/* 可选：让输入框也更一致（防止某些输入框透明导致看不清） */
+.panel-modal input,
+.panel-modal textarea,
+.panel-modal select {
+    background: var(--modal-input-bg);
+    border-color: var(--modal-border);
+    color: var(--modal-text);
 }

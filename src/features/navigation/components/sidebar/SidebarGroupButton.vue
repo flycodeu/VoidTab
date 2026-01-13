@@ -42,43 +42,25 @@ const hasCustomColor = computed(() => !!props.group.iconColor);
 // 获取安全颜色
 const safeColor = computed(() => props.group.iconColor || 'var(--accent-color)');
 
-// ✅ 样式计算：仅改变文本颜色 (color)，不改变背景
+// ✅ 自定义色：仅改变文本/图标颜色，不改变背景
 const buttonStyle = computed(() => {
   if (!hasCustomColor.value) return {};
-  return {
-    color: safeColor.value,
-  };
+  return {color: safeColor.value};
 });
 
-// ✅ 类名计算
+// ✅ 类名（不再用 bg-white/10 等固定色）
 const dynamicClasses = computed(() => {
-  const classes = [
-    'group relative w-full py-3 px-1 flex flex-col items-center justify-center gap-1.5 rounded-xl transition-all duration-300 border border-transparent outline-none select-none'
-  ];
+  const cls: string[] = ['sg-btn'];
 
-  if (props.active) {
-    if (props.breathingLight) classes.push('animate-pulse');
+  if (props.active) cls.push('is-active');
+  else cls.push('is-idle');
 
-    // ✅ 背景统一：始终使用半透明白/黑，保持界面整洁
-    classes.push('bg-white/10 dark:bg-white/5 border-white/10 shadow-sm');
+  if (props.showDropHint) cls.push('is-drop-hint');
+  if (props.breathingLight && props.active) cls.push('animate-pulse');
 
-    // 如果没有自定义颜色，文字默认使用主题色
-    if (!hasCustomColor.value) {
-      classes.push('text-[var(--accent-color)]');
-    }
-  } else {
-    // 未选中
-    classes.push('hover:bg-black/5 dark:hover:bg-white/10 opacity-70 hover:opacity-100 hover:scale-[1.05]');
-    if (!hasCustomColor.value) {
-      classes.push('text-[var(--text-primary)]');
-    }
-  }
-
-  if (props.showDropHint) {
-    classes.push('!opacity-100 border-dashed border-[var(--accent-color)] bg-[var(--accent-color)]/10');
-  }
-
-  return classes;
+  // 默认（无自定义色）时，active 的文字用主题色
+  if (props.active && !hasCustomColor.value) cls.push('text-accent');
+  return cls;
 });
 </script>
 
@@ -94,53 +76,179 @@ const dynamicClasses = computed(() => {
       :class="dynamicClasses"
       :style="buttonStyle"
   >
+    <!-- Edge 风格：左侧小指示条 -->
     <div
         v-if="active"
-        class="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full transition-colors shadow-sm"
+        class="active-indicator"
         :style="{ backgroundColor: hasCustomColor ? safeColor : 'var(--accent-color)' }"
-    ></div>
+    />
 
     <div class="relative">
       <component
           :is="IconComp"
           size="26"
           :weight="active ? 'fill' : 'duotone'"
-          class="transition-transform duration-300"
-          :class="[
-             // 仅在默认模式下使用 CSS 阴影，自定义颜色模式下使用下方 filter
-             (!hasCustomColor && active) ? 'drop-shadow-[0_0_5px_rgba(var(--accent-color-rgb),0.5)]' : ''
-          ]"
+          class="icon"
+          :class="[(!hasCustomColor && active) ? 'icon-glow' : '']"
           :style="hasCustomColor && active ? { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))' } : {}"
       />
 
       <transition name="scale">
         <div
             v-if="count > 0 && store.config.theme.showGroupCount"
-            class="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] px-0.5 flex items-center justify-center rounded-full border border-white/20 shadow-md transition-transform duration-300 group-hover:scale-110"
-            :class="hasCustomColor ? '' : 'bg-[#3b3b3b] dark:bg-[#2a2a2a]'"
+            class="count-badge"
             :style="hasCustomColor ? { backgroundColor: safeColor, color: '#fff' } : {}"
         >
-          <span class="text-[9px] font-bold leading-none text-white">{{ count }}</span>
+          <span class="count-text">{{ count }}</span>
         </div>
       </transition>
     </div>
 
-    <span
-        class="text-[10px] font-medium tracking-wide truncate max-w-full px-1 transition-colors duration-200 mt-0.5"
-        :class="active ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'"
-    >
+    <span class="title" :class="active ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'">
       {{ group.title }}
     </span>
   </button>
 </template>
 
 <style scoped>
+.sg-btn {
+  position: relative;
+  width: 100%;
+  padding: 12px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+
+  outline: none;
+  user-select: none;
+
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+
+  /* ✅ 更贴合 sidebar 面板（不受 body 文本变量影响） */
+  color: var(--sidebar-text);
+}
+
+.is-idle {
+  opacity: 0.78;
+}
+
+.is-idle:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  border-color: rgba(var(--accent-color-rgb), 0.28);
+  background: rgba(var(--accent-color-rgb), 0.06);
+}
+
+.is-active {
+  opacity: 1;
+  border-color: rgba(var(--accent-color-rgb), 0.45);
+  background: rgba(var(--accent-color-rgb), 0.10);
+  box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.06) inset;
+}
+
+.is-active:hover {
+  border-color: rgba(var(--accent-color-rgb), 0.55);
+  background: rgba(var(--accent-color-rgb), 0.12);
+}
+
+.text-accent {
+  color: var(--accent-color);
+}
+
+.is-drop-hint {
+  opacity: 1 !important;
+  border-style: dashed !important;
+  border-color: rgba(var(--accent-color-rgb), 0.60) !important;
+  background: rgba(var(--accent-color-rgb), 0.12) !important;
+}
+
+.sg-btn:focus-visible {
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
+}
+
+.active-indicator {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 18px;
+  width: 3px;
+  border-radius: 999px;
+  opacity: 0.95;
+}
+
+.icon {
+  transition: transform 0.16s ease;
+}
+
+.sg-btn:hover .icon {
+  transform: scale(1.03);
+}
+
+.icon-glow {
+  filter: drop-shadow(0 0 5px rgba(var(--accent-color-rgb), 0.45));
+}
+
+.count-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  background: rgba(127, 127, 127, 0.22);
+
+  /* ✅ 角标文字也用 sidebar 文本 */
+  color: var(--sidebar-text);
+
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  transition: transform 0.16s ease;
+}
+
+.sg-btn:hover .count-badge {
+  transform: scale(1.06);
+}
+
+.count-text {
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  padding: 0 4px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.16s ease;
+
+  /* ✅ 弱文本跟随 sidebar muted */
+  color: var(--sidebar-text);
+}
+
 @keyframes pulse-subtle {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(var(--accent-color-rgb), 0);
   }
   50% {
-    box-shadow: 0 0 10px 0 rgba(var(--accent-color-rgb), 0.2);
+    box-shadow: 0 0 10px 0 rgba(var(--accent-color-rgb), 0.18);
   }
 }
 

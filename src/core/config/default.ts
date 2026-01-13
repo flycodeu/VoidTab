@@ -62,6 +62,7 @@ export const defaultConfig: Config = {
         blur: 20,
         opacity: 0.6,
         wallpaper: '',
+        accent: '#007AFF',
 
         techFont: true,
         breathingLight: true,
