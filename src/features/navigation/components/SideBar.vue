@@ -18,14 +18,14 @@ const emit = defineEmits<{
   (e: 'openGroupDialog'): void;
 }>();
 
-// 右键菜单
+/** 右键菜单 */
 const handleGroupContextMenu = (e: MouseEvent, group: any) => {
   e.preventDefault();
   e.stopPropagation();
   ui.openContextMenu(e, group, 'group', group.id);
 };
 
-// 拖拽逻辑
+/** 拖拽逻辑 */
 const {handleDragEnter, handleDragLeave, handleDrop} = useSidebarDragHandlers({
   dragState: ui.dragState,
   getActiveGroupId: () => props.activeGroupId,
@@ -39,7 +39,7 @@ const shouldShowDropHint = (groupId: string) => {
   return !!(ui.dragState?.isDragging && props.activeGroupId !== groupId);
 };
 
-// 滚动定位
+/** 滚动定位 */
 const listRef = ref<HTMLElement | null>(null);
 watch(
     () => props.activeGroupId,
@@ -53,7 +53,7 @@ watch(
     {immediate: true}
 );
 
-// 贴边样式
+/** 贴边样式 */
 const railClass = computed(() => {
   const isRight = store.config.theme.sidebarPos === 'right';
   return isRight ? 'right-0 rounded-l-[24px]' : 'left-0 rounded-r-[24px]';
@@ -66,6 +66,20 @@ const transitionName = computed(() => {
 const onGroupSortEnd = () => {
   store.saveConfig();
 };
+
+/** 呼吸灯频率（秒） */
+const breathSeconds = computed<number>(() => {
+  const raw = Number((store.config.theme as any).breathingDuration ?? 3);
+  if (!Number.isFinite(raw)) return 3;
+  return Math.min(12, Math.max(1, raw));
+});
+
+/** scoped 下也能用：用 style 喂 CSS 变量（动画用） */
+const railStyle = computed(() => {
+  return {
+    '--sidebar-breath-duration': `${breathSeconds.value}s`
+  } as Record<string, string>;
+});
 </script>
 
 <template>
@@ -77,13 +91,17 @@ const onGroupSortEnd = () => {
     <transition :name="transitionName">
       <aside
           class="hidden md:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail"
-          :class="railClass"
+          :class="[
+          railClass,
+          { 'is-breathing': !!store.config.theme.breathingLight }
+        ]"
           :data-side="store.config.theme.sidebarPos"
+          :style="railStyle"
       >
         <!-- 顶部 -->
         <div class="flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider">
           <div
-              class="w-10 h-10 rounded-xl flex items-center justify-center text-white ring-1 transition-transform hover:scale-110 sidebar-brand"
+              class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand"
           >
             <PhMonitor weight="fill" size="20"/>
           </div>
@@ -101,7 +119,7 @@ const onGroupSortEnd = () => {
         <!-- 中部 -->
         <div class="flex-1 w-full flex flex-col overflow-hidden">
           <div class="px-0 py-3 text-center">
-            <span class="text-[10px] font-bold uppercase tracking-widest opacity-60 sidebar-muted">分组</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest sidebar-muted">分组</span>
           </div>
 
           <div ref="listRef" class="flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2">
@@ -137,7 +155,7 @@ const onGroupSortEnd = () => {
               />
             </VueDraggable>
 
-            <!-- 新建分组按钮（同样 Edge 风格：细边框 + 柔底） -->
+            <!-- 新建分组按钮 -->
             <button
                 @click="emit('openGroupDialog')"
                 class="w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn"
@@ -171,7 +189,7 @@ const onGroupSortEnd = () => {
 
 <style scoped>
 /* ------------------------------ */
-/* Drag 状态（保留你原来的）      */
+/* Drag 状态                      */
 /* ------------------------------ */
 .group-ghost {
   opacity: 0.3;
@@ -189,26 +207,20 @@ const onGroupSortEnd = () => {
 }
 
 /* ------------------------------ */
-/* Rail：固定不透明，不吃壁纸     */
-/* 用你现有变量：settings-panel / border / shadow */
+/* Rail：主题变量驱动（完全适配）  */
 /* ------------------------------ */
 .sidebar-rail {
-  background: var(--settings-panel);
-  border: 1px solid var(--settings-border-soft);
-  box-shadow: var(--settings-shadow-soft);
-  color: var(--settings-text);
+  position: relative;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: var(--sidebar-shadow);
+  color: var(--sidebar-text);
 
-  /* 关键：禁止 glass blur，避免文字发灰/壁纸混色 */
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-.sidebar-rail:hover {
-  /* 很轻的 hover 提亮，避免“整块变色” */
-  background: var(--settings-panel);
-}
-
-/* 贴边那侧不画边框（更像 Edge 贴边面板） */
+/* 贴边那侧不画边框 */
 .sidebar-rail[data-side='left'] {
   border-left: none;
 }
@@ -218,50 +230,93 @@ const onGroupSortEnd = () => {
 }
 
 .sidebar-divider {
-  border-color: var(--settings-border-soft) !important;
+  border-color: var(--sidebar-divider) !important;
 }
 
 .sidebar-muted {
-  color: var(--text-tertiary) !important;
+  color: var(--sidebar-muted) !important;
 }
 
 .sidebar-title {
-  color: var(--text-primary);
+  color: var(--sidebar-text);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
-/* 顶部 logo：建议和 accent 联动，不再固定蓝紫渐变 */
+/* 顶部 logo 与 accent 联动 */
 .sidebar-brand {
+  color: var(--sidebar-text);
   background: rgba(var(--accent-color-rgb), 0.18);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
-  ring-color: rgba(var(--accent-color-rgb), 0.22);
   border: 1px solid rgba(var(--accent-color-rgb), 0.22);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 
-/* 底部 footer：不透明 + 细分割线 */
+/* 底部 footer：使用 sidebar 变量 */
 .sidebar-footer {
-  background: rgba(127, 127, 127, 0.04);
-  border-top: 1px solid var(--settings-border-soft);
+  background: var(--sidebar-footer);
+  border-top: 1px solid var(--sidebar-divider);
 }
 
-/* 设置按钮：中性底，hover 给一点 accent */
+/* 底部 icon btn：用 sidebar surface/hover 来适配深浅 */
 .sidebar-icon-btn {
-  background: rgba(127, 127, 127, 0.10);
-  border: 1px solid var(--settings-border-soft);
-  color: var(--text-primary);
+  background: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .sidebar-icon-btn:hover {
-  background: rgba(var(--accent-color-rgb), 0.12);
+  background: var(--sidebar-surface-hover);
   border-color: rgba(var(--accent-color-rgb), 0.25);
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.12);
 }
 
 /* ------------------------------ */
-/* ✅ Edge 风格：组按钮 hover/active */
-/* 注意：SidebarGroupButton 是子组件，必须用 :deep  */
+/* 呼吸灯：用 accent + 主题阴影     */
+/* ------------------------------ */
+.sidebar-rail.is-breathing[data-side='left'] {
+  animation: rail-breath-left var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+}
+
+.sidebar-rail.is-breathing[data-side='right'] {
+  animation: rail-breath-right var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+}
+
+@keyframes rail-breath-left {
+  0%, 100% {
+    border-right-color: rgba(var(--accent-color-rgb), 0.18);
+    box-shadow: var(--sidebar-shadow),
+    inset -8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+  }
+  50% {
+    border-right-color: rgba(var(--accent-color-rgb), 0.65);
+    box-shadow: var(--sidebar-shadow),
+    inset -10px 0 22px rgba(var(--accent-color-rgb), 0.20);
+  }
+}
+
+@keyframes rail-breath-right {
+  0%, 100% {
+    border-left-color: rgba(var(--accent-color-rgb), 0.18);
+    box-shadow: var(--sidebar-shadow),
+    inset 8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+  }
+  50% {
+    border-left-color: rgba(var(--accent-color-rgb), 0.65);
+    box-shadow: var(--sidebar-shadow),
+    inset 10px 0 22px rgba(var(--accent-color-rgb), 0.20);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-rail.is-breathing {
+    animation: none !important;
+  }
+}
+
+/* ------------------------------ */
+/* Edge 风格：组按钮 hover/active   */
 /* ------------------------------ */
 :deep(.sidebar-group-btn) {
-  /* 先把它原本的 glass/背景压掉，统一成“细边框”路线 */
   background: transparent !important;
   border: 1px solid transparent !important;
   border-radius: 16px !important;
@@ -269,14 +324,12 @@ const onGroupSortEnd = () => {
 }
 
 :deep(.sidebar-group-btn:hover) {
-  /* Hover：细描边 + 极轻底色（不会整块染色） */
   border-color: rgba(var(--accent-color-rgb), 0.28) !important;
   background: rgba(var(--accent-color-rgb), 0.06) !important;
   transform: translateY(-1px);
 }
 
 :deep(.sidebar-group-btn.is-active) {
-  /* Active：更明确一点点（Edge 的感觉：细边框 + 柔底） */
   border-color: rgba(var(--accent-color-rgb), 0.45) !important;
   background: rgba(var(--accent-color-rgb), 0.10) !important;
   box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.08) inset;
@@ -287,10 +340,10 @@ const onGroupSortEnd = () => {
   box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
 }
 
-/* 新建分组按钮同一套视觉逻辑 */
+/* 新建分组按钮 */
 .sidebar-add-btn {
-  border: 1px dashed var(--settings-border-soft);
-  color: var(--text-tertiary);
+  border: 1px dashed var(--sidebar-border);
+  color: var(--sidebar-muted);
   background: transparent;
 }
 
@@ -301,37 +354,31 @@ const onGroupSortEnd = () => {
 }
 
 /* ------------------------------ */
-/* 动效（保留你原来的）           */
+/* 动效（保留你原来的）            */
 /* ------------------------------ */
-.slide-fade-enter-active,
-.slide-fade-leave-active {
+.slide-fade-enter-active, .slide-fade-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.slide-fade-enter-from,
-.slide-fade-leave-to {
+.slide-fade-enter-from, .slide-fade-leave-to {
   transform: translateX(-20px);
   opacity: 0;
 }
 
-.slide-fade-right-enter-active,
-.slide-fade-right-leave-active {
+.slide-fade-right-enter-active, .slide-fade-right-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.slide-fade-right-enter-from,
-.slide-fade-right-leave-to {
+.slide-fade-right-enter-from, .slide-fade-right-leave-to {
   transform: translateX(20px);
   opacity: 0;
 }
 
-.fade-enter-active,
-.fade-leave-active {
+.fade-enter-active, .fade-leave-active {
   transition: opacity 0.3s ease;
 }
 
-.fade-enter-from,
-.fade-leave-to {
+.fade-enter-from, .fade-leave-to {
   opacity: 0;
 }
 </style>

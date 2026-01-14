@@ -60,7 +60,6 @@ export interface ThemeConfig {
     techFont: boolean;
     breathingLight: boolean;
     neonGlow: boolean;
-    customCursor: boolean;
 
     iconSize: number;
     radius: number;
@@ -82,6 +81,12 @@ export interface ThemeConfig {
     enableHistory: boolean;
 
     enableTerminal: boolean;
+
+
+    techFontFamily: 'default' | 'JetBrains Mono' | 'Fira Code' | 'Orbitron' | 'Space Grotesk' | 'Roboto Mono' | 'IBM Plex Sans' | 'Noto Sans SC';
+
+    breathingDuration: number; // 秒，例如 3.0
+
 }
 
 export interface SearchEngine {

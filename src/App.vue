@@ -23,10 +23,14 @@ const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDi
 const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/GroupDialog.vue'));
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
+import { useThemeRuntimeSync } from './shared/composables/theme/useThemeRuntimeSync.ts';
+
 
 const store = useConfigStore();
 const ui = useUiStore();
 useTheme(); // 初始化主题
+useThemeRuntimeSync(store);
+
 
 const showAiPanel = ref(false);
 const showSettings = ref(false);

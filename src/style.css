@@ -84,6 +84,21 @@
     --modal-pill-bg: var(--modal-input-bg);
     --modal-pill-border: var(--modal-border);
     --modal-swatch-border: rgba(255, 255, 255, 0.14);
+
+    --tech-font-family: 'JetBrains Mono', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    --sidebar-breath-duration: 3s;
+
+    --app-cursor: auto;
+    --app-cursor-pointer: pointer;
+
+    --fab-bg: rgba(255,255,255,0.08);
+    --fab-bg-hover: rgba(255,255,255,0.10);
+    --fab-border: rgba(255,255,255,0.12);
+    --fab-shadow: 0 12px 26px rgba(0,0,0,0.22);
+
+    /* 图标默认颜色（非 hover） */
+    --fab-icon: rgba(255,255,255,0.88);
+    --fab-icon-muted: rgba(255,255,255,0.72);
 }
 
 html.light {
@@ -153,6 +168,16 @@ html.light {
     --modal-pill-bg: var(--modal-input-bg);
     --modal-pill-border: var(--modal-border);
     --modal-swatch-border: rgba(0, 0, 0, 0.10);
+
+
+    /* FAB（悬浮按钮）*/
+    --fab-bg: rgba(15,23,42,0.06);
+    --fab-bg-hover: rgba(15,23,42,0.08);
+    --fab-border: rgba(0,0,0,0.10);
+    --fab-shadow: 0 12px 26px rgba(0,0,0,0.10);
+
+    --fab-icon: rgba(17,24,39,0.88);
+    --fab-icon-muted: rgba(17,24,39,0.72);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -341,7 +366,7 @@ body {
     color: var(--modal-text);
     box-shadow: var(--modal-shadow);
 
-    /* ✅ FIX: 圆角 + overflow-hidden 防止底部黑条/黑底漏出 */
+    /*  FIX: 圆角 + overflow-hidden 防止底部黑条/黑底漏出 */
     border-radius: 28px;
     overflow: hidden;
 }
@@ -359,7 +384,7 @@ body {
 /* ------------------------------------------------ */
 /* 2. 霓虹边框 (Neon Glow)                          */
 /* ------------------------------------------------ */
-/* ✅ FIX: 你原来写了 .widget-card, .glass-card 会覆盖 widget-card 的不透明样式
+/*  FIX: 你原来写了 .widget-card, .glass-card 会覆盖 widget-card 的不透明样式
    这里改为只对 .glass-card 生效，避免 widget-card 被错误套上 glass-border/shadow */
 .glass-card {
     border: 1px solid var(--glass-border);
@@ -436,7 +461,7 @@ body {
 }
 
 /* ========================================================================== */
-/* ✅ Modal Fix Pack — 只在 .panel-modal 范围内修复：颜色黑 / 底部黑条 / 白色不可见 */
+/*  Modal Fix Pack — 只在 .panel-modal 范围内修复：颜色黑 / 底部黑条 / 白色不可见 */
 /* 你没有 EditGroupModal 源码时，就用这个强制矫正（不会影响主页面）               */
 /* ========================================================================== */
 
@@ -446,7 +471,7 @@ body {
     color: var(--modal-text);
 }
 
-/* ✅ 修：颜色选择区域变黑（bg-black、bg-[#...] 这类写死） */
+/*  修：颜色选择区域变黑（bg-black、bg-[#...] 这类写死） */
 .panel-modal [class*="bg-black"] {
     background-color: var(--modal-input-bg) !important;
 }
@@ -456,24 +481,24 @@ body {
     background-color: var(--modal-input-bg) !important;
 }
 
-/* ✅ 修：浅色模式下 text-white 看不见（强制变回 modal-text） */
+/*  修：浅色模式下 text-white 看不见（强制变回 modal-text） */
 html.light .panel-modal [class*="text-white"] {
     color: var(--modal-text) !important;
 }
 
-/* ✅ 修：弹窗内 text-black 也统一为 modal-text（避免深色模式黑字） */
+/*  修：弹窗内 text-black 也统一为 modal-text（避免深色模式黑字） */
 .panel-modal [class*="text-black"] {
     color: var(--modal-text) !important;
 }
 
-/* ✅ 修：底部黑条/黑边框（sticky bottom-0 / fixed bottom-0 常见 footer） */
+/*  修：底部黑条/黑边框（sticky bottom-0 / fixed bottom-0 常见 footer） */
 .panel-modal [class*="sticky"][class*="bottom-0"],
 .panel-modal [class*="fixed"][class*="bottom-0"] {
     background: var(--modal-footer-bg) !important;
     border-top: 1px solid var(--modal-border) !important;
 }
 
-/* ✅ 修：白色主题色圆点看不清（w-12 h-12 rounded-full 常见 swatch） */
+/*  修：白色主题色圆点看不清（w-12 h-12 rounded-full 常见 swatch） */
 .panel-modal button[class*="w-12"][class*="h-12"][class*="rounded-full"] {
     border: 1px solid var(--modal-swatch-border) !important;
 }
@@ -482,7 +507,7 @@ html.light .panel-modal [class*="text-white"] {
 .panel-modal button[class*="rounded-full"] { border: 1px solid var(--modal-swatch-border) !important; }
 */
 
-/* ✅ 修：如果“自定义 | #HEX” pill 是黑底圆角容器，统一变成 modal-pill */
+/*  修：如果“自定义 | #HEX” pill 是黑底圆角容器，统一变成 modal-pill */
 .panel-modal [class*="rounded"][class*="bg-black"],
 .panel-modal [class*="rounded"][class*="bg-[#"] {
     background: var(--modal-pill-bg) !important;
@@ -497,3 +522,19 @@ html.light .panel-modal [class*="text-white"] {
     border-color: var(--modal-border);
     color: var(--modal-text);
 }
+
+
+
+/*  科技字体：改为变量驱动（不再写死 JetBrains） */
+.theme-tech-font,
+.theme-tech-font * {
+    font-family: var(--tech-font-family) !important;
+    letter-spacing: 0.5px;
+}
+
+/*  呼吸灯：把 3s 写死改成变量 */
+.theme-breathing .sidebar-panel {
+    animation: sidebar-breath var(--sidebar-breath-duration, 3s) infinite ease-in-out;
+    border-right: 1px solid transparent;
+}
+

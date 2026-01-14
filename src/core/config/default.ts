@@ -67,7 +67,6 @@ export const defaultConfig: Config = {
         techFont: true,
         breathingLight: true,
         neonGlow: true,
-        customCursor: false,
 
         iconSize: 60,
         radius: 16,
@@ -87,7 +86,10 @@ export const defaultConfig: Config = {
 
         enableHistory: true,
 
-        enableTerminal: true
+        enableTerminal: true,
+
+        techFontFamily: 'default',
+        breathingDuration: 3
     },
 
     searchEngines: [

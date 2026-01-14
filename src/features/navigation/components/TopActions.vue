@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {computed} from 'vue';
 import {
   PhEye,
   PhEyeSlash,
@@ -6,10 +7,11 @@ import {
   PhPencilSimple,
   PhCheck,
   PhRobot,
-  PhTerminalWindow // 新增图标
+  PhTerminalWindow
 } from '@phosphor-icons/vue';
 
-// ... 原有的 defineProps ...
+import {useConfigStore} from '../../../stores/useConfigStore.ts';
+
 defineProps<{
   sidebarPos: 'left' | 'right';
   isFocusMode: boolean;
@@ -21,8 +23,26 @@ const emit = defineEmits<{
   (e: 'toggleEdit'): void;
   (e: 'toggleFocus'): void;
   (e: 'toggleAi'): void;
-  (e: 'toggleTerminal'): void; // 新增事件
+  (e: 'toggleTerminal'): void;
 }>();
+
+const store = useConfigStore();
+
+/** 呼吸频率（秒） */
+const breathSeconds = computed<number>(() => {
+  const raw = Number((store.config.theme as any).breathingDuration ?? 3);
+  if (!Number.isFinite(raw)) return 3;
+  return Math.min(12, Math.max(1, raw));
+});
+
+const isBreathing = computed(() => !!store.config.theme.breathingLight);
+const isNeon = computed(() => !!store.config.theme.neonGlow);
+
+/** 用 style 绑定 animationDuration（避免 TS 对 CSS var 的类型问题） */
+const breathAnimStyle = computed(() => {
+  if (!isBreathing.value) return undefined;
+  return {animationDuration: `${breathSeconds.value}s`} as any;
+});
 </script>
 
 <template>
@@ -31,49 +51,172 @@ const emit = defineEmits<{
       :class="sidebarPos === 'right' ? 'left-6' : 'right-6'"
   >
     <template v-if="!isFocusMode">
+      <!-- 切换侧边栏位置 -->
       <button
           @click="emit('toggleSidebarPos')"
-          class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95 group"
+          class="fab-btn group"
+          :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
+          :style="breathAnimStyle"
           :title="sidebarPos === 'left' ? '切换到右侧布局' : '切换到左侧布局'"
       >
-        <PhArrowsLeftRight size="20" weight="bold" class="group-hover:rotate-180 transition-transform duration-500"/>
+        <PhArrowsLeftRight
+            size="20"
+            weight="bold"
+            class="group-hover:rotate-180 transition-transform duration-500"
+        />
       </button>
 
+      <!-- 终端 -->
       <button
           @click="emit('toggleTerminal')"
-          class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95 group"
+          class="fab-btn group"
+          :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
+          :style="breathAnimStyle"
           title="终端模式 (CMD)"
       >
-        <PhTerminalWindow size="20" weight="bold" class="text-[var(--accent-color)]"/>
+        <!--  不写死颜色，吃按钮 currentColor -->
+        <PhTerminalWindow size="20" weight="bold"/>
       </button>
 
+      <!-- AI -->
       <button
           @click="emit('toggleAi')"
-          class="p-3 rounded-full apple-glass hover:bg-white/10 transition-all text-[var(--text-primary)] shadow-lg hover:scale-110 active:scale-95 group relative"
+          class="fab-btn group relative"
+          :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
+          :style="breathAnimStyle"
           title="AI 助手"
       >
         <PhRobot size="20" weight="bold"/>
       </button>
 
+      <!-- 整理桌面 -->
       <button
           @click="emit('toggleEdit')"
-          class="p-3 rounded-full apple-glass transition-all shadow-lg hover:scale-110 active:scale-95 flex items-center justify-center gap-1"
-          :class="isEditMode ? 'bg-white text-black scale-110 ring-4 ring-black/10' : 'hover:bg-white/10 text-[var(--text-primary)]'"
+          class="fab-btn group"
+          :class="[
+          { 'is-breathing': isBreathing, 'is-neon': isNeon },
+          isEditMode ? 'fab-btn--active' : ''
+        ]"
+          :style="breathAnimStyle"
           title="整理桌面"
       >
         <component :is="isEditMode ? PhCheck : PhPencilSimple" size="20" weight="bold"/>
       </button>
     </template>
 
+    <!-- 专注模式 -->
     <button
         @click="emit('toggleFocus')"
-        class="p-3 rounded-full transition-all shadow-lg hover:scale-110 active:scale-95"
-        :class="isFocusMode
-          ? 'bg-white/10 text-white hover:bg-white/20 hover:shadow-[0_0_20px_rgba(255,255,255,0.3)] backdrop-blur-md border border-white/10'
-          : 'apple-glass hover:bg-white/10 text-[var(--text-primary)]'"
+        class="fab-btn group"
+        :class="[
+        { 'is-breathing': isBreathing, 'is-neon': isNeon },
+        isFocusMode ? 'fab-btn--focus' : ''
+      ]"
+        :style="breathAnimStyle"
         :title="isFocusMode ? '退出专注' : '专注模式'"
     >
       <component :is="isFocusMode ? PhEyeSlash : PhEye" size="20" weight="bold"/>
     </button>
   </div>
 </template>
+
+<style scoped>
+.fab-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /*  背景/边框/阴影跟随主题（light/dark） */
+  background: var(--fab-bg);
+  border: 1px solid var(--fab-border);
+  box-shadow: var(--fab-shadow);
+
+  /*  默认就是主题色：图标吃 currentColor */
+  color: var(--accent-color);
+
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+}
+
+.fab-btn:hover {
+  transform: translateY(-1px) scale(1.06);
+
+  /* hover 背景更亮一点 + 主题色边框 */
+  background: var(--fab-bg-hover);
+  border-color: rgba(var(--accent-color-rgb), 0.32);
+
+  /* hover 图标更“饱和”一点 */
+  color: rgba(var(--accent-color-rgb), 0.95);
+}
+
+.fab-btn:active {
+  transform: scale(0.96);
+}
+
+.fab-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--fab-shadow),
+  0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
+}
+
+/* active：Edge 风格（细边框 + 柔底） */
+.fab-btn--active {
+  background: rgba(var(--accent-color-rgb), 0.16);
+  border-color: rgba(var(--accent-color-rgb), 0.50);
+  color: rgba(var(--accent-color-rgb), 0.98);
+
+  box-shadow: var(--fab-shadow),
+  0 0 0 1px rgba(var(--accent-color-rgb), 0.10) inset;
+}
+
+/* focus 模式按钮 */
+.fab-btn--focus {
+  background: rgba(var(--accent-color-rgb), 0.14);
+  border-color: rgba(var(--accent-color-rgb), 0.30);
+  color: rgba(var(--accent-color-rgb), 0.98);
+}
+
+/* 霓虹发光（neonGlow=true） */
+.is-neon:hover {
+  box-shadow: var(--fab-shadow),
+  0 0 18px rgba(var(--accent-color-rgb), 0.28);
+}
+
+.is-neon.fab-btn--active {
+  box-shadow: var(--fab-shadow),
+  0 0 22px rgba(var(--accent-color-rgb), 0.32),
+  0 0 0 1px rgba(var(--accent-color-rgb), 0.10) inset;
+}
+
+/*  呼吸灯（breathingLight=true） */
+.is-breathing {
+  animation-name: fab-breath;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes fab-breath {
+  0%, 100% {
+    border-color: rgba(var(--accent-color-rgb), 0.22);
+    box-shadow: var(--fab-shadow),
+    0 0 0 rgba(var(--accent-color-rgb), 0);
+  }
+  50% {
+    border-color: rgba(var(--accent-color-rgb), 0.65);
+    box-shadow: var(--fab-shadow),
+    0 0 22px rgba(var(--accent-color-rgb), 0.30);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-breathing {
+    animation: none !important;
+  }
+}
+</style>
