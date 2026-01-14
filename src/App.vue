@@ -7,7 +7,6 @@ import {PhSpinner} from '@phosphor-icons/vue';
 import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
 
 // 基础组件
-import CustomCursor from './shared/ui/cursor/CustomCursor.vue';
 import SideBar from './features/navigation/components/SideBar.vue';
 import ContextMenu from './features/context-menu/components/ContextMenu.vue';
 import WallpaperLayer from './app/shell/WallpaperLayer.vue';
@@ -195,7 +194,6 @@ const handleEditWidgetSettings = (item: any) => {
       v-else
       class="h-screen w-full relative overflow-hidden font-sans isolate"
       :class="[
-        { 'cursor-none': store.config.theme.customCursor },
         // --- 新增以下绑定 ---
         { 'theme-tech-font': store.config.theme.techFont },
         { 'theme-breathing': store.config.theme.breathingLight },
@@ -309,12 +307,6 @@ const handleEditWidgetSettings = (item: any) => {
       </div>
     </div>
 
-    <div
-        v-if="store.config.theme.customCursor"
-        class="fixed inset-0 z-[10000] pointer-events-none"
-    >
-      <CustomCursor class="pointer-events-auto"/>
-    </div>
 
   </div>
 </template>
