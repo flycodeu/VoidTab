@@ -309,8 +309,18 @@ const handleSearch = () => {
       </div>
     </transition>
 
-    <AiChatPanel :is-open="showAiModal" :initial-query="aiQuery" @close="showAiModal = false"/>
-    <HistoryModal :show="showHistoryModal" @close="showHistoryModal = false"/>
+    <Teleport to="body">
+      <AiChatPanel
+          :is-open="showAiModal"
+          :initial-query="aiQuery"
+          @close="showAiModal = false"
+      />
+      <HistoryModal
+          :show="showHistoryModal"
+          @close="showHistoryModal = false"
+      />
+    </Teleport>
+
 
   </div>
 </template>

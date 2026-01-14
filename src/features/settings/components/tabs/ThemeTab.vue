@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useConfigStore } from '../../../../stores/useConfigStore.ts';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 import {
   PhSun,
   PhMoon,
@@ -13,7 +13,7 @@ const store = useConfigStore();
 /** -----------------------------
  * Edge 风格：主题模式（light/dark）
  * ----------------------------- */
-type ThemeMode =  'light' | 'dark';
+type ThemeMode = 'light' | 'dark';
 
 const systemMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
 const systemIsDark = ref(!!systemMedia?.matches);
@@ -39,10 +39,35 @@ const effectiveMode = computed<'light' | 'dark'>(() => {
  * Edge 风格：主题色（圆点 + 自定义）
  * ----------------------------- */
 const presetAccents = [
+  '#64748B',
+  '#6B7280',
+  '#0F766E',
+  '#2563EB',
   '#007AFF', '#A3A3A3', '#5AA7FF', '#35C2C1', '#4ECDC4',
   '#7AA7FF', '#E5B1A8', '#FF5CA8', '#D7B84C', '#F59E0B',
   '#111827', '#475569', '#0B3B8F', '#5B21B6', '#B91C1C', '#166534'
 ];
+
+const rgbToLuma = (r: number, g: number, b: number) => {
+  // sRGB relative luminance
+  const srgb = [r, g, b].map(v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+};
+
+const accentInk = (hex: string) => {
+  const v = hex.replace('#', '').trim();
+  const full = v.length === 3 ? v.split('').map(c => c + c).join('') : v;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const luma = rgbToLuma(r, g, b);
+  // luma 越大越亮：亮色用深字，暗色用白字
+  return luma > 0.62 ? '#111827' : '#ffffff';
+};
 
 const hexToRgb = (hex: string) => {
   const v = hex.replace('#', '').trim();
@@ -72,7 +97,7 @@ const applyCssVars = () => {
   // 你 CSS 里用的是 --glass-blur / --overlay-alpha
   el.style.setProperty('--glass-blur', `${store.config.theme.blur ?? 40}px`);
   el.style.setProperty('--overlay-alpha', `${store.config.theme.opacity ?? 0.55}`);
-
+  el.style.setProperty('--accent-ink', accentInk(accent));
   // wallpaper（图片：用 CSS background-image）
   // 视频壁纸建议用一个 <video class="fixed inset-0 ..."> 单独渲染（这里先不展开）
   const wp = (store.config.theme.wallpaper || '').trim();
@@ -108,7 +133,7 @@ watch(
       effectiveMode.value
     ],
     applyTheme,
-    { deep: false }
+    {deep: false}
 );
 
 /** UI handlers */
@@ -131,6 +156,10 @@ const handleFileUpload = (event: Event) => {
   reader.readAsDataURL(file);
   (event.target as HTMLInputElement).value = '';
 };
+
+const colorInputRef = ref<HTMLInputElement | null>(null);
+const openColorPicker = () => colorInputRef.value?.click();
+
 </script>
 
 <template>
@@ -144,12 +173,13 @@ const handleFileUpload = (event: Event) => {
 
       <button
           class="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all"
-          :class="store.config.theme.mode === 'light'
-          ? 'bg-[rgba(var(--accent-color-rgb),0.14)] text-[var(--accent-color)]'
-          : 'opacity-75 hover:opacity-100'"
+          :class="store.config.theme.mode === 'light' ? 'opacity-100' : 'opacity-75 hover:opacity-100'"
+          :style="store.config.theme.mode === 'light'
+    ? { background: 'rgba(var(--accent-color-rgb),0.14)', color: 'var(--accent-color)' }
+    : {}"
           @click="setMode('light')"
       >
-        <PhSun weight="fill" size="18" />
+        <PhSun weight="fill" size="18"/>
         浅色
       </button>
 
@@ -160,7 +190,7 @@ const handleFileUpload = (event: Event) => {
           : 'opacity-75 hover:opacity-100'"
           @click="setMode('dark')"
       >
-        <PhMoon weight="fill" size="18" />
+        <PhMoon weight="fill" size="18"/>
         深色
       </button>
     </div>
@@ -199,19 +229,16 @@ const handleFileUpload = (event: Event) => {
         />
 
         <!-- 自定义取色 -->
-        <label
+        <button
+            type="button"
             class="w-8 h-8 rounded-full border flex items-center justify-center cursor-pointer hover:opacity-90 transition"
             style="border-color: var(--settings-border); background: var(--settings-panel);"
             title="自定义颜色"
+            @click="openColorPicker"
         >
           <PhPalette size="16" weight="bold" />
-          <input
-              type="color"
-              class="hidden"
-              :value="store.config.theme.accent || '#007AFF'"
-              @input="setAccent(($event.target as HTMLInputElement).value)"
-          />
-        </label>
+        </button>
+
       </div>
     </div>
 
@@ -273,9 +300,9 @@ const handleFileUpload = (event: Event) => {
         <label
             class="px-4 py-2 rounded-lg bg-[var(--accent-color)] text-white text-xs font-bold flex items-center cursor-pointer hover:opacity-90 shadow-md transition-transform active:scale-95"
         >
-          <PhUploadSimple class="mr-2" size="16" weight="bold" />
+          <PhUploadSimple class="mr-2" size="16" weight="bold"/>
           上传
-          <input type="file" accept="image/*,video/mp4" class="hidden" @change="handleFileUpload" />
+          <input type="file" accept="image/*,video/mp4" class="hidden" @change="handleFileUpload"/>
         </label>
       </div>
     </div>
@@ -311,6 +338,23 @@ const handleFileUpload = (event: Event) => {
         />
       </div>
     </div>
+    <input
+        ref="colorInputRef"
+        type="color"
+        :value="store.config.theme.accent || '#007AFF'"
+        @input="setAccent(($event.target as HTMLInputElement).value)"
+        style="
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 42px;
+    height: 42px;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999999;
+  "
+    />
   </div>
 </template>
 
