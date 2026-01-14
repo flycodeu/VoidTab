@@ -1,4 +1,5 @@
 import { watch } from 'vue';
+import {applyThemeToDom} from "./applyThemeToDom.ts";
 
 type ThemeLike = {
     techFontFamily: string;
@@ -46,6 +47,7 @@ export function useThemeRuntimeSync(store: StoreLike) {
     watch(
         () => store.config.theme,
         (theme) => {
+            applyThemeToDom(theme);
             applyTechFont(theme);
             applyBreathing(theme);
             applyNeon(theme);

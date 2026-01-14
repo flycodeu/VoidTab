@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {inject, onBeforeUnmount, onMounted, ref, computed} from "vue";
+import {inject, onBeforeUnmount, onMounted, ref, computed, CSSProperties} from "vue";
 import {VueDraggable} from "vue-draggable-plus";
 
 // Stores
@@ -56,44 +56,32 @@ const activeGroupData = computed(() => {
 const currentSortKey = computed<GroupSortKey>(() => (activeGroupData.value?.sortKey || "custom") as GroupSortKey);
 
 /** ----------------------------------------------------------------
- * 核心修复区：严格网格系统 (Strict Grid System)
+ * 严格网格系统 (Strict Grid System)
  * ---------------------------------------------------------------- */
-
 const isMobile = ref(false);
 let mq: MediaQueryList | null = null;
-const MOBILE_COLS = 4; // 移动端固定4列
+const MOBILE_COLS = 4;
 
 const gridHostEl = ref<HTMLElement | null>(null);
-const gridCols = ref(8); // 动态计算的列数
+const gridCols = ref(8);
 let ro: ResizeObserver | null = null;
 
-// 计算文字标签预留高度 (为了让 Grid Row Height 包含文字)
 const widgetLabelH = computed(() => {
-  // 如果图标名称和组件名称都关闭，则不预留高度，纯图标
   if (!store.config.theme.showWidgetName && !store.config.theme.showIconName) return 0;
   const textSize = Number(store.config.theme.iconTextSize || 12);
   return Math.max(18, Math.ceil(textSize * 1.35 + 6));
 });
 
-// 核心：计算单个网格单元的基础宽高
-// 所有的图标都放在这个 1x1 的单元格里
-const cellBaseSize = computed(() => {
-  return Number(store.config.theme.iconSize || 72);
-});
+const cellBaseSize = computed(() => Number(store.config.theme.iconSize || 72));
 
-// 核心：计算行高 (Row Height)
-// 行高 = 图标高度 + 文字高度 + 上下缓冲
-const gridRowHeight = computed(() => {
-  return cellBaseSize.value + widgetLabelH.value + 8;
-});
+const gridRowHeight = computed(() => cellBaseSize.value + widgetLabelH.value + 8);
 
 const getWidgetTitle = (item: any) => {
-  const raw = (item.title || '').trim();
+  const raw = (item.title || "").trim();
   if (raw) return raw;
   return getWidgetLabel(item.widgetType);
 };
 
-// 核心：动态计算列数
 function recalcGrid() {
   const el = gridHostEl.value;
   if (!el) return;
@@ -103,22 +91,15 @@ function recalcGrid() {
 
   const gap = Number(store.config.theme.gap || 20);
 
-  // 1. 移动端
   if (isMobile.value) {
     gridCols.value = MOBILE_COLS;
     return;
   }
 
-  // 2. 桌面端：限制最大列数 (例如最多14列，防止在大宽屏上太散)
   const MAX_COLS_DESKTOP = 14;
-
-  // 单元格最小宽度 = 图标大小 + 缓冲
   const minCellWidth = cellBaseSize.value + 10;
 
-  // 计算当前宽度能放下多少列
   let cols = Math.floor((width + gap) / (minCellWidth + gap));
-
-  // 限制范围：最少4列，最多 MAX_COLS_DESKTOP 列
   cols = Math.max(4, Math.min(cols, MAX_COLS_DESKTOP));
 
   gridCols.value = cols;
@@ -134,9 +115,7 @@ onMounted(() => {
   onMqChange();
   mq.addEventListener?.("change", onMqChange);
 
-  ro = new ResizeObserver(() => {
-    requestAnimationFrame(() => recalcGrid());
-  });
+  ro = new ResizeObserver(() => requestAnimationFrame(() => recalcGrid()));
   if (gridHostEl.value) ro.observe(gridHostEl.value);
 });
 
@@ -146,87 +125,76 @@ onBeforeUnmount(() => {
   ro = null;
 });
 
-/** 样式生成：网格容器样式 */
-const densityStyle = computed(() => {
+/** 网格容器样式 */
+const densityStyle = computed<CSSProperties>(() => {
   const gap = Number(store.config.theme.gap || 20);
 
   return {
     display: 'grid',
-    // 列宽：自动平分
     gridTemplateColumns: `repeat(${gridCols.value}, 1fr)`,
-    // 行高：固定
     gridAutoRows: `${gridRowHeight.value}px`,
     gap: `${gap}px`,
     width: '100%',
     minWidth: 0,
-    // 居中对齐所有单元格内容
-    justifyItems: "center",
-    alignItems: "start",
-    gridAutoFlow: "dense",
-    paddingBottom: "40px"
+    justifyItems: 'center',
+    alignItems: 'start',
+    gridAutoFlow: 'dense',
+    paddingBottom: '40px',
   };
 });
-
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || "normal"}`);
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
 const MAX_W = 4;
 const MAX_H = 4;
 
-// 核心：计算每个 Item (图标/组件) 跨越的列数和行数
 const getItemStyle = (item: any) => {
   const isWidget = item.kind === "widget";
 
-  // 普通图标：强制 1x1
   if (!isWidget) {
     return {
       gridColumn: `span 1`,
       gridRow: `span 1`,
-      width: '100%',
-      height: '100%',
-      // 确保图标在格子里居中
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'flex-start'
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "flex-start",
     };
   }
 
-  // 组件：根据配置跨越 w x h
   const wRaw = Number(item.w || 2);
   const hRaw = Number(item.h || 2);
   const w = clamp(wRaw, 1, MAX_W);
   const h = clamp(hRaw, 1, MAX_H);
 
-  // 移动端特殊处理：如果组件宽度超过总列数，强制缩减
-  const spanW = isMobile.value
-      ? Math.min(w, MOBILE_COLS)
-      : Math.min(w, gridCols.value);
+  const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : Math.min(w, gridCols.value);
 
   return {
     gridColumn: `span ${spanW}`,
     gridRow: `span ${h}`,
-    width: '100%',
-    height: '100%'
+    width: "100%",
+    height: "100%",
   };
 };
 
 const widgetNameMode = (item: any) => {
-  if (!store.config.theme.showWidgetName) return 'none';
-  if (item.kind !== 'widget') return 'none';
+  if (!store.config.theme.showWidgetName) return "none";
+  if (item.kind !== "widget") return "none";
   const h = Math.max(1, Number(item.h || 1));
-  if (h === 1) return 'overlay';
-  return 'below';
+  if (h === 1) return "overlay";
+  return "below";
 };
 
-/** ------------------------------
- * 排序与拖拽逻辑 (保持不变)
- * ------------------------------ */
+/** ----------------------------------------------------------------
+ * 排序与拖拽
+ * ---------------------------------------------------------------- */
 const getSortKey = (group: LayoutGroup): GroupSortKey => (group.sortKey || "custom") as GroupSortKey;
 
 const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
   const key = getSortKey(group);
   if (key === "custom") return group.items;
+
   const items = [...group.items];
   if (key === "name") {
     return items.sort((a, b) => (a.title || "").localeCompare(b.title || "", "zh-CN"));
@@ -244,9 +212,7 @@ const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
 
 const canFreeReorder = (group: LayoutGroup) => !props.isEditMode && getSortKey(group) === "custom";
 
-const modelValueOf = (group: LayoutGroup) => {
-  return props.isEditMode ? group.items : getDisplayItems(group);
-};
+const modelValueOf = (group: LayoutGroup) => (props.isEditMode ? group.items : getDisplayItems(group));
 
 const updateModelValue = (group: LayoutGroup, val: LayoutItem[]) => {
   if (props.isEditMode) {
@@ -271,6 +237,7 @@ const onDragStart = (event: any, group: LayoutGroup) => {
   const item = arr?.[event.oldIndex];
   if (item) ui.setDragState(true, group.id, item);
 };
+
 const onDragEnd = () => {
   requestAnimationFrame(() => {
     setTimeout(() => ui.setDragState(false), 200);
@@ -302,8 +269,10 @@ const confirmDelete = () => {
 </script>
 
 <template>
-  <div class="w-full flex flex-col items-center md:pb-20"
-       :style="{ paddingBottom: `calc(env(safe-area-inset-bottom) + 96px)` }">
+  <div
+      class="w-full flex flex-col items-center md:pb-20"
+      :style="{ paddingBottom: `calc(env(safe-area-inset-bottom) + 96px)` }"
+  >
     <div
         class="w-full transition-all duration-300 px-2 md:px-8 overflow-x-hidden"
         :style="{ maxWidth: isMobile ? '100%' : store.config.theme.gridMaxWidth + 'px' }"
@@ -320,11 +289,12 @@ const confirmDelete = () => {
 
       <template v-for="group in (visibleGroups as any)" :key="group.id">
         <div class="transition-all duration-300 mb-8 animate-fade-in w-full">
+          <!-- 编辑模式分组标题：主题色 + 主题面板变量 -->
           <div
               v-if="isEditMode"
-              class="px-2 mb-3 text-[var(--accent-color)] font-bold tracking-wider text-sm flex items-center gap-2"
+              class="group-edit-title px-2 mb-3 font-bold tracking-wider text-sm flex items-center gap-2 select-none"
           >
-            <div class="w-1 h-4 bg-[var(--accent-color)] rounded-full"></div>
+            <div class="w-1 h-4 rounded-full group-edit-bar"></div>
             {{ group.title }}
           </div>
 
@@ -336,7 +306,7 @@ const confirmDelete = () => {
               :group="isEditMode ? 'voidtab-shared-group' : viewOnlyGroup(group.id)"
               filter=".ignore-drag"
               class="w-full min-h-[120px]"
-              :class="[{ 'bg-white/5 rounded-xl border border-dashed border-white/10 p-4': isEditMode }]"
+              :class="[{ 'edit-grid-shell': isEditMode }]"
               ghost-class="sortable-ghost"
               @start="(e) => onDragStart(e, group)"
               @end="onDragEnd"
@@ -351,8 +321,9 @@ const confirmDelete = () => {
                 class="site-tile relative"
                 :class="[{ 'arrange-mode': isEditMode }, densityItemClass]"
             >
-              <div class="site-wrap relative w-full h-full min-w-0 min-h-0"
-                   :class="isEditMode ? 'overflow-visible' : 'overflow-visible rounded-[18px]'"
+              <div
+                  class="site-wrap relative w-full h-full min-w-0 min-h-0"
+                  :class="isEditMode ? 'overflow-visible' : 'overflow-visible rounded-[18px]'"
               >
                 <div v-if="item.kind === 'widget'" class="w-full h-full overflow-hidden rounded-[18px]">
                   <WidgetCard
@@ -360,12 +331,13 @@ const confirmDelete = () => {
                       :isEditMode="isEditMode"
                       @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
                   />
+
+                  <!-- overlay 名称：用主题变量，不再写死黑底白字 -->
                   <div
                       v-if="widgetNameMode(item) === 'overlay'"
                       class="absolute left-2 right-2 bottom-2 flex justify-center pointer-events-none z-10"
                   >
-                    <div
-                        class="px-2 py-1 rounded-lg bg-black/35 backdrop-blur text-white/90 text-[11px] leading-none max-w-full truncate">
+                    <div class="widget-name-pill max-w-full truncate">
                       {{ getWidgetTitle(item) }}
                     </div>
                   </div>
@@ -380,9 +352,10 @@ const confirmDelete = () => {
                   />
                 </div>
 
+                <!-- 删除按钮：主题适配 + neon/hover -->
                 <button
                     v-if="isEditMode"
-                    class="delete-btn-ios ignore-drag"
+                    class="delete-btn ignore-drag"
                     title="删除"
                     @click.stop="askDelete(group.id, item.id)"
                 >
@@ -391,10 +364,9 @@ const confirmDelete = () => {
               </div>
             </div>
 
-            <div
-                :style="{ gridColumn: 'span 1', gridRow: 'span 1' }"
-                class="site-tile ignore-drag flex flex-col items-center justify-start"
-            >
+            <!-- 新增卡片 -->
+            <div :style="{ gridColumn: 'span 1', gridRow: 'span 1' }"
+                 class="site-tile ignore-drag flex flex-col items-center justify-start">
               <AddCard
                   class="ignore-drag"
                   :size="Number(store.config.theme.iconSize)"
@@ -427,13 +399,47 @@ const confirmDelete = () => {
 </template>
 
 <style scoped>
+/* ---------------------------------
+ * 拖拽 ghost：主题色
+ * --------------------------------- */
 .sortable-ghost {
-  opacity: 0.4;
-  background: var(--accent-color);
+  opacity: 0.35;
+  background: rgba(var(--accent-color-rgb), 0.22);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.35);
   border-radius: 16px;
-  filter: grayscale(100%);
+  filter: grayscale(20%);
 }
 
+/* ---------------------------------
+ * 编辑模式：网格容器（替代 bg-white/5 这类写死）
+ * --------------------------------- */
+.edit-grid-shell {
+  background: rgba(var(--accent-color-rgb), 0.06);
+  border: 1px dashed rgba(var(--accent-color-rgb), 0.22);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+/* neon 模式时编辑容器轻微发光 */
+:global(.theme-neon) .edit-grid-shell {
+  box-shadow: 0 0 22px rgba(var(--accent-color-rgb), 0.10);
+  border-color: rgba(var(--accent-color-rgb), 0.28);
+}
+
+/* ---------------------------------
+ * 编辑模式：分组标题
+ * --------------------------------- */
+.group-edit-title {
+  color: var(--accent-color);
+}
+
+.group-edit-bar {
+  background: var(--accent-color);
+}
+
+/* ---------------------------------
+ * 进入动画
+ * --------------------------------- */
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out;
 }
@@ -449,11 +455,13 @@ const confirmDelete = () => {
   }
 }
 
+/* ---------------------------------
+ * 网格 item hover
+ * --------------------------------- */
 .site-tile {
   transition: transform 120ms ease;
   will-change: transform;
   isolation: isolate;
-  /* 确保内容不会溢出格子，除了编辑模式的删除按钮 */
 }
 
 .site-tile:hover {
@@ -461,28 +469,62 @@ const confirmDelete = () => {
   z-index: 10;
 }
 
-.delete-btn-ios {
+/* ---------------------------------
+ * Widget overlay 名称 pill：主题适配（替代 bg-black/35 + text-white）
+ * --------------------------------- */
+.widget-name-pill {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+
+  /* 用 overlay 系统（light 是白雾，dark 是黑雾） */
+  background: rgba(var(--overlay-rgb), 0.25);
+  border: 1px solid rgba(var(--overlay-rgb), 0.18);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+
+  color: var(--text-primary);
+}
+
+/* ---------------------------------
+ * 删除按钮：主题适配 + hover 走危险色
+ * --------------------------------- */
+.delete-btn {
   position: absolute;
   top: -8px;
   right: -8px;
   z-index: 50;
+
   width: 24px;
   height: 24px;
-  border-radius: 50%;
-  background-color: rgba(156, 163, 175, 0.9);
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+
+  /* 默认：中性面板色 */
+  background: rgba(127, 127, 127, 0.22);
+  border: 1px solid rgba(127, 127, 127, 0.28);
+  color: var(--text-primary);
+
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.delete-btn-ios:hover {
-  background-color: #ef4444;
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.92); /* red-500 */
+  border-color: rgba(239, 68, 68, 0.92);
   transform: scale(1.1);
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.22);
+}
+
+/* neon 模式下：删除按钮 hover 更亮一点 */
+:global(.theme-neon) .delete-btn:hover {
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.24),
+  0 0 16px rgba(239, 68, 68, 0.22);
 }
 </style>

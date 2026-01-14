@@ -99,6 +99,16 @@
     /* 图标默认颜色（非 hover） */
     --fab-icon: rgba(255,255,255,0.88);
     --fab-icon-muted: rgba(255,255,255,0.72);
+
+    --term-bg: #0c0c0c;
+    --term-panel: rgba(255,255,255,0.05);
+    --term-border: rgba(255,255,255,0.10);
+    --term-fg: rgba(255,255,255,0.90);
+    --term-muted: rgba(255,255,255,0.72);
+    --term-dim: rgba(255,255,255,0.46);
+    --term-shadow: 0 22px 60px rgba(0,0,0,0.65);
+    --term-scanline-alpha: 0.25;
+    --term-glow-alpha: 0.18;
 }
 
 html.light {
@@ -178,6 +188,16 @@ html.light {
 
     --fab-icon: rgba(17,24,39,0.88);
     --fab-icon-muted: rgba(17,24,39,0.72);
+
+    --term-bg: var(--page-fallback);
+    --term-panel: var(--widget-surface-2);
+    --term-border: var(--widget-border);
+    --term-fg: var(--text-primary);
+    --term-muted: var(--text-secondary);
+    --term-dim: var(--text-tertiary);
+    --term-shadow: var(--settings-shadow-soft);
+    --term-scanline-alpha: 0.18;
+    --term-glow-alpha: 0.10;
 }
 
 /* -------------------------------------------------------------------------- */

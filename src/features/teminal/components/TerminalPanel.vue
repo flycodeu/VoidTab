@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import {ref, nextTick, onMounted} from 'vue';
+import {ref, nextTick, onMounted, computed} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
-//import {useHistoryStore} from '../../../stores/useHistoryStore';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
-//const historyStore = useHistoryStore();
 
 // === DOM Refs ===
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -16,7 +14,7 @@ const inputValue = ref('');
 const commandHistory = ref<string[]>([]);
 const historyIndex = ref(-1);
 const isBooting = ref(true);
-const isProcessing = ref(false); // 正在处理任务（如AI生成中），此时锁定输入
+const isProcessing = ref(false);
 
 // AI 上下文 (多轮对话) - 仅在当前终端会话有效
 const aiContext = ref<{ role: string; content: string }[]>([]);
@@ -30,11 +28,77 @@ interface LogLine {
 
 const logs = ref<LogLine[]>([]);
 
+/** -----------------------------------------
+ * 终端主题：仅依赖你已有的全局主题变量
+ * - 主色：--accent-color / --accent-color-rgb
+ * - 文字：--text-primary / --text-secondary
+ * - 面板：--widget-surface / --settings-panel 等
+ * ----------------------------------------- */
+const terminalTheme = computed<'dark' | 'light' | 'hacker'>(() => {
+  const t = store.config.runtime?.terminal?.theme;
+  if (t === 'light' || t === 'hacker' || t === 'dark') return t;
+  return 'dark';
+});
+
+/**
+ *终端把 “配色” 用 CSS 变量喂进去，不需要额外全局 css。
+ * 这里用的是你现有变量：
+ * - var(--accent-color-rgb)
+ * - var(--widget-surface)
+ * - var(--settings-panel)
+ * - var(--text-primary/secondary/tertiary)
+ */
+const terminalStyleVars = computed(() => {
+  const theme = terminalTheme.value;
+
+  // 三种模式，只改变“终端背景/面板”风格，主色永远跟随 accent
+  if (theme === 'light') {
+    return {
+      '--term-bg': 'var(--page-fallback)',
+      '--term-panel': 'var(--widget-surface-2)',
+      '--term-border': 'var(--widget-border)',
+      '--term-fg': 'var(--text-primary)',
+      '--term-muted': 'var(--text-secondary)',
+      '--term-dim': 'var(--text-tertiary)',
+      '--term-shadow': 'var(--settings-shadow-soft)',
+      '--term-scanline-alpha': '0.20',
+      '--term-glow-alpha': '0.10',
+    } as Record<string, string>;
+  }
+
+  if (theme === 'hacker') {
+    // hacker：更深一点、对比更强，但仍跟随 accent（不强制绿）
+    return {
+      '--term-bg': '#07090a',
+      '--term-panel': 'rgba(255,255,255,0.04)',
+      '--term-border': 'rgba(255,255,255,0.10)',
+      '--term-fg': 'rgba(255,255,255,0.92)',
+      '--term-muted': 'rgba(255,255,255,0.70)',
+      '--term-dim': 'rgba(255,255,255,0.46)',
+      '--term-shadow': '0 22px 60px rgba(0,0,0,0.65)',
+      '--term-scanline-alpha': '0.28',
+      '--term-glow-alpha': '0.18',
+    } as Record<string, string>;
+  }
+
+  // dark 默认
+  return {
+    '--term-bg': '#0c0c0c',
+    '--term-panel': 'rgba(255,255,255,0.05)',
+    '--term-border': 'rgba(255,255,255,0.10)',
+    '--term-fg': 'rgba(255,255,255,0.90)',
+    '--term-muted': 'rgba(255,255,255,0.72)',
+    '--term-dim': 'rgba(255,255,255,0.46)',
+    '--term-shadow': '0 22px 60px rgba(0,0,0,0.65)',
+    '--term-scanline-alpha': '0.25',
+    '--term-glow-alpha': '0.18',
+  } as Record<string, string>;
+});
+
 // === 初始化 ===
 onMounted(async () => {
   nextTick(() => inputRef.value?.focus());
 
-  // 简化的 Boot 动画
   const bootSequence = [
     'Initializing VoidTab Kernel...',
     'Loading user configuration...',
@@ -66,24 +130,21 @@ const scrollToBottom = async () => {
 
 // === 核心逻辑：命令执行 ===
 const executeCommand = async () => {
-  if (isProcessing.value) return; // 锁定状态不可输入
+  if (isProcessing.value) return;
 
   const raw = inputValue.value.trim();
   if (!raw) return;
 
-  // 1. UI 反馈
   logs.value.push({
     type: 'cmd',
     content: raw,
     time: new Date().toLocaleTimeString('en-US', {hour12: false})
   });
 
-  // 2. 历史记录
   commandHistory.value.push(raw);
   historyIndex.value = commandHistory.value.length;
   inputValue.value = '';
 
-  // 3. 解析
   const args = raw.match(/(?:[^\s"]+|"[^"]*")+/g)?.map(s => s.replace(/"/g, '')) || [];
   const cmd = args[0]?.toLowerCase();
 
@@ -96,7 +157,6 @@ const executeCommand = async () => {
   await scrollToBottom();
 };
 
-// --- 命令处理中心 ---
 const processCommand = async (cmd: string, args: string[]) => {
   switch (cmd) {
     case 'help':
@@ -118,7 +178,8 @@ VoidTab Shell (v2.4) - Available Commands:
   ai --config            Show AI settings
 
   theme [light|dark]     Switch UI theme
-  mv <type> <id> <name>  Rename group/site
+  term theme [dark|light|hacker]  Switch terminal theme
+
   clear                  Clear screen
   exit                   Return to GUI mode
 `
@@ -146,7 +207,10 @@ VoidTab Shell (v2.4) - Available Commands:
       handleTheme(args);
       break;
 
-      // ✅ 增强：引擎配置
+    case 'term':
+      handleTerm(args);
+      break;
+
     case 'config':
       handleConfig(args);
       break;
@@ -159,7 +223,6 @@ VoidTab Shell (v2.4) - Available Commands:
       handleLocalFind(args);
       break;
 
-      // ✅ 增强：多轮对话 AI
     case 'ai':
       await handleAi(args);
       break;
@@ -172,8 +235,6 @@ VoidTab Shell (v2.4) - Available Commands:
       throw new Error(`Command not found: ${cmd}`);
   }
 };
-
-// === 具体实现 ===
 
 const handleLs = (args: string[]) => {
   if (args[1] === '-g' && args[2]) {
@@ -215,7 +276,7 @@ const handleOpen = (args: string[]) => {
     return;
   }
 
-  let found = null;
+  let found: any = null;
   for (const group of store.config.layout) {
     const exact = group.items.find((item: any) => item.title && item.title.toLowerCase() === target.toLowerCase());
     if (exact) {
@@ -279,12 +340,10 @@ const handleWebSearch = (args: string[]) => {
   }
 };
 
-// 🌟 配置引擎：支持列表、切换、新增
 const handleConfig = (args: string[]) => {
   const subCmd = args[1];
 
   if (subCmd === 'engine') {
-    // 1. config engine list
     if (args[2] === 'list') {
       logs.value.push({type: 'info', content: 'Available Search Engines:'});
       store.config.searchEngines.forEach((e: any) => {
@@ -294,22 +353,17 @@ const handleConfig = (args: string[]) => {
       return;
     }
 
-    // 2. config engine add <name> <url>
     if (args[2] === 'add') {
       const name = args[3];
       const url = args[4];
       if (!name || !url) throw new Error('Usage: config engine add <name> <url>');
-
-      store.addEngine(name, url); // 假设 store 有此方法，如果没有需自行实现
+      store.addEngine(name, url);
       logs.value.push({type: 'success', content: `Engine "${name}" added.`});
       return;
     }
 
-    // 3. config engine <name> (Switch)
     const target = args[2]?.toLowerCase();
-    if (!target) {
-      throw new Error('Usage: config engine <name|list|add>');
-    }
+    if (!target) throw new Error('Usage: config engine <name|list|add>');
 
     const engine = store.config.searchEngines.find((e: any) =>
         e.id === target || e.name.toLowerCase().includes(target)
@@ -328,11 +382,26 @@ const handleConfig = (args: string[]) => {
 const handleTheme = (args: string[]) => {
   const mode = args[1];
   if (mode !== 'light' && mode !== 'dark') throw new Error('Usage: theme [light|dark]');
-  store.config.theme.mode = mode;
+  store.config.theme.mode = mode as any;
   store.saveConfig();
+
   document.documentElement.classList.remove('light', 'dark');
   document.documentElement.classList.add(mode);
+
   logs.value.push({type: 'success', content: `Theme: ${mode}`});
+};
+
+const handleTerm = (args: string[]) => {
+  if (args[1] !== 'theme') throw new Error('Usage: term theme [dark|light|hacker]');
+  const t = args[2] as any;
+  if (t !== 'dark' && t !== 'light' && t !== 'hacker') throw new Error('Usage: term theme [dark|light|hacker]');
+
+  if (!store.config.runtime.terminal) {
+    store.config.runtime.terminal = {history: [], theme: 'dark', isOpen: true};
+  }
+  store.config.runtime.terminal.theme = t;
+  store.saveConfig();
+  logs.value.push({type: 'success', content: `Terminal theme: ${t}`});
 };
 
 const handleMv = (args: string[]) => {
@@ -347,18 +416,15 @@ const handleMv = (args: string[]) => {
   }
 };
 
-// 🌟 核心：AI 增强逻辑 (多轮对话 + 实时流)
 const handleAi = async (args: string[]) => {
   const arg1 = args[1];
 
-  // 1. 重置上下文
   if (arg1 === '--reset') {
     aiContext.value = [];
     logs.value.push({type: 'success', content: 'AI Context cleared.'});
     return;
   }
 
-  // 2. 查看配置
   if (arg1 === '--config') {
     logs.value.push({type: 'info', content: 'Current Configuration:'});
     logs.value.push({type: 'info', content: `  URL: ${store.config.ai.baseUrl || '(unset)'}`});
@@ -377,10 +443,8 @@ const handleAi = async (args: string[]) => {
   isProcessing.value = true;
   logs.value.push({type: 'info', content: 'Thinking...'});
 
-  // 添加用户消息到上下文
   aiContext.value.push({role: 'user', content: prompt});
 
-  // 创建流式日志行
   const logIndex = logs.value.length;
   logs.value.push({type: 'ai-stream', content: ''});
 
@@ -388,8 +452,7 @@ const handleAi = async (args: string[]) => {
     let endpoint = baseUrl.trim().replace(/\/+$/, '');
     if (!endpoint.endsWith('/chat/completions')) endpoint += '/chat/completions';
 
-    // 限制历史上下文长度，防止 Token 溢出
-    const contextToSend = aiContext.value.slice(-6); // 只带最近6条
+    const contextToSend = aiContext.value.slice(-6);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -423,17 +486,15 @@ const handleAi = async (args: string[]) => {
             fullText += content;
             logs.value[logIndex].content = fullText;
             scrollToBottom();
-          } catch (e) {
+          } catch {
           }
         }
       }
     }
-    // 对话完成后，将 AI 回复加入上下文，实现多轮记忆
-    aiContext.value.push({role: 'assistant', content: fullText});
 
+    aiContext.value.push({role: 'assistant', content: fullText});
   } catch (e: any) {
     logs.value.push({type: 'error', content: e.message});
-    // 出错则移除刚才的用户提问，保持上下文干净
     aiContext.value.pop();
   } finally {
     isProcessing.value = false;
@@ -470,58 +531,54 @@ const onKeyDown = (e: KeyboardEvent) => {
 </script>
 
 <template>
-  <div
-      class="fixed inset-0 z-[9999] bg-[#0c0c0c] text-[#cccccc] font-mono text-sm sm:text-base flex flex-col"
-      @click="keepFocus"
-  >
-    <div class="scanlines pointer-events-none fixed inset-0 z-50"></div>
-    <div class="glow pointer-events-none fixed inset-0 z-40"></div>
+  <div class="vt-term" :style="terminalStyleVars" @click="keepFocus">
+    <div class="vt-term__scanlines pointer-events-none"></div>
+    <div class="vt-term__glow pointer-events-none"></div>
 
-    <div ref="containerRef" class="flex-1 overflow-y-auto p-4 sm:p-8 space-y-1 relative z-10 custom-scrollbar">
-
-      <div v-for="(log, idx) in logs" :key="idx" class="break-words leading-relaxed animate-fade-in">
-        <span v-if="log.time" class="text-gray-600 mr-2 select-none">[{{ log.time }}]</span>
+    <div ref="containerRef" class="vt-term__body custom-scroll space-y-1">
+      <div v-for="(log, idx) in logs" :key="idx" class="vt-term__line">
+        <span v-if="log.time" class="vt-term__time">[{{ log.time }}]</span>
 
         <template v-if="log.type === 'system'">
-          <span class="text-blue-400 font-bold">[SYS]</span>
-          <span class="ml-2 text-gray-400">{{ log.content }}</span>
+          <span class="vt-term__sys">[SYS]</span>
+          <span class="vt-term__muted">{{ log.content }}</span>
         </template>
 
         <template v-else-if="log.type === 'cmd'">
-          <span class="text-[#00ff00] font-bold">root@voidtab:~#</span>
-          <span class="ml-2 text-white font-bold">{{ log.content }}</span>
+          <span class="vt-term__prompt">root@voidtab:~#</span>
+          <span class="vt-term__cmd">{{ log.content }}</span>
         </template>
 
         <template v-else-if="log.type === 'error'">
-          <span class="text-red-500 font-bold">Error:</span>
-          <span class="text-red-400 ml-1">{{ log.content }}</span>
+          <span class="vt-term__err">Error:</span>
+          <span class="vt-term__errMsg">{{ log.content }}</span>
         </template>
 
         <template v-else-if="log.type === 'success'">
-          <span class="text-green-400">✔ {{ log.content }}</span>
+          <span class="vt-term__ok">✔ {{ log.content }}</span>
         </template>
 
         <template v-else-if="log.type === 'ai-stream'">
-          <div class="mt-1 p-2 border-l-2 border-purple-500 bg-[#1a1a1a] text-gray-300">
-            <span class="text-purple-400 font-bold block mb-1">🤖 AI Assistant:</span>
+          <div class="vt-term__ai">
+            <span class="vt-term__aiTitle">🤖 AI Assistant:</span>
             <span class="whitespace-pre-wrap">{{ log.content }}</span>
-            <span class="inline-block w-2 h-4 bg-purple-500 align-middle animate-pulse" v-if="isProcessing"></span>
+            <span v-if="isProcessing" class="vt-term__aiCaret animate-pulse"></span>
           </div>
         </template>
 
         <template v-else>
-          <span class="whitespace-pre-wrap text-gray-300">{{ log.content }}</span>
+          <span class="whitespace-pre-wrap vt-term__text">{{ log.content }}</span>
         </template>
       </div>
 
-      <div v-if="!isBooting" class="flex items-center pt-2">
-        <span class="text-[#00ff00] font-bold shrink-0">root@voidtab:~#</span>
+      <div v-if="!isBooting" class="vt-term__inputRow">
+        <span class="vt-term__prompt">root@voidtab:~#</span>
         <input
             ref="inputRef"
             v-model="inputValue"
             type="text"
-            class="flex-1 bg-transparent border-none outline-none text-white ml-2 caret-[#00ff00] font-bold"
-            :class="{'opacity-50 cursor-not-allowed': isProcessing}"
+            class="vt-term__input"
+            :class="{ 'opacity-50 cursor-not-allowed': isProcessing }"
             spellcheck="false"
             autocomplete="off"
             :disabled="isProcessing"
@@ -534,54 +591,171 @@ const onKeyDown = (e: KeyboardEvent) => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap');
+/* 根容器：完全用变量，不写死主题 */
+.vt-term {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
 
-div {
-  font-family: 'Fira Code', 'Courier New', monospace;
+  background: var(--term-bg);
+  color: var(--term-fg);
+
+  font-family: var(--tech-font-family), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+  "Liberation Mono", "Courier New", monospace;
+
+  display: flex;
+  flex-direction: column;
+
+  /*提升清晰度 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.1s ease-out;
+/* 滚动区 */
+.vt-term__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  position: relative;
+  z-index: 1;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* 行 */
+.vt-term__line {
+  word-break: break-word;
+  line-height: 1.55;
+
+  /*只做透明度，不要 transform（transform 会让字发虚） */
+  animation: vtFadeIn 0.12s ease-out;
 }
 
-.custom-scrollbar::-webkit-scrollbar {
+@keyframes vtFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 文本色系 */
+.vt-term__time {
+  color: var(--term-dim);
+  margin-right: 8px;
+  user-select: none;
+}
+
+.vt-term__muted { color: var(--term-muted); }
+
+.vt-term__sys {
+  color: rgba(var(--accent-color-rgb), 0.92);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+/* prompt / caret：默认主题色 */
+.vt-term__prompt {
+  color: var(--accent-color);
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.vt-term__cmd {
+  margin-left: 8px;
+  color: var(--term-fg);
+  font-weight: 800;
+}
+
+.vt-term__text { color: var(--term-fg); }
+
+.vt-term__ok { color: rgba(34, 197, 94, 0.95); }
+
+.vt-term__err {
+  color: rgba(239, 68, 68, 0.95);
+  font-weight: 800;
+}
+
+.vt-term__errMsg {
+  color: rgba(248, 113, 113, 0.95);
+  margin-left: 6px;
+}
+
+/* AI 块：用主题色做边 */
+.vt-term__ai {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--term-panel);
+  border: 1px solid var(--term-border);
+  border-left: 3px solid rgba(var(--accent-color-rgb), 0.88);
+  border-radius: 12px;
+  box-shadow: var(--term-shadow);
+}
+
+.vt-term__aiTitle {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(var(--accent-color-rgb), 0.92);
+  font-weight: 800;
+}
+
+.vt-term__aiCaret {
+  display: inline-block;
   width: 8px;
+  height: 16px;
+  background: rgba(var(--accent-color-rgb), 0.92);
+  vertical-align: middle;
+  margin-left: 4px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 0;
+/* 输入行 */
+.vt-term__inputRow {
+  display: flex;
+  align-items: center;
+  padding-top: 10px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #000;
+.vt-term__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  margin-left: 8px;
+  color: var(--term-fg);
+  font-weight: 800;
+  caret-color: var(--accent-color);
 }
 
-.scanlines {
-  background: linear-gradient(
+/*扫描线：改成更细、更弱（不会糊字） */
+.vt-term__scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+
+  background: repeating-linear-gradient(
       to bottom,
-      rgba(255, 255, 255, 0),
-      rgba(255, 255, 255, 0) 50%,
-      rgba(0, 0, 0, 0.2) 50%,
-      rgba(0, 0, 0, 0.2)
+      rgba(255,255,255,0.00) 0px,
+      rgba(255,255,255,0.00) 2px,
+      rgba(0,0,0,0.25) 3px,
+      rgba(0,0,0,0.25) 4px
   );
-  background-size: 100% 4px;
-  opacity: 0.6;
+
+  /*默认更低，真正要强烈再调 */
+  opacity: var(--term-scanline-alpha, 0.10);
 }
 
-.glow {
-  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.9);
-  background: radial-gradient(circle, rgba(0, 255, 0, 0.02) 0%, rgba(0, 0, 0, 0) 80%);
+/*光晕：也降低点，避免雾化 */
+.vt-term__glow {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.85);
+  background: radial-gradient(
+      circle,
+      rgba(var(--accent-color-rgb), var(--term-glow-alpha, 0.12)) 0%,
+      rgba(0, 0, 0, 0) 78%
+  );
 }
+
+/* 减少动态效果时禁用 */
+@media (prefers-reduced-motion: reduce) {
+  .vt-term__line { animation: none !important; }
+}
+
 </style>
