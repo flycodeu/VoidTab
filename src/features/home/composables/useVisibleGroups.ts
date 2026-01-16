@@ -1,21 +1,18 @@
-import {computed} from 'vue';
+import {computed} from "vue";
 
 export function useVisibleGroups(options: {
-    groups: any[];
+    groups: () => any[];
     isEditMode: () => boolean;
     activeGroupId: () => string;
     dragState: { isDragging: boolean; fromGroupId?: string };
 }) {
     const visibleGroups = computed(() => {
-        const groups = options.groups || [];
+        const groups = options.groups() || [];
 
-        // 编辑模式：全部显示
         if (options.isEditMode()) return groups;
 
-        // 非编辑：只显示当前组
         const active = groups.find(g => g.id === options.activeGroupId());
 
-        // 拖拽中：额外显示来源组（去重）
         if (options.dragState.isDragging && options.dragState.fromGroupId) {
             const from = groups.find(g => g.id === options.dragState.fromGroupId);
 

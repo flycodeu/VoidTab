@@ -43,7 +43,7 @@ const dialog = inject("dialog") as { openAddDialog: (gid: string) => void } | un
 const openAddDialog = (gid: string) => dialog?.openAddDialog?.(gid);
 
 const {visibleGroups} = useVisibleGroups({
-  groups: store.config.layout || [],
+  groups: () => store.config.layout || [],
   isEditMode: () => props.isEditMode,
   activeGroupId: () => props.activeGroupId,
   dragState: ui.dragState,
