@@ -3,10 +3,11 @@ import {computed, nextTick, ref, watch} from 'vue';
 import {VueDraggable} from 'vue-draggable-plus';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
-import {PhMonitor, PhPlus, PhGear} from '@phosphor-icons/vue';
+import { PhPlus, PhGear} from '@phosphor-icons/vue';
 
 import SidebarGroupButton from './sidebar/SidebarGroupButton.vue';
 import {useSidebarDragHandlers} from '../composables/useSidebarDragHandlers.ts';
+import BrandLogo from '../../../app/shell/BrandLogo.vue';
 
 const ui = useUiStore();
 const store = useConfigStore();
@@ -103,7 +104,7 @@ const railStyle = computed(() => {
           <div
               class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand"
           >
-            <PhMonitor weight="fill" size="20"/>
+            <BrandLogo />
           </div>
 
           <transition name="fade">

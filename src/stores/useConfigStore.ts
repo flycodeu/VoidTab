@@ -44,10 +44,18 @@ export const useConfigStore = defineStore('config', () => {
     let scheduler: SyncScheduler | null = null;
     const buildSyncPayload = (cfg: any) => {
         const copy = JSON.parse(JSON.stringify(cfg));
-        // runtime 不上传
         delete copy.runtime;
+
+        // 不同步上传的本地壁纸（idb:xxx）
+        const wp = (copy?.theme?.wallpaper || '').trim?.() ? copy.theme.wallpaper.trim() : '';
+        if (wp.startsWith('idb:')) {
+            copy.theme.wallpaper = '';
+            copy.theme.wallpaperType = '';
+        }
+
         return JSON.stringify(copy);
     };
+
 
     const loadConfig = async () => {
         config.value = await configRepository.load();
@@ -97,6 +105,9 @@ export const useConfigStore = defineStore('config', () => {
     };
 
 
+
+    let saveTimer: number | null = null;
+
     const saveConfig = async () => {
         if (!isLoaded.value) return;
         try {
@@ -106,6 +117,14 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
+    const saveConfigDebounced = () => {
+        if (saveTimer) window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+            saveConfig();
+            saveTimer = null;
+        }, 200);
+    };
+
     watch(
         config,
         () => {
@@ -113,10 +132,11 @@ export const useConfigStore = defineStore('config', () => {
             if (applyingExternal.value) return;
 
             localRevision.value += 1;
-            saveConfig();
+            saveConfigDebounced();
         },
-        {deep: true}
+        { deep: true }
     );
+
 
 
     // --- Actions ---
