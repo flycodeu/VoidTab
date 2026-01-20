@@ -22,6 +22,11 @@ export interface SiteItem {
     iconValue?: string;
     bgColor?: string;
 
+
+    remark?: string;          // 备注文字
+    tags?: string[];          // 标签（纯文本）
+    createdAt?: number;       // 可选：创建时间（便于排序/管理）
+
     // --- 组件字段 ---
     widgetType?: WidgetType;
     widgetConfig?: Record<string, any>;

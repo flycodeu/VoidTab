@@ -34,10 +34,21 @@ function isInternalUrl(url: any) {
     return !!url && /^(https?:\/\/)?(192\.168|10\.|172\.(1[6-9]|2\d|3[0-1])|localhost|127\.)/.test(url);
 }
 
-// ✅ 核心修改：同时处理 Site 和 Widget 的清洗逻辑
+// 核心修改：同时处理 Site 和 Widget 的清洗逻辑
 function normalizeItem(rawItem: any): SiteItem {
     // 1. 确定 kind (默认为 site)
     const kind = (rawItem?.kind === 'widget' || rawItem?.kind === 'site') ? rawItem.kind : 'site';
+
+    // 新增字段：remark/tags/createdAt 透传 + 兜底
+    const remark = typeof rawItem?.remark === 'string' ? rawItem.remark : '';
+    const tags = Array.isArray(rawItem?.tags)
+        ? rawItem.tags
+            .filter((t: any) => typeof t === 'string')
+            .map((t: string) => t.trim())
+            .filter(Boolean)
+            .slice(0, 20)
+        : [];
+    const createdAt = typeof rawItem?.createdAt === 'number' ? rawItem.createdAt : Date.now();
 
     // 2. 构建基础对象
     const item: SiteItem = {
@@ -49,18 +60,22 @@ function normalizeItem(rawItem: any): SiteItem {
         bgColor: rawItem?.bgColor,
         icon: rawItem?.icon,
 
-        // ✅ 保留布局字段
-        kind: kind,
-        w: Number(rawItem?.w) || (kind === 'widget' ? 2 : 1), // widget 默认为 2x2
+        // 保留布局字段
+        kind,
+        w: Number(rawItem?.w) || (kind === 'widget' ? 2 : 1),
         h: Number(rawItem?.h) || (kind === 'widget' ? 2 : 1),
+
+        // 透传扩展字段
+        remark,
+        tags,
+        createdAt,
     };
 
-    // 3.如果是 Widget，保留特有字段
+    // 3. 如果是 Widget，保留特有字段
     if (kind === 'widget') {
         if (rawItem?.widgetType) {
             item.widgetType = rawItem.widgetType as WidgetType;
         }
-        // 兜底：防止旧数据丢失类型
         if (!item.widgetType && item.title === 'clock') item.widgetType = 'clock';
 
         if (rawItem?.widgetConfig) {
@@ -68,7 +83,7 @@ function normalizeItem(rawItem: any): SiteItem {
         }
     }
 
-    // 4. 图标/颜色逻辑 (保留原逻辑，确保 Site 显示正常)
+    // 4. 图标/颜色逻辑
     if (!item.iconType) item.iconType = 'auto';
 
     const internal = isInternalUrl(item.url);
@@ -86,6 +101,12 @@ function normalizeItem(rawItem: any): SiteItem {
             item.iconValue = getSmartInitials(item.title || 'A');
             if (!item.iconValue) item.iconValue = (item.title || 'A').substring(0, 2);
         }
+    }
+
+    // 额外安全：站点永远 1x1（避免被旧数据写脏）
+    if (item.kind === 'site') {
+        item.w = 1;
+        item.h = 1;
     }
 
     return item;
@@ -109,7 +130,7 @@ function normalizeGroup(rawGroup: any): Group {
     return group;
 }
 
-// ✅ 新增：Runtime 数据清洗与合并
+// 新增：Runtime 数据清洗与合并
 function normalizeRuntime(input: any): RuntimeConfig {
     // input 是从 LocalStorage 读出来的旧数据
     // def 是代码里最新的默认值
@@ -195,7 +216,7 @@ export function normalizeConfig(raw: any): Config {
     // layout
     out.layout = Array.isArray(input.layout) ? input.layout.map(normalizeGroup) : deepClone(base.layout);
 
-    // ✅ 新增：显式调用 Runtime 清洗
+    // 新增：显式调用 Runtime 清洗
     // 这一步之前是缺失的，导致 input.runtime 被忽略
     out.runtime = normalizeRuntime(input.runtime);
 

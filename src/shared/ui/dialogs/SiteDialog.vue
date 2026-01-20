@@ -17,6 +17,8 @@ type SiteForm = {
   bgColor: string;
   iconType: IconMode;
   iconValue: string;
+  remark: string;
+  tags: string[];
 };
 
 const props = defineProps<{
@@ -41,7 +43,9 @@ const formData = ref<SiteForm>({
   url: '',
   bgColor: '#3b82f6',
   iconType: 'auto',
-  iconValue: ''
+  iconValue: '',
+  remark: '',
+  tags: []
 });
 
 const activeTab = ref<IconMode>('auto');
@@ -96,7 +100,9 @@ watch(
           url: props.initialData.url || '',
           bgColor: props.initialData.bgColor || '#3b82f6',
           iconType: (props.initialData.iconType as IconMode) || 'auto',
-          iconValue: props.initialData.iconValue || ''
+          iconValue: props.initialData.iconValue || '',
+          remark: (props.initialData as any).remark || '',
+          tags: (props.initialData as any).tags || []
         };
         activeTab.value = formData.value.iconType;
         refresh(true);
@@ -107,7 +113,9 @@ watch(
           url: '',
           bgColor: randomColor,
           iconType: 'auto',
-          iconValue: ''
+          iconValue: '',
+          remark: '',
+          tags: []
         };
         activeTab.value = 'auto';
         refresh(true);

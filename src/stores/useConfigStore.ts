@@ -222,7 +222,7 @@ export const useConfigStore = defineStore('config', () => {
             widgetType: widgetType as WidgetType,
             title: getWidgetLabel(widgetType),
 
-            // ✅ 强制限制
+            // 强制限制
             w: clampInt(defW, 1, MAX_WIDGET_W, 2),
             h: clampInt(defH, 1, MAX_WIDGET_H, 2),
 
@@ -255,23 +255,72 @@ export const useConfigStore = defineStore('config', () => {
 
     const addSite = (groupId: string, site: any) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
-        if (group) {
-            site.id = Date.now().toString();
+        if (!group) return;
+
+        const now = Date.now();
+
+        const payload: SiteItem = {
+            id: now.toString(),
+
             // 新增站点默认为 1x1 site
-            site.kind = 'site';
-            site.w = 1;
-            site.h = 1;
-            group.items.push(site);
-        }
+            kind: 'site',
+            w: 1,
+            h: 1,
+
+            // 站点基础字段（保持你现有结构）
+            title: site.title || '',
+            url: site.url || '',
+            bgColor: site.bgColor || '#3b82f6',
+            iconType: site.iconType || 'auto',
+            iconValue: site.iconValue || '',
+            icon: site.icon || '',
+
+            // 新增：备注/标签（关键）
+            remark: typeof site.remark === 'string' ? site.remark : '',
+            tags: Array.isArray(site.tags) ? site.tags.filter((t: any) => typeof t === 'string' && t.trim()).map((t: string) => t.trim()) : [],
+            createdAt: typeof site.createdAt === 'number' ? site.createdAt : now,
+        };
+
+        group.items.push(payload);
+        saveConfig();
     };
+
 
     const updateSite = (groupId: string, siteId: string, data: any) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
-        if (group) {
-            const site = group.items.find((s: any) => s.id === siteId);
-            if (site) Object.assign(site, data);
+        if (!group) return;
+
+        const site = group.items.find((s: any) => s.id === siteId);
+        if (!site) return;
+
+        // 清洗：防止 tags 被传成字符串 / null
+        const patch: any = { ...data };
+
+        if ('remark' in patch && typeof patch.remark !== 'string') {
+            patch.remark = '';
         }
+
+        if ('tags' in patch) {
+            if (Array.isArray(patch.tags)) {
+                patch.tags = patch.tags
+                    .filter((t: any) => typeof t === 'string')
+                    .map((t: string) => t.trim())
+                    .filter(Boolean)
+                    .slice(0, 20);
+            } else {
+                patch.tags = [];
+            }
+        }
+
+        // 确保站点永远 1×1
+        patch.kind = 'site';
+        patch.w = 1;
+        patch.h = 1;
+
+        Object.assign(site, patch);
+        saveConfig();
     };
+
 
     const removeSite = (groupId: string, siteId: string) => {
         const group = config.value.layout.find((g: any) => g.id === groupId);
@@ -313,20 +362,28 @@ export const useConfigStore = defineStore('config', () => {
     const importBookmarks = (htmlContent: string) => {
         const result = parseBookmarkContent(htmlContent);
         if (result.success && result.groups.length > 0) {
-            // 导入时也补全默认值
+            const now = Date.now();
+
             result.groups.forEach((g: any) => {
                 g.items.forEach((i: any) => {
                     i.kind = 'site';
                     i.w = 1;
                     i.h = 1;
+
+                    // 新增字段兜底
+                    if (typeof i.remark !== 'string') i.remark = '';
+                    if (!Array.isArray(i.tags)) i.tags = [];
+                    if (typeof i.createdAt !== 'number') i.createdAt = now;
                 });
             });
+
             config.value.layout.push(...result.groups);
             saveConfig();
-            return {success: true, groupCount: result.groups.length, count: result.totalCount};
+            return { success: true, groupCount: result.groups.length, count: result.totalCount };
         }
-        return {success: false, message: result.message || '导入失败'};
+        return { success: false, message: result.message || '导入失败' };
     };
+
 
     const setIconFallback = (itemId: string) => {
         for (const group of config.value.layout as any[]) {
