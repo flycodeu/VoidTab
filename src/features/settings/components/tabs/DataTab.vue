@@ -1,36 +1,33 @@
 <script setup lang="ts">
 import {ref} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
-// 引入图标，新增 PhCheck + （可选）PhCode
 import {
   PhDownloadSimple,
   PhFileArrowUp,
   PhBookmarkSimple,
   PhWarning,
   PhCheck,
-  PhCode
+  PhCode,
+  PhTrash
 } from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
-
-// HTML 导出函数（你放到 core/bookmarks/export.ts）
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
 
 const store = useConfigStore();
 const fileInput = ref<HTMLInputElement | null>(null);
 const bookmarkInput = ref<HTMLInputElement | null>(null);
 
-// --- 弹窗相关状态 ---
+// --- 弹窗相关状态：导入覆盖 ---
 const showConfirm = ref(false);
-const pendingData = ref<any>(null); // 暂存待导入的数据
+const pendingData = ref<any>(null);
 
-// 操作结果提示状态
+// --- 操作结果提示状态 ---
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
 
-// 辅助函数：显示提示并自动消失
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
   setTimeout(() => {
@@ -38,7 +35,9 @@ const showFeedback = (success: boolean, msg: string) => {
   }, 3000);
 };
 
+// ===============================
 // 导出 JSON
+// ===============================
 const handleExport = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(store.config, null, 2)], {type: 'application/json'}));
@@ -46,7 +45,7 @@ const handleExport = () => {
   a.click();
 };
 
-//  导出浏览器书签 HTML（只导出分组+网站）
+// 导出浏览器书签 HTML（只导出分组+网站）
 const handleExportHtml = () => {
   try {
     const html = exportBookmarksToHtml(store.config);
@@ -59,7 +58,6 @@ const handleExportHtml = () => {
     a.download = `voidtab-bookmarks.html`;
     a.click();
 
-    // 释放 URL
     setTimeout(() => URL.revokeObjectURL(url), 0);
 
     showFeedback(true, '已导出浏览器书签 HTML（可在 Edge/Chrome 导入）');
@@ -71,7 +69,7 @@ const handleExportHtml = () => {
 
 const triggerImport = () => fileInput.value?.click();
 
-// 1. 读取文件并触发弹窗
+// 读取 JSON 并触发弹窗
 const handleImport = (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -85,7 +83,6 @@ const handleImport = (e: Event) => {
         return;
       }
 
-      // 存入临时变量，并显示弹窗
       pendingData.value = raw;
       showConfirm.value = true;
 
@@ -96,10 +93,10 @@ const handleImport = (e: Event) => {
   };
 
   r.readAsText(file);
-  (e.target as HTMLInputElement).value = ''; // 重置 input
+  (e.target as HTMLInputElement).value = '';
 };
 
-// 2. 用户点击“确认”后真正执行导入
+// 用户点击“确认覆盖”后执行导入
 const executeImport = () => {
   if (!pendingData.value) return;
 
@@ -107,7 +104,7 @@ const executeImport = () => {
     const raw = pendingData.value;
     const next = normalizeConfig(migrateConfig(raw));
 
-    // 保留 webdav 字段逻辑
+    // 保留 webdav 字段逻辑（不改变你原本行为）
     const cur = {...(store.config.sync as any)};
     const ns = {...(next.sync as any)};
 
@@ -126,7 +123,6 @@ const executeImport = () => {
     next.sync = ns;
     store.config = next as any;
 
-    // 关闭弹窗
     showConfirm.value = false;
     pendingData.value = null;
 
@@ -138,7 +134,11 @@ const executeImport = () => {
   }
 };
 
+// ===============================
+// 导入浏览器书签
+// ===============================
 const triggerBookmarkImport = () => bookmarkInput.value?.click();
+
 const handleBookmarkUpload = (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -160,10 +160,47 @@ const handleBookmarkUpload = (event: Event) => {
   reader.readAsText(file);
   (event.target as HTMLInputElement).value = '';
 };
+
+// ===============================
+// ✅ 新增：恢复默认设置（危险）双重确认
+// ===============================
+const showReset1 = ref(false);
+const showReset2 = ref(false);
+
+const openReset = () => {
+  showReset1.value = true;
+};
+
+const goResetStep2 = () => {
+  showReset1.value = false;
+  showReset2.value = true;
+};
+
+const executeResetAll = async () => {
+  showReset2.value = false;
+
+  try {
+    // store 里实现 resetToDefault（下面我给完整 store 代码）
+    await (store as any).resetToDefault?.();
+
+    // 如果 store 没实现，给提示（理论不会走到这）
+    if (!(store as any).resetToDefault) {
+      showFeedback(false, 'resetToDefault 未实现，请先在 useConfigStore 添加该方法');
+      return;
+    }
+
+    // ✅ 强制刷新，确保所有页面/Pinia状态/缓存都回到干净状态
+    location.reload();
+  } catch (e) {
+    console.error(e);
+    showFeedback(false, '恢复默认设置失败，请查看控制台日志');
+  }
+};
 </script>
 
 <template>
   <div class="space-y-6 animate-fade-in">
+    <!-- 导出 / 导入 JSON -->
     <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
       <div class="flex justify-between items-center">
         <h3 class="font-bold text-sm">导出数据</h3>
@@ -203,6 +240,7 @@ const handleBookmarkUpload = (event: Event) => {
       </div>
     </div>
 
+    <!-- 导入浏览器书签 -->
     <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
       <div class="flex items-center gap-3 mb-2">
         <div class="p-2 rounded-lg bg-orange-500/10 text-orange-500">
@@ -227,6 +265,31 @@ const handleBookmarkUpload = (event: Event) => {
       </div>
     </div>
 
+    <!-- ✅ 新增：危险区域（放在页面底部最合理） -->
+    <div class="p-5 rounded-2xl border border-red-500/25 bg-red-500/5 space-y-3">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 font-extrabold text-sm text-red-600">
+            <PhWarning size="18" weight="fill"/>
+            危险区域
+          </div>
+          <p class="text-[11px] opacity-70 leading-relaxed mt-1">
+            “恢复默认设置”将清空本地保存的所有数据（分组/站点/主题/同步配置/历史等），并刷新页面。<br/>
+            强烈建议先执行一次“导出 JSON”备份，避免数据丢失。
+          </p>
+        </div>
+
+        <button
+            @click="openReset"
+            class="shrink-0 px-4 py-2 rounded-lg text-xs font-extrabold text-red-600 border border-red-500/30 hover:bg-red-500/10 active:scale-95 transition flex items-center gap-2"
+        >
+          <PhTrash size="16" weight="bold"/>
+          恢复默认设置
+        </button>
+      </div>
+    </div>
+
+    <!-- 操作结果提示 -->
     <div
         v-if="opResult"
         class="flex items-center justify-center gap-2 text-sm font-bold animate-fade-in py-2"
@@ -236,6 +299,7 @@ const handleBookmarkUpload = (event: Event) => {
       {{ opResult.msg }}
     </div>
 
+    <!-- 导入覆盖确认 -->
     <ConfirmDialog
         :show="showConfirm"
         title="覆盖当前配置？"
@@ -245,6 +309,47 @@ const handleBookmarkUpload = (event: Event) => {
         :danger="true"
         @cancel="showConfirm = false"
         @confirm="executeImport"
+    >
+      <template #icon>
+        <PhWarning :size="32" weight="duotone"/>
+      </template>
+    </ConfirmDialog>
+
+    <!-- ✅ 重置 第一次确认 -->
+    <ConfirmDialog
+        :show="showReset1"
+        title="恢复默认设置？"
+        :message="[
+        '该操作将清空本地保存的所有数据（包含分组/站点/主题/同步配置/历史等）。',
+        '强烈建议先点击“导出 JSON”进行备份。',
+        '此操作不可撤销。'
+      ]"
+        confirmText="我已了解，继续"
+        cancelText="取消"
+        :danger="true"
+        :closeOnBackdrop="false"
+        @cancel="showReset1 = false"
+        @confirm="goResetStep2"
+    >
+      <template #icon>
+        <PhWarning :size="32" weight="duotone"/>
+      </template>
+    </ConfirmDialog>
+
+    <!-- ✅ 重置 第二次确认（最后确认） -->
+    <ConfirmDialog
+        :show="showReset2"
+        title="最后确认：立即清空本地数据"
+        :message="[
+        '确认后将立即清空本地数据并刷新页面。',
+        '如果你没有备份，数据将无法找回。'
+      ]"
+        confirmText="确认清空"
+        cancelText="我再想想"
+        :danger="true"
+        :closeOnBackdrop="false"
+        @cancel="showReset2 = false"
+        @confirm="executeResetAll"
     >
       <template #icon>
         <PhWarning :size="32" weight="duotone"/>

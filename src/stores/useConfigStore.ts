@@ -105,7 +105,6 @@ export const useConfigStore = defineStore('config', () => {
     };
 
 
-
     let saveTimer: number | null = null;
 
     const saveConfig = async () => {
@@ -134,9 +133,8 @@ export const useConfigStore = defineStore('config', () => {
             localRevision.value += 1;
             saveConfigDebounced();
         },
-        { deep: true }
+        {deep: true}
     );
-
 
 
     // --- Actions ---
@@ -277,7 +275,6 @@ export const useConfigStore = defineStore('config', () => {
 
             // 新增：备注/标签（关键）
             remark: typeof site.remark === 'string' ? site.remark : '',
-            tags: Array.isArray(site.tags) ? site.tags.filter((t: any) => typeof t === 'string' && t.trim()).map((t: string) => t.trim()) : [],
             createdAt: typeof site.createdAt === 'number' ? site.createdAt : now,
         };
 
@@ -294,7 +291,7 @@ export const useConfigStore = defineStore('config', () => {
         if (!site) return;
 
         // 清洗：防止 tags 被传成字符串 / null
-        const patch: any = { ...data };
+        const patch: any = {...data};
 
         if ('remark' in patch && typeof patch.remark !== 'string') {
             patch.remark = '';
@@ -379,9 +376,9 @@ export const useConfigStore = defineStore('config', () => {
 
             config.value.layout.push(...result.groups);
             saveConfig();
-            return { success: true, groupCount: result.groups.length, count: result.totalCount };
+            return {success: true, groupCount: result.groups.length, count: result.totalCount};
         }
-        return { success: false, message: result.message || '导入失败' };
+        return {success: false, message: result.message || '导入失败'};
     };
 
 
@@ -470,6 +467,30 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
+    // 深拷贝：避免引用 defaultConfig
+    const deepClone = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
+
+    /**  新增：恢复默认设置（清空本地数据并写回默认配置） */
+    const resetToDefault = async () => {
+        // 1) 生成“干净默认配置”，走 migrate + normalize，确保结构跟当前版本一致
+        const next = normalizeConfig(migrateConfig(deepClone(defaultConfig)));
+
+        // 2) 覆盖当前 config
+        applyingExternal.value = true;          // 防止 watch 期间触发不必要流程
+        config.value = next as any;
+        normalizeLayoutItems();                // 确保布局字段完整
+        queueMicrotask(() => (applyingExternal.value = false));
+
+        // 3) 清空一些运行时缓存（可选）
+        rssCache.value = {};
+
+        // 4) 标记本地变更，让 scheduler 认为本地“更新了”
+        localRevision.value += 1;
+
+        // 5) 立即写入本地存储（覆盖旧数据）
+        await saveConfig();
+    };
+
     return {
         config,
         isLoaded,
@@ -502,6 +523,7 @@ export const useConfigStore = defineStore('config', () => {
         downloadBackup,
 
         destroy,
-        updateGroupSort
+        updateGroupSort,
+        resetToDefault,
     };
 });
