@@ -17,7 +17,7 @@ export interface WidgetMeta {
     category: 'time' | 'system' | 'tool' | 'game' | string;
     component: ReturnType<typeof defineAsyncComponent>;
 
-    // ✅ 新增视觉配置
+    //   新增视觉配置
     icon: any; // Phosphor Icon 组件
     color: string; // Tailwind 渐变色类名 (e.g. 'from-blue-500 to-cyan-500')
 }

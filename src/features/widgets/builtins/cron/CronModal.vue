@@ -15,7 +15,7 @@ import {useConfigStore} from '../../../../stores/useConfigStore';
 
 const store = useConfigStore();
 
-// ✅ runtime/cron 兜底
+//   runtime/cron 兜底
 if (!store.config.runtime) (store.config as any).runtime = {};
 if (!store.config.runtime.cron) {
   store.config.runtime.cron = {expr: '* * * * * ?', theme: 'pure-white'};

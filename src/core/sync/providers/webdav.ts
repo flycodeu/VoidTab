@@ -28,7 +28,7 @@ export function createWebDavProvider(): SyncProvider {
             const data = await downloadFromWebDav(p);
             if (!data) return {ok: false, message: '下载失败或无备份'};
 
-            // ✅ 返回字符串（store 里 JSON.parse）
+            //   返回字符串（store 里 JSON.parse）
             const text = typeof data === 'string' ? data : JSON.stringify(data);
             return {ok: true, message: '下载成功', data: text};
         }

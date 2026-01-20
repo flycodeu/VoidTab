@@ -75,7 +75,7 @@ export const useAiStore = defineStore('ai', () => {
         if (confirm('确定要清空所有聊天记录吗？无法恢复。')) {
             sessions.value = [];
             currentSessionId.value = '';
-            // ✅ 可选：顺手清掉本地缓存，避免下一次 load 又回来
+            //   可选：顺手清掉本地缓存，避免下一次 load 又回来
             localStorage.removeItem(AI_HISTORY_KEY);
         }
     };

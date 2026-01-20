@@ -5,7 +5,7 @@ export type DeleteTarget =
     | { kind: 'site'; groupId: string; siteId: string; title?: string }
     | { kind: 'group'; groupId: string; title?: string };
 
-// ✅ 全局单例状态（模块级）
+//   全局单例状态（模块级）
 const show = ref(false);
 const target = ref<DeleteTarget | null>(null);
 

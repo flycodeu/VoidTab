@@ -7,7 +7,7 @@ export type SiteStats = Record<string, { lastVisited: number; count: number }>;
 const STORAGE_KEY = 'voidtab_site_stats';
 
 export const useStateStore = defineStore('stats', () => {
-    // ✅ 修复：提取初始化逻辑为一个普通函数
+    //   修复：提取初始化逻辑为一个普通函数
     const getInitialStats = (): SiteStats => {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
@@ -17,7 +17,7 @@ export const useStateStore = defineStore('stats', () => {
         }
     };
 
-    // ✅ 修复：调用函数获取结果，而不是传函数本身
+    //   修复：调用函数获取结果，而不是传函数本身
     const siteStats = ref<SiteStats>(getInitialStats());
 
     // 2. 监听：一旦数据变化，立刻写回 LocalStorage

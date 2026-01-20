@@ -12,7 +12,7 @@ const store = useConfigStore();
 const widgetId = computed(() => String(props.item.id));
 const showModal = ref(false);
 
-// ✅ Runtime config safety
+//   Runtime config safety
 if (!store.config.runtime) (store.config as any).runtime = {};
 if (!store.config.runtime.photo) store.config.runtime.photo = {widgets: {}};
 if (!store.config.runtime.photo.widgets) store.config.runtime.photo.widgets = {};

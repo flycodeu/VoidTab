@@ -3,7 +3,7 @@ import {ref, watch, nextTick, onMounted, onUnmounted} from 'vue';
 import GroupDialogForm from './GroupDialogForm.vue';
 import {groupIconNames} from '../../../core/registry/groupIcons.ts';
 
-// ✅ 扩展表单类型，包含颜色字段
+//   扩展表单类型，包含颜色字段
 type GroupForm = {
   title: string;
   icon: string;
@@ -36,7 +36,7 @@ watch(
       errorMsg.value = '';
 
       if (props.isEdit && props.initialData) {
-        // ✅ 编辑模式：回填颜色数据
+        //   编辑模式：回填颜色数据
         formData.value = {
           title: String(props.initialData.title ?? ''),
           icon: String(props.initialData.icon ?? 'Folder'),
@@ -64,7 +64,7 @@ const handleSubmit = () => {
   }
   errorMsg.value = '';
 
-  // ✅ 提交所有字段，包括颜色
+  //   提交所有字段，包括颜色
   emit('submit', {
     title,
     icon: formData.value.icon || 'Folder',

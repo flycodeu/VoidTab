@@ -4,7 +4,7 @@ import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {
   PhGear, PhX, PhSquaresFour, PhFrameCorners, PhImage,
   PhMagicWand, PhDatabase, PhGlobe, PhCloudArrowUp,
-  PhShieldCheck // ✅ 新增图标
+  PhShieldCheck //   新增图标
 } from '@phosphor-icons/vue';
 
 // Import Tabs
@@ -15,7 +15,7 @@ import EffectsTab from './tabs/EffectsTab.vue';
 import SearchTab from './tabs/SearchTab.vue';
 import DataTab from './tabs/DataTab.vue';
 import SyncTab from './tabs/SyncTab.vue';
-import PrivacyTab from './tabs/PrivacyTab.vue'; // ✅ 新增引入
+import PrivacyTab from './tabs/PrivacyTab.vue'; //   新增引入
 
 defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
@@ -27,7 +27,7 @@ const menuItems = [
   {id: 'theme', label: '主题', icon: PhImage},
   {id: 'effects', label: '特效', icon: PhMagicWand},
   {id: 'search', label: '搜索', icon: PhGlobe},
-  {id: 'privacy', label: '隐私', icon: PhShieldCheck}, // ✅ 新增菜单项
+  {id: 'privacy', label: '隐私', icon: PhShieldCheck}, //   新增菜单项
   {id: 'data', label: '数据', icon: PhDatabase},
   {id: 'sync', label: '云端同步', icon: PhCloudArrowUp}
 ] as const;
@@ -41,7 +41,7 @@ const tabMap: Record<TabType, any> = {
   theme: ThemeTab,
   effects: EffectsTab,
   search: SearchTab,
-  privacy: PrivacyTab, // ✅ 新增映射
+  privacy: PrivacyTab, //   新增映射
   data: DataTab,
   sync: SyncTab
 };

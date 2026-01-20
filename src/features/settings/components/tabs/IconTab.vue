@@ -7,7 +7,7 @@ import {PhRows, PhSquaresFour, PhGridFour, PhTextT, PhCube} from '@phosphor-icon
 const store = useConfigStore();
 
 /**
- * ✅ 密度切换：不再“强行覆盖用户的开关”
+ *   密度切换：不再“强行覆盖用户的开关”
  * - compact：推荐关闭名称（但只在当前为开启时才关闭，避免用户反复调）
  * - normal/comfortable：推荐开启（如果用户之前关了，也不强制打开）
  *

@@ -17,7 +17,7 @@ const emit = defineEmits<{
 const FIT_COUNT = 4;
 const shouldFit = computed(() => props.groups.length <= FIT_COUNT);
 
-/** ✅ 横向滚动容器 */
+/**   横向滚动容器 */
 const scrollerRef = ref<HTMLDivElement | null>(null);
 
 /** =========================
@@ -176,7 +176,7 @@ onUnmounted(() => {
       padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
     "
   >
-    <!-- ✅ 横向滚动容器 -->
+    <!--   横向滚动容器 -->
     <div
         ref="scrollerRef"
         class="flex-1 min-w-0 pr-2"

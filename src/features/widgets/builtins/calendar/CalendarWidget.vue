@@ -134,7 +134,7 @@ const layout = computed(() => {
 
 <template>
   <div class="w-full h-full relative cursor-pointer min-w-0 min-h-0" @click.stop="showModal = true">
-    <!-- ✅ 强裁剪 + 防溢出（和 Weather 一样的兜底） -->
+    <!--   强裁剪 + 防溢出（和 Weather 一样的兜底） -->
     <div class="cal-card w-full h-full rounded-[18px] overflow-hidden flex flex-col select-none min-w-0 min-h-0">
       <!-- Header -->
       <div class="cal-header flex items-center justify-center min-w-0" :class="[layout.headerH, layout.padX]">
@@ -184,7 +184,7 @@ const layout = computed(() => {
 
 <style scoped>
 /* =========================================================
-   ✅ 防溢出核心：强裁剪 + 隔离绘制
+     防溢出核心：强裁剪 + 隔离绘制
 ========================================================= */
 .cal-card {
   clip-path: inset(0 round 18px);

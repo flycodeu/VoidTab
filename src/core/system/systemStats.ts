@@ -16,10 +16,10 @@ export type SystemStats = {
         saveData?: boolean;
     };
 
-    latencyMs?: number;         // ✅ 用 fetch HEAD/GET 测的 HTTP RTT
+    latencyMs?: number;         //   用 fetch HEAD/GET 测的 HTTP RTT
     cpu: {
         logicalCores?: number;
-        usagePercent?: number;    // ✅ 仅在 chrome.system.cpu 可用时给出
+        usagePercent?: number;    //   仅在 chrome.system.cpu 可用时给出
     };
 
     memory: {
@@ -27,12 +27,12 @@ export type SystemStats = {
         jsHeapUsedMB?: number;    // performance.memory（Chromium）
         jsHeapLimitMB?: number;
 
-        totalMB?: number;         // ✅ chrome.system.memory 可用时给出
+        totalMB?: number;         //   chrome.system.memory 可用时给出
         availableMB?: number;
-        usedPercent?: number;     // ✅ total/available 可用时给出
+        usedPercent?: number;     //   total/available 可用时给出
     };
 
-    geo?: GeoInfo;              // ✅ 只有你配置 geoUrl 才会取
+    geo?: GeoInfo;              //   只有你配置 geoUrl 才会取
     browser: {
         ua: string;
         platform?: string;
@@ -151,7 +151,7 @@ async function chromeMemoryInfo(): Promise<{ totalMB?: number; availableMB?: num
     return {totalMB, availableMB};
 }
 
-/** ✅ 你要的：collectSystemStats（通用 + 自动增强） */
+/**   你要的：collectSystemStats（通用 + 自动增强） */
 export async function collectSystemStats(opts: CollectOpts = {}): Promise<SystemStats> {
     const conn = getConn();
 
@@ -173,7 +173,7 @@ export async function collectSystemStats(opts: CollectOpts = {}): Promise<System
         jsHeapLimitMB: perfMem?.jsHeapSizeLimit ? Math.round(perfMem.jsHeapSizeLimit / 1024 / 1024) : undefined,
     };
 
-    // ✅ 可选增强：chrome.system.*
+    //   可选增强：chrome.system.*
     if (hasChromeSystem()) {
         try {
             const [cpuPct, memExt] = await Promise.all([

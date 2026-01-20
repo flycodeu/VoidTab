@@ -14,7 +14,7 @@ function getProvider(profile: SyncProfile) {
     return p;
 }
 
-/** ✅ 统一导出一个 syncService（对象） */
+/**   统一导出一个 syncService（对象） */
 export const syncService = {
     async test(profile: SyncProfile): Promise<SyncTestResult> {
         if (profile.provider === 'none') return {ok: false, message: '未启用同步'};

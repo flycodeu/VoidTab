@@ -8,7 +8,7 @@ const props = defineProps<{
   isEditMode: boolean;
 }>();
 
-/** ✅ 从 registry 获取组件（不再维护一份 widgetMap） */
+/**   从 registry 获取组件（不再维护一份 widgetMap） */
 const currentWidget = computed(() => {
   return getWidgetMeta(props.item.widgetType)?.component || null;
 });
@@ -17,7 +17,7 @@ const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET
 </script>
 <template>
   <div class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 rounded-[18px] select-none bg-[#121212]">
-    <!-- ✅ 唯一的玻璃层：默认不 blur，hover/edit 才 blur -->
+    <!--   唯一的玻璃层：默认不 blur，hover/edit 才 blur -->
     <div
         class="absolute inset-0 bg-white/5 border border-white/10 z-0 transition-opacity transition-[backdrop-filter]"
         :class="isEditMode

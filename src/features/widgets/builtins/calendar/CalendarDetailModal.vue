@@ -360,7 +360,7 @@ const handleWheel = (e: WheelEvent) => {
               {{ detail.ymd }} {{ detail.week }}
             </div>
 
-            <!-- ✅ 小尺寸日期方块（不再巨大占满） -->
+            <!--   小尺寸日期方块（不再巨大占满） -->
             <div class="mini-day-wrap">
               <div class="mini-day">
                 <div class="mini-dot left"></div>
@@ -402,7 +402,7 @@ const handleWheel = (e: WheelEvent) => {
               <div class="info-val">{{ detail.festival || '-' }}</div>
             </div>
 
-            <!-- ✅ 宜：不省略，默认多行 + 可滚动 -->
+            <!--   宜：不省略，默认多行 + 可滚动 -->
             <div class="info-row align-start">
               <div class="tag tag-green">宜</div>
               <div class="info-val long-text">
@@ -410,7 +410,7 @@ const handleWheel = (e: WheelEvent) => {
               </div>
             </div>
 
-            <!-- ✅ 忌 -->
+            <!--   忌 -->
             <div class="info-row align-start">
               <div class="tag tag-orange">忌</div>
               <div class="info-val long-text">
@@ -807,7 +807,7 @@ const handleWheel = (e: WheelEvent) => {
   color: var(--settings-text);
 }
 
-/* ✅ 宜/忌长文：不省略，改为可滚动区域 */
+/*   宜/忌长文：不省略，改为可滚动区域 */
 .long-text {
   font-size: 13px;
   line-height: 1.7;

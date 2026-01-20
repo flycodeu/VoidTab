@@ -10,7 +10,7 @@ export interface WebDavConfig {
 const DAV_FOLDER = 'voidtab';
 export const DEFAULT_BACKUP_FILENAME = 'voidtab-backup.json';
 
-// ✅ 1. 准确判断是否为插件环境 (Manifest V3)
+//   1. 准确判断是否为插件环境 (Manifest V3)
 const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
 
 const isJianguoyun = (url: string) => /dav\.jianguoyun\.com/i.test(url);
@@ -27,7 +27,7 @@ const authHeader = (config: WebDavConfig) =>
     `Basic ${toBase64(`${config.username}:${config.password}`)}`;
 
 /**
- * ✅ 核心修复：智能 URL 转换
+ *   核心修复：智能 URL 转换
  *
  * 策略：
  * 1. 插件环境 (Extension): 始终直接访问完整 URL (依赖 manifest host_permissions)
@@ -86,7 +86,7 @@ export const buildFullPath = (config: WebDavConfig, filename = ''): string => {
 };
 
 /**
- * ✅ 核心修复：Fetch 封装
+ *   核心修复：Fetch 封装
  * 增加了 credentials: 'omit' 以解决插件端 401 弹窗死循环
  */
 const webdavFetch = async (config: WebDavConfig, url: string, init: RequestInit) => {

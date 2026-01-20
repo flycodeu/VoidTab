@@ -135,10 +135,10 @@ const executeAction = (index: number) => {
   // 0: Smart Action
   if (index === 0 && smartAction.value) {
     if (smartAction.value.type === 'goto') {
-      historyStore.addLog('goto', smartAction.value.url); // ✅ 记录跳转
+      historyStore.addLog('goto', smartAction.value.url); //   记录跳转
       window.open(smartAction.value.url, '_blank');
     } else {
-      historyStore.addLog('ai', smartAction.value.query); // ✅ 记录提问
+      historyStore.addLog('ai', smartAction.value.query); //   记录提问
       aiQuery.value = smartAction.value.query || '';
       showAiModal.value = true;
     }
@@ -150,7 +150,7 @@ const executeAction = (index: number) => {
   if (index > 0) {
     const item = localResults.value[index - 1];
     if (item) {
-      historyStore.addLog('goto', item.url); // ✅ 记录本地跳转
+      historyStore.addLog('goto', item.url); //   记录本地跳转
       window.open(item.url, '_blank');
     }
     closePanel();
@@ -168,7 +168,7 @@ const handleSearch = () => {
   if (!searchText.value) return;
   const currentEngine = store.config.searchEngines.find((e: any) => e.id === store.config.currentEngineId);
 
-  // ✅ 核心修复：添加搜索记录
+  //   核心修复：添加搜索记录
   historyStore.addLog('search', searchText.value, {engineId: currentEngine?.id});
 
   if (currentEngine) {

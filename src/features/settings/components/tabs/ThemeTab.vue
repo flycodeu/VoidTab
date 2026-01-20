@@ -108,7 +108,7 @@ const applyCssVars = () => {
   el.style.setProperty('--overlay-alpha', `${store.config.theme.opacity ?? 0.55}`);
   el.style.setProperty('--accent-ink', accentInk(accent));
 
-  // ✅ 壁纸：不再用 CSS 变量去塞 video（video 无法作为 background-image 播放）
+  //   壁纸：不再用 CSS 变量去塞 video（video 无法作为 background-image 播放）
   // 如果你项目其它地方还依赖 --user-wallpaper（仅图片），这里保留图片情况：
   const wp = (store.config.theme.wallpaper || '').trim();
   const wpType = (store.config.theme as any).wallpaperType;
@@ -182,7 +182,7 @@ const handleWallpaperUpload = async (event: Event) => {
     return;
   }
 
-  // ✅ 存到 IndexedDB：避免 pinia/config 里出现巨大 base64 字符串
+  //   存到 IndexedDB：避免 pinia/config 里出现巨大 base64 字符串
   const key = await wallpaperStorage.save(file, mime);
 
   store.config.theme.wallpaper = `idb:${key}`;
@@ -206,7 +206,7 @@ const removeWallpaper = async () => {
   (store.config.theme as any).wallpaperType = '';
 };
 
-// ✅ 用户手动输入 URL：自动判断 image/video
+//   用户手动输入 URL：自动判断 image/video
 watch(
     () => store.config.theme.wallpaper,
     (val) => {

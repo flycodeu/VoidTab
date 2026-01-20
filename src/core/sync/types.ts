@@ -50,7 +50,7 @@ export interface SyncOpResult {
 }
 
 /**
- * ✅ 兼容旧命名：如果你项目里有人在用 SyncDownloadResult，
+ *   兼容旧命名：如果你项目里有人在用 SyncDownloadResult，
  * 这里给一个别名，避免到处改 import。
  */
 export type SyncDownloadResult = SyncOpResult;

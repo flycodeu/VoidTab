@@ -94,7 +94,7 @@ defineExpose({
 <template>
   <Transition name="scale">
     <div v-if="show" class="fixed inset-0 z-[105] flex items-center justify-center p-4">
-      <!-- ✅ 遮罩：用主题 overlay 变量，不再写死黑雾 -->
+      <!--   遮罩：用主题 overlay 变量，不再写死黑雾 -->
       <div
           class="absolute inset-0 transition-opacity"
           :style="{
@@ -105,7 +105,7 @@ defineExpose({
           @click="emit('close')"
       />
 
-      <!-- ✅ 弹窗主体 -->
+      <!--   弹窗主体 -->
       <div
           class="relative w-full max-w-[500px] rounded-3xl shadow-2xl flex flex-col border transition-all h-[85vh] max-h-[720px] overflow-hidden"
           :style="{
@@ -136,7 +136,7 @@ defineExpose({
         </div>
 
         <div class="flex-1 flex flex-col overflow-hidden">
-          <!-- ✅ 上半部分：不再用 dark: / bg-black 写死 -->
+          <!--   上半部分：不再用 dark: / bg-black 写死 -->
           <div
               class="flex-shrink-0 px-6 py-5 space-y-6 border-b"
               :style="{
@@ -188,7 +188,7 @@ defineExpose({
                   主题色
                 </span>
 
-                <!-- ✅ 自定义 HEX：不再 dark:bg-black / bg-white -->
+                <!--   自定义 HEX：不再 dark:bg-black / bg-white -->
                 <div class="hex-pill flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 transition-all shadow-sm">
                   <span class="text-[10px] font-bold select-none" style="opacity:.55;">自定义</span>
                   <div class="sep"></div>
@@ -203,7 +203,7 @@ defineExpose({
                       maxlength="7"
                   />
 
-                  <!-- ✅ 预览小圆点：加边框，白色也清晰 -->
+                  <!--   预览小圆点：加边框，白色也清晰 -->
                   <div
                       class="w-3 h-3 rounded-full"
                       :style="{
@@ -257,7 +257,7 @@ defineExpose({
           </div>
         </div>
 
-        <!-- ✅ Footer：不再 dark:bg / bg-white/90，彻底解决底部黑条 -->
+        <!--   Footer：不再 dark:bg / bg-white/90，彻底解决底部黑条 -->
         <div
             class="flex-shrink-0 p-5 border-t z-10"
             :style="{

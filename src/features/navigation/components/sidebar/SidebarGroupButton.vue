@@ -42,13 +42,13 @@ const hasCustomColor = computed(() => !!props.group.iconColor);
 // 获取安全颜色
 const safeColor = computed(() => props.group.iconColor || 'var(--accent-color)');
 
-// ✅ 自定义色：仅改变文本/图标颜色，不改变背景
+//   自定义色：仅改变文本/图标颜色，不改变背景
 const buttonStyle = computed(() => {
   if (!hasCustomColor.value) return {};
   return {color: safeColor.value};
 });
 
-// ✅ 类名（不再用 bg-white/10 等固定色）
+//   类名（不再用 bg-white/10 等固定色）
 const dynamicClasses = computed(() => {
   const cls: string[] = ['sg-btn'];
 
@@ -130,7 +130,7 @@ const dynamicClasses = computed(() => {
 
   transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
 
-  /* ✅ 更贴合 sidebar 面板（不受 body 文本变量影响） */
+  /*   更贴合 sidebar 面板（不受 body 文本变量影响） */
   color: var(--sidebar-text);
 }
 
@@ -210,7 +210,7 @@ const dynamicClasses = computed(() => {
   border: 1px solid rgba(127, 127, 127, 0.25);
   background: rgba(127, 127, 127, 0.22);
 
-  /* ✅ 角标文字也用 sidebar 文本 */
+  /*   角标文字也用 sidebar 文本 */
   color: var(--sidebar-text);
 
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
@@ -239,7 +239,7 @@ const dynamicClasses = computed(() => {
   text-overflow: ellipsis;
   transition: opacity 0.16s ease;
 
-  /* ✅ 弱文本跟随 sidebar muted */
+  /*   弱文本跟随 sidebar muted */
   color: var(--sidebar-text);
 }
 

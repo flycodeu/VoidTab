@@ -77,7 +77,7 @@ export const applyLegacyLocalStorageIntoConfig = (cfg: Config) => {
         }
     }
 
-    // ✅ 删除旧 key（可选，但推荐）
+    //   删除旧 key（可选，但推荐）
     // 你如果想“保留兼容”，就不要删；但会造成双源数据，容易出 bug
     removedKeys.forEach((k) => ls.removeItem(k));
 

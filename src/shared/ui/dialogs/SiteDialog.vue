@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {ref, computed, watch, onUnmounted} from 'vue';
-// 引入 UI 组件
+// UI
 import SiteDialogForm from './SiteDialogForm.vue';
-// 引入 Hook
+// Hook
 import {useDebouncedFavicon} from '../../composables/icon/useDebouncedFavicon';
-// 引入工具函数
+// Utils
 import {getSmartInitials} from '../../utils/initials';
 import {getSiteNameFromUrl} from '../../utils/url.ts';
 
@@ -18,7 +18,6 @@ type SiteForm = {
   iconType: IconMode;
   iconValue: string;
   remark: string;
-  tags: string[];
 };
 
 const props = defineProps<{
@@ -44,8 +43,7 @@ const formData = ref<SiteForm>({
   bgColor: '#3b82f6',
   iconType: 'auto',
   iconValue: '',
-  remark: '',
-  tags: []
+  remark: ''
 });
 
 const activeTab = ref<IconMode>('auto');
@@ -60,15 +58,10 @@ let autoTitleTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
     () => formData.value.url,
     (newUrl) => {
-      // 清除旧定时器
       if (autoTitleTimer) clearTimeout(autoTitleTimer);
-
       if (!newUrl) return;
 
-      // 设置新定时器：用户停止输入 500ms 后触发
       autoTitleTimer = setTimeout(() => {
-        // 只有当标题还是空的，才去自动填充
-        // 这样不会打扰已经自己写了标题的用户
         if (!formData.value.title) {
           const smartName = getSiteNameFromUrl(newUrl);
           if (smartName) {
@@ -101,8 +94,7 @@ watch(
           bgColor: props.initialData.bgColor || '#3b82f6',
           iconType: (props.initialData.iconType as IconMode) || 'auto',
           iconValue: props.initialData.iconValue || '',
-          remark: (props.initialData as any).remark || '',
-          tags: (props.initialData as any).tags || []
+          remark: (props.initialData as any).remark || ''
         };
         activeTab.value = formData.value.iconType;
         refresh(true);
@@ -114,8 +106,7 @@ watch(
           bgColor: randomColor,
           iconType: 'auto',
           iconValue: '',
-          remark: '',
-          tags: []
+          remark: ''
         };
         activeTab.value = 'auto';
         refresh(true);
@@ -123,7 +114,7 @@ watch(
     }
 );
 
-// 保留这个是为了双重保险 (比如用户直接粘贴然后立马点别的)
+// 双重保险：url blur 时补标题
 const handleUrlBlur = () => {
   if (!formData.value.url || formData.value.title) return;
 

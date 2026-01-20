@@ -12,11 +12,11 @@ import {useConfigStore} from '../../../../stores/useConfigStore'
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>()
 const store = useConfigStore()
 
-// ✅ Config Safety Check
+//   Config Safety Check
 if (!store.config.runtime) (store.config as any).runtime = {}
 if (!store.config.runtime.auth) store.config.runtime.auth = {jwtToken: ''}
 
-// ✅ Debounced Save
+//   Debounced Save
 const saveDebounced = useDebounceFn(async () => {
   if (!store.saveConfig) return
   await store.saveConfig()
@@ -95,7 +95,7 @@ const layout = computed(() => {
   }
 })
 
-// ✅ Helper to truncate ID for display
+//   Helper to truncate ID for display
 const shortSub = computed(() => {
   const sub = decoded.value?.payload?.sub || decoded.value?.payload?.name || 'UNKNOWN'
   return String(sub).length > 12 ? String(sub).substring(0, 10) + '..' : sub

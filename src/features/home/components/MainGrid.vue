@@ -151,7 +151,26 @@ const MAX_H = 4;
 const getItemStyle = (item: any) => {
   const isWidget = item.kind === "widget";
 
+  // Site：根据主题选择占格（widget 不动）
   if (!isWidget) {
+    const mode = store.config.theme.siteLayoutMode || 'icon';
+
+    if (mode === 'card') {
+      const w = clamp(Number(store.config.theme.siteCard?.w || 3), 1, MAX_W);
+      //const h = clamp(Number(store.config.theme.siteCard?.h || 1), 1, MAX_H);
+      const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : Math.min(w, gridCols.value);
+
+      return {
+        gridColumn: `span ${spanW}`,
+        gridRow: `span 1`,
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+      };
+    }
+
+    // icon 模式：保持原样 1×1
     return {
       gridColumn: `span 1`,
       gridRow: `span 1`,
@@ -163,6 +182,7 @@ const getItemStyle = (item: any) => {
     };
   }
 
+  // Widget：保持原来的逻辑
   const wRaw = Number(item.w || 2);
   const hRaw = Number(item.h || 2);
   const w = clamp(wRaw, 1, MAX_W);

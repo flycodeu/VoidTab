@@ -88,7 +88,7 @@ watch(() => [form.iconType, form.iconValue], async () => {
       previewSrc.value = '';
       return;
     }
-    // ✅ 关键修复：从 IDB 读取 Blob 并生成 URL
+    //   关键修复：从 IDB 读取 Blob 并生成 URL
     const blob = await idbGetBlob(form.iconValue);
     if (blob) previewSrc.value = URL.createObjectURL(blob);
     else previewSrc.value = '';

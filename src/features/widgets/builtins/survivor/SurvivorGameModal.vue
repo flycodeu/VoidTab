@@ -229,7 +229,7 @@ const ITEM_POOL: Record<string, ItemDef> = {
   }
 };
 
-// ✅ 模式区分度：同时拉开 xpRate + xpNeedMult + 敌人属性 + 刷怪密度
+//   模式区分度：同时拉开 xpRate + xpNeedMult + 敌人属性 + 刷怪密度
 const MODES: Record<GameMode, ModeRule> = {
   EASY: {
     label: '简单',
@@ -894,7 +894,7 @@ class Enemy extends Entity {
     this.type = type;
     this.tier = tier;
 
-    // ✅ 让“每关怪更厉害”更明显：stageScale 逐步上升，并在 5 关后加速
+    //   让“每关怪更厉害”更明显：stageScale 逐步上升，并在 5 关后加速
     const stageScale = 1 + (stage - 1) * 0.16 + Math.max(0, stage - 5) * 0.07;
     const tierHp = tier === 1 ? 1 : tier === 2 ? 1.55 : 2.25;
     const tierDmg = tier === 1 ? 1 : tier === 2 ? 1.28 : 1.62;
@@ -935,7 +935,7 @@ class Enemy extends Entity {
         this.behavior = behaviorChase();
         break;
       case 'BOSS': {
-        // ✅ Boss 逐关更难（更明显）
+        //   Boss 逐关更难（更明显）
         const bossScale = 1 + (stage - 1) * 0.30 + Math.max(0, stage - 5) * 0.10;
         baseHp = 720 * bossScale;
         baseDmg = 16 * (1 + (stage - 1) * 0.20);
@@ -1318,16 +1318,16 @@ class GameEngine {
   stage = 1;
   killedInStage = 0;
 
-  // ✅ Boss门槛：Stage1=100，Stage2=200...
+  //   Boss门槛：Stage1=100，Stage2=200...
   stageTarget = 100;
 
   bossActive = false;
 
-  // ✅ bossIncoming：召唤boss前先清场
+  //   bossIncoming：召唤boss前先清场
   bossIncoming = 0;
   bossSpawnedThisStage = false;
 
-  // ✅ “待选择升级次数”（来自经验升级 / CORE资源包）
+  //   “待选择升级次数”（来自经验升级 / CORE资源包）
   pendingDrafts = 0;
 
   vfx: VFX[] = [];
@@ -1441,7 +1441,7 @@ class GameEngine {
     while (this.player.xp >= this.player.nextLevelXp) {
       this.player.xp -= this.player.nextLevelXp;
       this.player.level++;
-      this.recalcNextXp(); // ✅ 每次升级重算（受 stage+mode 影响）
+      this.recalcNextXp(); //   每次升级重算（受 stage+mode 影响）
       this.giveDraft(1, '等级提升');
     }
   }
@@ -1462,7 +1462,7 @@ class GameEngine {
       y = Math.random() < 0.5 ? -30 : CANVAS_HEIGHT + 30;
     }
 
-    // ✅ 怪物池随关卡更明显变化
+    //   怪物池随关卡更明显变化
     // S1：仅 BASIC
     // S2：少量 FAST
     // S3：少量 SHOOTER
@@ -1489,7 +1489,7 @@ class GameEngine {
   requestBossIfReady() {
     if (this.bossActive || this.bossIncoming > 0 || this.bossSpawnedThisStage) return;
 
-    // ✅ 纯击杀触发：S1=100, S2=200...
+    //   纯击杀触发：S1=100, S2=200...
     if (this.killedInStage >= this.stageTarget) {
       this.bossIncoming = 45;
       this.addToast('BOSS 即将降临…', '#fb7185');
@@ -1563,7 +1563,7 @@ class GameEngine {
     this.bossActive = false;
 
     this.recalcStageParams();
-    this.recalcNextXp(); // ✅ 进入新关卡后，升级门槛整体上移
+    this.recalcNextXp(); //   进入新关卡后，升级门槛整体上移
 
     // 通关奖励给 1 次升级（但不会再挡 Boss）
     this.giveDraft(1, '通关奖励');
@@ -1835,10 +1835,10 @@ const loop = () => {
 
     game.update();
 
-    // ✅ 经验升级 -> 触发升级卡（可能多次）
+    //   经验升级 -> 触发升级卡（可能多次）
     game.tryConsumeXpLevelUps();
 
-    // ✅ 若有待选择升级，自动进入DRAFT（不会漏）
+    //   若有待选择升级，自动进入DRAFT（不会漏）
     if (game.pendingDrafts > 0) triggerDraft();
 
     const boss = game.enemies.find((e) => e.type === 'BOSS');

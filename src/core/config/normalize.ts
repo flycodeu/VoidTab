@@ -36,21 +36,8 @@ function isInternalUrl(url: any) {
 
 // 核心修改：同时处理 Site 和 Widget 的清洗逻辑
 function normalizeItem(rawItem: any): SiteItem {
-    // 1. 确定 kind (默认为 site)
     const kind = (rawItem?.kind === 'widget' || rawItem?.kind === 'site') ? rawItem.kind : 'site';
 
-    // 新增字段：remark/tags/createdAt 透传 + 兜底
-    const remark = typeof rawItem?.remark === 'string' ? rawItem.remark : '';
-    const tags = Array.isArray(rawItem?.tags)
-        ? rawItem.tags
-            .filter((t: any) => typeof t === 'string')
-            .map((t: string) => t.trim())
-            .filter(Boolean)
-            .slice(0, 20)
-        : [];
-    const createdAt = typeof rawItem?.createdAt === 'number' ? rawItem.createdAt : Date.now();
-
-    // 2. 构建基础对象
     const item: SiteItem = {
         id: String(rawItem?.id ?? Date.now()),
         title: String(rawItem?.title ?? ''),
@@ -60,53 +47,39 @@ function normalizeItem(rawItem: any): SiteItem {
         bgColor: rawItem?.bgColor,
         icon: rawItem?.icon,
 
-        // 保留布局字段
         kind,
         w: Number(rawItem?.w) || (kind === 'widget' ? 2 : 1),
         h: Number(rawItem?.h) || (kind === 'widget' ? 2 : 1),
 
-        // 透传扩展字段
-        remark,
-        tags,
-        createdAt,
+        //  关键：站点扩展字段要保留
+        remark: typeof rawItem?.remark === 'string' ? rawItem.remark : '',
+        createdAt: typeof rawItem?.createdAt === 'number' ? rawItem.createdAt : undefined,
     };
 
-    // 3. 如果是 Widget，保留特有字段
     if (kind === 'widget') {
-        if (rawItem?.widgetType) {
-            item.widgetType = rawItem.widgetType as WidgetType;
-        }
+        if (rawItem?.widgetType) item.widgetType = rawItem.widgetType as WidgetType;
         if (!item.widgetType && item.title === 'clock') item.widgetType = 'clock';
+        if (rawItem?.widgetConfig) item.widgetConfig = rawItem.widgetConfig;
 
-        if (rawItem?.widgetConfig) {
-            item.widgetConfig = rawItem.widgetConfig;
-        }
+        //  widget 不需要 remark/tags，避免污染（可选）
+        delete item.remark;
+        delete item.createdAt;
     }
 
-    // 4. 图标/颜色逻辑
+    //  iconType / internal / bgColor / iconValue 逻辑保持不变
     if (!item.iconType) item.iconType = 'auto';
 
     const internal = isInternalUrl(item.url);
-    if (internal && item.iconType !== 'text') {
-        item.iconType = 'text';
-    }
+    if (internal && item.iconType !== 'text') item.iconType = 'text';
 
     if (item.iconType === 'text' || internal) {
         const isDefaultColor = !item.bgColor || item.bgColor === '#3b82f6' || item.bgColor === '#ffffff';
-        if (isDefaultColor) {
-            item.bgColor = generateColor(item.title || '');
-        }
+        if (isDefaultColor) item.bgColor = generateColor(item.title || '');
 
         if (!item.iconValue || item.iconValue.length < 2) {
             item.iconValue = getSmartInitials(item.title || 'A');
             if (!item.iconValue) item.iconValue = (item.title || 'A').substring(0, 2);
         }
-    }
-
-    // 额外安全：站点永远 1x1（避免被旧数据写脏）
-    if (item.kind === 'site') {
-        item.w = 1;
-        item.h = 1;
     }
 
     return item;
@@ -184,6 +157,12 @@ export function normalizeConfig(raw: any): Config {
         ...base.theme,
         ...(input.theme || {}),
         showWidgetName: base.theme.showWidgetName ?? true,
+
+        siteLayoutMode: (input.theme?.siteLayoutMode === 'card' ? 'card' : 'icon'),
+        siteCard: {
+            ...base.theme.siteCard,
+            ...(input.theme?.siteCard || {}),
+        },
     };
 
 

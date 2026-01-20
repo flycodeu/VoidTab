@@ -24,7 +24,6 @@ export interface SiteItem {
 
 
     remark?: string;          // 备注文字
-    tags?: string[];          // 标签（纯文本）
     createdAt?: number;       // 可选：创建时间（便于排序/管理）
 
     // --- 组件字段 ---
@@ -50,6 +49,8 @@ export interface WidgetItem {
     colSpan: number;
     config?: any;
 }
+
+export type SiteLayoutMode = 'icon' | 'card';
 
 export interface ThemeConfig {
     mode: 'light' | 'dark' | 'system';
@@ -91,6 +92,15 @@ export interface ThemeConfig {
     techFontFamily: 'default' | 'JetBrains Mono' | 'Fira Code' | 'Orbitron' | 'Space Grotesk' | 'Roboto Mono' | 'IBM Plex Sans' | 'Noto Sans SC';
 
     breathingDuration: number; // 秒，例如 3.0
+
+    siteLayoutMode: SiteLayoutMode;
+
+    siteCard: {
+        w: number;              // 卡片占几列（建议 2 或 3）
+        h: number;              // 卡片占几行（建议 2）
+        showRemark: boolean;
+        showDomain: boolean;    // url 域名
+    };
 
 }
 
@@ -180,9 +190,9 @@ export type RuntimeConfig = {
         widgets: Record<string, SiteListWidgetRef>;
     };
     terminal: {
-        history: string[]; // ✅ 历史命令记录
-        theme: 'dark' | 'light' | 'hacker'; // ✅ 终端主题
-        isOpen: boolean; // ✅ 记录上次是否打开（可选）
+        history: string[]; //   历史命令记录
+        theme: 'dark' | 'light' | 'hacker'; //   终端主题
+        isOpen: boolean; //   记录上次是否打开（可选）
     };
 };
 

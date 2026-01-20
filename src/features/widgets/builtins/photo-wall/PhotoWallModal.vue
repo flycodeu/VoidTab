@@ -14,7 +14,7 @@ const emit = defineEmits(['close']);
 const store = useConfigStore();
 const saveDebounced = useDebounceFn(() => store.saveConfig?.(), 300);
 
-// ✅ Runtime config safety
+//   Runtime config safety
 if (!store.config.runtime) (store.config as any).runtime = {};
 if (!store.config.runtime.photo) store.config.runtime.photo = {widgets: {}};
 if (!store.config.runtime.photo.widgets) store.config.runtime.photo.widgets = {};

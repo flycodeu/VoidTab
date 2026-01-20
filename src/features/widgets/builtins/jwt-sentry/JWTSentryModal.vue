@@ -12,11 +12,11 @@ const emit = defineEmits(['close'])
 
 const store = useConfigStore()
 
-// ✅ Config Safety
+//   Config Safety
 if (!store.config.runtime) (store.config as any).runtime = {}
 if (!store.config.runtime.auth) store.config.runtime.auth = {jwtToken: ''}
 
-// ✅ Debounce Save
+//   Debounce Save
 const saveDebounced = useDebounceFn(async () => {
   if (!store.saveConfig) return
   await store.saveConfig()

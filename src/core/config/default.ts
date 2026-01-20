@@ -89,7 +89,14 @@ export const defaultConfig: Config = {
         enableTerminal: true,
 
         techFontFamily: 'default',
-        breathingDuration: 3
+        breathingDuration: 3,
+        siteLayoutMode: "icon",
+        siteCard: {
+            w: 3,
+            h: 1,
+            showRemark: true,
+            showDomain: true,
+        },
     },
 
     searchEngines: [

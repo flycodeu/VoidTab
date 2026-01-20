@@ -25,5 +25,5 @@ export class SyncService {
     }
 }
 
-// ✅ 单例导出：store 直接用它
+//   单例导出：store 直接用它
 export const syncService = new SyncService();
