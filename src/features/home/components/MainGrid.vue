@@ -33,6 +33,8 @@ type LayoutGroup = {
 const props = defineProps<{
   activeGroupId: string;
   isEditMode: boolean;
+  siteCardW: number;
+  siteCardH: number;
 }>();
 
 const store = useConfigStore();

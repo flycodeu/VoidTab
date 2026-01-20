@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, ref, watch} from "vue";
+import {computed, ref, watch, onMounted, onUnmounted, nextTick} from "vue";
 import {useConfigStore} from "../../../stores/useConfigStore.ts";
 import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
@@ -30,12 +30,17 @@ const autoIconUrl = computed(() => {
   }
 });
 
-watch(() => props.item.url, () => (hasLoadError.value = false));
+watch(
+    () => props.item.url,
+    () => (hasLoadError.value = false)
+);
 
 const displayText = computed(() => {
   if (props.item.iconType === "text" || (isAuto.value && hasLoadError.value)) {
     if (props.item.iconValue?.length) return props.item.iconValue.substring(0, 4);
-    const clean = (props.item.title || "").trim().replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
+    const clean = (props.item.title || "")
+        .trim()
+        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
     return clean.substring(0, 4).toUpperCase() || (props.item.title || "A").substring(0, 2);
   }
   return "";
@@ -49,9 +54,13 @@ const handleImgLoad = () => (hasLoadError.value = false);
  * -------------------------- */
 const mode = computed(() => (store.config.theme as any).siteLayoutMode || "icon");
 
-// card 可选开关
+/**
+ * 你现在配置里没有 tags，所以只保留：
+ * - showRemark / showDomain
+ * - w/h (用于 2×1 / 3×1)
+ */
 const cardCfg = computed(() => {
-  const def = {showRemark: true, showDomain: true};
+  const def = {showRemark: true, showDomain: true, w: 2, h: 1};
   return (store.config.theme as any).siteCard
       ? {...def, ...(store.config.theme as any).siteCard}
       : def;
@@ -60,19 +69,9 @@ const cardCfg = computed(() => {
 const iconSize = computed(() => Number(store.config.theme.iconSize || 72));
 const cardRadius = computed(() => Number(store.config.theme.radius || 16));
 
-/** card: 固定视觉尺寸（不要跟 iconSize 浮动太大，否则会乱） */
-const cardIconSize = computed(() => 52);
-const cardIconRadius = computed(() => 16);
-
-const cardTextFontSize = computed(() => {
-  const base = cardIconSize.value;
-  const len = (displayText.value || "").length;
-  if (len >= 4) return base * 0.28;
-  if (len === 3) return base * 0.32;
-  if (len === 2) return base * 0.40;
-  return base * 0.48;
-});
-
+/** ---------------------------
+ * domain / remark
+ * -------------------------- */
 const domain = computed(() => {
   const raw = String(props.item.url || "");
   if (!raw) return "";
@@ -104,17 +103,112 @@ const iconContainerStyle = computed(() => ({
   width: `${iconSize.value}px`,
   height: `${iconSize.value}px`,
 }));
+
+/** =========================
+ * 自适应密度（解决 2×1 遮盖 & 3×1 小屏太挤）
+ * ========================= */
+type DensityMode = "wide" | "compact" | "tiny";
+const densityMode = ref<DensityMode>("wide");
+
+const cardEl = ref<HTMLElement | null>(null);
+let ro: ResizeObserver | null = null;
+
+const updateDensity = (w: number) => {
+  // 阈值你可按实际 grid 调整
+  if (w <= 230) densityMode.value = "tiny";
+  else if (w <= 320) densityMode.value = "compact";
+  else densityMode.value = "wide";
+};
+
+/**  关键：切换 2×1 / 3×1 时强制 nextTick 后重新测量一次 */
+const ensureObserveAndMeasure = async () => {
+  await nextTick();
+  if (!cardEl.value) return;
+
+  // 确保 RO 挂上（有些情况下 onMounted 先于 ref）
+  if (!ro) {
+    ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (!box) return;
+      updateDensity(box.width);
+    });
+    ro.observe(cardEl.value);
+  }
+
+  // 强制测量一次，避免 “2×1 -> 3×1 备注不回来”
+  const w = cardEl.value.getBoundingClientRect().width;
+  if (w) updateDensity(w);
+};
+
+onMounted(() => {
+  ensureObserveAndMeasure();
+});
+
+onUnmounted(() => {
+  ro?.disconnect();
+  ro = null;
+});
+
+/**  布局跨度变化 / 模式变化时，强制重新测量 */
+watch(
+    () => [mode.value, cardCfg.value.w, cardCfg.value.h],
+    () => {
+      ensureObserveAndMeasure();
+    }
+);
+
+/** ---------------------------
+ * card icon size / spacing — 根据 densityMode 动态变化
+ * -------------------------- */
+const cardIconSize = computed(() => {
+  if (densityMode.value === "tiny") return 40;
+  if (densityMode.value === "compact") return 46;
+  return 52;
+});
+
+const cardIconRadius = computed(() => {
+  if (densityMode.value === "tiny") return 14;
+  if (densityMode.value === "compact") return 15;
+  return 16;
+});
+
+const cardTextFontSize = computed(() => {
+  const base = cardIconSize.value;
+  const len = (displayText.value || "").length;
+  if (len >= 4) return base * 0.28;
+  if (len === 3) return base * 0.32;
+  if (len === 2) return base * 0.4;
+  return base * 0.48;
+});
+
+/**  修复：2×1 也必须有备注 —— 不再因为 tiny 被隐藏 */
+const showRemarkRow = computed(() => {
+  if (!cardCfg.value.showRemark) return false;
+  return !!remarkText.value;
+});
+
+/**
+ * 可选策略：tiny 时隐藏 domain，把空间留给 remark（推荐）
+ * 这样 2×1 超窄时：标题 + 备注，不遮盖
+ */
+const showDomainRow = computed(() => {
+  if (!cardCfg.value.showDomain || !domain.value) return false;
+  if (densityMode.value === "tiny") return false;
+  return true;
+});
 </script>
 
 <template>
-  <!--   卡片布局（2×1） -->
+  <!-- 卡片布局 -->
   <a
       v-if="mode === 'card'"
+      ref="cardEl"
       :href="item.url"
       target="_blank"
       @click="handleClick"
       class="site-card group block w-full h-full min-w-0 min-h-0 select-none"
       :class="[props.isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
+      :data-density="densityMode"
   >
     <div class="card-shell w-full h-full min-w-0 min-h-0" :style="{ borderRadius: cardRadius + 'px' }">
       <div class="card-inner w-full h-full min-w-0 min-h-0">
@@ -137,24 +231,22 @@ const iconContainerStyle = computed(() => ({
 
         <!-- Right -->
         <div class="card-right min-w-0">
-          <!-- Row 1: title + tiny indicator -->
+          <!-- Title -->
           <div class="row row1 min-w-0">
             <div class="title truncate">
               {{ item.title || "未命名" }}
             </div>
-
-            <!-- 可选：右侧极简指示位（不想要可直接删掉） -->
             <div class="dot" aria-hidden="true"></div>
           </div>
 
-          <!-- Row 2: domain -->
-          <div v-if="cardCfg.showDomain && domain" class="row row2 truncate">
+          <!-- Domain -->
+          <div v-if="showDomainRow" class="row row2 truncate">
             {{ domain }}
           </div>
 
-          <!-- Row 3: remark（没有就显示占位） -->
+          <!-- Remark -->
           <div class="row row3 min-w-0">
-            <div v-if="cardCfg.showRemark && remarkText" class="sub truncate">
+            <div v-if="showRemarkRow" class="sub truncate">
               {{ remarkText }}
             </div>
             <div v-else class="sub opacity-40 truncate">—</div>
@@ -164,7 +256,7 @@ const iconContainerStyle = computed(() => ({
     </div>
   </a>
 
-  <!--   简洁布局（保持原功能） -->
+  <!-- 图标布局（保持原逻辑） -->
   <a
       v-else
       :href="item.url"
@@ -174,10 +266,8 @@ const iconContainerStyle = computed(() => ({
       :class="[props.isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
       :style="{ width: '100%', height: '100%' }"
   >
-    <div
-        class="flex-shrink-0 relative transition-transform duration-200 group-hover:-translate-y-1"
-        :style="iconContainerStyle"
-    >
+    <div class="flex-shrink-0 relative transition-transform duration-200 group-hover:-translate-y-1"
+         :style="iconContainerStyle">
       <SiteIcon
           :item="item"
           :size="Number(store.config.theme.iconSize)"
@@ -210,7 +300,7 @@ const iconContainerStyle = computed(() => ({
           :style="{
           fontSize: store.config.theme.iconTextSize + 'px',
           color: 'var(--text-primary)',
-          textShadow: '0 1px 2px rgba(0,0,0,0.45)'
+          textShadow: '0 1px 2px rgba(0,0,0,0.45)',
         }"
       >
         {{ item.title }}
@@ -220,11 +310,11 @@ const iconContainerStyle = computed(() => ({
 </template>
 
 <style scoped>
-/* 让卡片在 2×1 中稳定：高度由 gridRowHeight 控制，内部绝不撑开 */
 .site-card {
   min-width: 0;
   min-height: 0;
 }
+
 .card-shell {
   height: 100%;
   width: 100%;
@@ -232,74 +322,57 @@ const iconContainerStyle = computed(() => ({
   min-height: 0;
   overflow: hidden;
 
-  /*   清晰边框：外边框 + 内描边 */
   border: 1px solid rgba(var(--overlay-rgb), 0.22);
-  box-shadow:
-      0 0 0 1px rgba(255,255,255, 0.10) inset,
-      0 12px 28px rgba(0,0,0, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10) inset,
+  0 12px 28px rgba(0, 0, 0, 0.08);
 
-  /*   玻璃底：不用 calc，避免失效 */
   background: rgba(var(--overlay-rgb), 0.14);
 
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
 
-  transition:
-      transform 0.18s ease,
-      border-color 0.18s ease,
-      box-shadow 0.18s ease,
-      background 0.18s ease;
+  transition: transform 0.18s ease,
+  border-color 0.18s ease,
+  box-shadow 0.18s ease,
+  background 0.18s ease;
 }
 
 .site-card:hover .card-shell {
   transform: translateY(-2px);
-
-  /*   hover 更明确：accent 边界更清楚 */
   border-color: rgba(var(--accent-color-rgb), 0.30);
-
-  box-shadow:
-      0 0 0 1px rgba(255,255,255, 0.10) inset,
-      0 0 0 1px rgba(var(--accent-color-rgb), 0.16),
-      0 14px 34px rgba(0,0,0, 0.10),
-      0 8px 22px rgba(var(--accent-color-rgb), 0.10);
-
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10) inset,
+  0 0 0 1px rgba(var(--accent-color-rgb), 0.16),
+  0 14px 34px rgba(0, 0, 0, 0.10),
+  0 8px 22px rgba(var(--accent-color-rgb), 0.10);
   background: rgba(var(--overlay-rgb), 0.16);
 }
 
-
-
-.site-card:hover .card-shell {
-  transform: translateY(-2px);
-  border-color: rgba(var(--accent-color-rgb), 0.20);
-  background: rgba(var(--overlay-rgb), 0.16);
-}
-
-/* 内部布局：固定对齐，不允许“自己长高” */
+/* 关键：别用 align-items:center，否则高度小会“上下裁切感”更明显 */
 .card-inner {
   height: 100%;
   width: 100%;
   min-width: 0;
   min-height: 0;
+
   display: grid;
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: auto 1fr;
   gap: 12px;
   padding: 14px;
-  align-items: center;
+
+  align-items: stretch;
 }
 
 .card-left {
-  width: 52px;
-  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .card-right {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  gap: 6px;
   min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: center;
 }
 
 .row {
@@ -311,16 +384,16 @@ const iconContainerStyle = computed(() => ({
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 
 .title {
   font-weight: 800;
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.15;
   color: var(--text-primary);
 }
 
-/* 极简指示位：不占空间、不影响对齐（不想要可删） */
 .dot {
   flex-shrink: 0;
   width: 8px;
@@ -332,27 +405,73 @@ const iconContainerStyle = computed(() => ({
 
 .row2 {
   font-size: 12px;
+  line-height: 1.15;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   color: var(--text-secondary);
-  opacity: 0.75;
+  opacity: 0.78;
 }
 
 .row3 {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .sub {
   font-size: 12px;
+  line-height: 1.15;
   color: var(--text-primary);
   opacity: 0.72;
 }
 
-/* 防止任何文本撑开布局 */
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 密度自适应：compact */
+.site-card[data-density="compact"] .card-inner {
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.site-card[data-density="compact"] .title {
+  font-size: 13px;
+}
+
+.site-card[data-density="compact"] .row2 {
+  font-size: 11px;
+  opacity: 0.74;
+}
+
+.site-card[data-density="compact"] .sub {
+  font-size: 11px;
+  opacity: 0.70;
+}
+
+/* tiny：更紧凑，但  备注仍然显示 */
+.site-card[data-density="tiny"] .card-inner {
+  gap: 10px;
+  padding: 10px 10px;
+}
+
+.site-card[data-density="tiny"] .title {
+  font-size: 12.5px;
+}
+
+.site-card[data-density="tiny"] .row2 {
+  font-size: 11px;
+  opacity: 0.70;
+}
+
+.site-card[data-density="tiny"] .sub {
+  font-size: 11px;
+  opacity: 0.66;
+}
+
+.site-card[data-density="tiny"] .dot {
+  display: none;
 }
 </style>

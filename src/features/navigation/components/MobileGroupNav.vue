@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from 'vue';
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {PhGear, PhSquaresFour} from '@phosphor-icons/vue';
 import * as PhIcons from '@phosphor-icons/vue';
 
@@ -12,17 +12,33 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:activeGroupId', id: string): void;
   (e: 'openSettings'): void;
+
+  // ✅ 新增：把“当前可用宽度 / 是否窄屏”通知父组件
+  (e: 'viewport', v: { width: number; isNarrow: boolean }): void;
 }>();
 
 const FIT_COUNT = 4;
 const shouldFit = computed(() => props.groups.length <= FIT_COUNT);
 
-/**   横向滚动容器 */
+/** 横向滚动容器 */
 const scrollerRef = ref<HTMLDivElement | null>(null);
 
+/** ✅ 新增：底栏本身容器，用于测量宽度（更准，不用 window.innerWidth 猜） */
+const barRef = ref<HTMLDivElement | null>(null);
+const barWidth = ref<number>(0);
+
+// 你可以按需求调：<= 520 基本就是手机/窄窗口
+const isNarrow = computed(() => barWidth.value > 0 && barWidth.value <= 520);
+
+let ro: ResizeObserver | null = null;
+
+function emitViewport() {
+  emit('viewport', {width: barWidth.value || 0, isNarrow: isNarrow.value});
+}
+
 /** =========================
- *  A) 你原本的：手指拖动横向滚动（锁定 X 轴）
- *  ========================= */
+ * A) 手指拖动横向滚动（锁定 X 轴）
+ * ========================= */
 let startX = 0;
 let startY = 0;
 let startScrollLeft = 0;
@@ -55,7 +71,6 @@ function onTouchMove(e: TouchEvent) {
   }
 
   if (lock === 'x') {
-    // 关键：阻止页面竖向滚动
     if (e.cancelable) e.preventDefault();
     scrollerRef.value.scrollLeft = startScrollLeft - dx;
   }
@@ -66,31 +81,20 @@ function onTouchEnd() {
 }
 
 /** =========================
- *  B) 新增：桌面（F12 缩小屏幕）支持
- *  1) wheel 映射为横向滚动
- *  2) 鼠标按住拖拽横向滚动
- *  ========================= */
-
-/** wheel：让鼠标滚轮也能横向滚 */
+ * B) 桌面缩小屏幕支持：wheel & pointer drag
+ * ========================= */
 function onWheel(e: WheelEvent) {
   const el = scrollerRef.value;
   if (!el) return;
   if (shouldFit.value) return;
-
-  // 没有横向溢出就不处理
   if (el.scrollWidth <= el.clientWidth) return;
 
-  // 优先使用 deltaX；否则用 deltaY 映射成横向
   const dx = Math.abs(e.deltaX) > 0 ? e.deltaX : e.deltaY;
-
-  // 避免页面跟着上下滚动（仅在需要时拦截）
   if (e.cancelable) e.preventDefault();
   e.stopPropagation();
-
   el.scrollLeft += dx;
 }
 
-/** pointer drag：鼠标按住拖拽 */
 let dragging = false;
 let dragStartX = 0;
 let dragStartScrollLeft = 0;
@@ -104,11 +108,7 @@ function onPointerDown(e: PointerEvent) {
   dragging = true;
   dragStartX = e.clientX;
   dragStartScrollLeft = el.scrollLeft;
-
-  // 捕获指针，避免移出元素就断
   (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
-
-  // 避免选中/拖拽图片等默认行为
   if (e.cancelable) e.preventDefault();
 }
 
@@ -119,7 +119,6 @@ function onPointerMove(e: PointerEvent) {
 
   const dx = e.clientX - dragStartX;
   el.scrollLeft = dragStartScrollLeft - dx;
-
   if (e.cancelable) e.preventDefault();
 }
 
@@ -128,26 +127,41 @@ function onPointerUp() {
 }
 
 onMounted(() => {
+  // ✅ 1) 监听底栏宽度变化
+  if (barRef.value) {
+    ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      barWidth.value = rect.width;
+      emitViewport();
+    });
+    ro.observe(barRef.value);
+  }
+
+  // ✅ 2) 绑定滚动交互
   const el = scrollerRef.value;
   if (!el) return;
 
-  // 你原本的 touch 监听（保留）
   el.addEventListener('touchstart', onTouchStart, {passive: true});
-  el.addEventListener('touchmove', onTouchMove, {passive: false}); // 必须 passive:false 才能 preventDefault
+  el.addEventListener('touchmove', onTouchMove, {passive: false});
   el.addEventListener('touchend', onTouchEnd, {passive: true});
   el.addEventListener('touchcancel', onTouchEnd, {passive: true});
 
-  // 新增 wheel（必须 passive:false 才能 preventDefault）
   el.addEventListener('wheel', onWheel, {passive: false});
 
-  // 新增 pointer drag（不影响 touch，pointer 在移动端也可用，但我们只有需要时才启动）
   el.addEventListener('pointerdown', onPointerDown, {passive: false});
   el.addEventListener('pointermove', onPointerMove, {passive: false});
   el.addEventListener('pointerup', onPointerUp, {passive: true});
   el.addEventListener('pointercancel', onPointerUp, {passive: true});
 });
 
+// 如果 show 切换时宽度可能变化，补发一次
+watch(() => props.show, () => emitViewport());
+
 onUnmounted(() => {
+  ro?.disconnect();
+  ro = null;
+
   const el = scrollerRef.value;
   if (!el) return;
 
@@ -168,6 +182,7 @@ onUnmounted(() => {
 <template>
   <div
       v-if="show"
+      ref="barRef"
       class="fixed bottom-0 left-0 right-0 z-50 md:hidden flex items-center justify-between px-3 border-t border-white/10"
       style="
       background: var(--modal-bg);
@@ -176,7 +191,6 @@ onUnmounted(() => {
       padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
     "
   >
-    <!--   横向滚动容器 -->
     <div
         ref="scrollerRef"
         class="flex-1 min-w-0 pr-2"
@@ -207,10 +221,7 @@ onUnmounted(() => {
               :weight="activeGroupId === group.id ? 'fill' : 'regular'"
           />
 
-          <span
-              class="text-[10px] font-medium mt-0.5 truncate"
-              :class="shouldFit ? 'max-w-[6.5em]' : 'max-w-[5.5em]'"
-          >
+          <span class="text-[10px] font-medium mt-0.5 truncate" :class="shouldFit ? 'max-w-[6.5em]' : 'max-w-[5.5em]'">
             {{ group.title }}
           </span>
 
@@ -242,7 +253,6 @@ onUnmounted(() => {
   scrollbar-width: none;
 }
 
-/* 可选：桌面拖拽时体验更明显（不影响核心功能） */
 [data-dragging="0"].no-scrollbar {
   cursor: grab;
 }

@@ -12,6 +12,10 @@ const props = defineProps<{
   activeGroupId: string;
   isEditMode: boolean;
   sidebarPos: 'left' | 'right';
+
+  // 来自 App.vue（由 MobileGroupNav emit）
+  mobileNarrow?: boolean; // true 表示屏幕很窄，需要保证至少一行 2 个
+  mobileWidth?: number;   // 可选，后续你要更精细判断可以用
 }>();
 
 const emit = defineEmits<{
@@ -22,11 +26,33 @@ const emit = defineEmits<{
 const store = useConfigStore();
 const ui = useUiStore();
 
-// 1. 核心布局优化：动态计算顶部间距
-// HomeMain.vue
+/** =========================
+ *   关键：计算“最终站点卡片宽度”
+ *  - 用户设置 (store.config.theme.siteCard.w) 可以是 2 或 3
+ *  - 窄屏强制 <= 2（保证一行至少两个）
+ *  ========================= */
+const userCardW = computed(() => {
+  const w = Number((store.config.theme as any)?.siteCard?.w ?? 2);
+  return Number.isFinite(w) ? Math.max(1, Math.min(6, w)) : 2;
+});
 
+const effectiveCardW = computed(() => {
+  // 你也可以把阈值做得更智能：比如 mobileWidth < 420 强制 2
+  const force2 = !!props.mobileNarrow;
+  return force2 ? Math.min(userCardW.value, 2) : userCardW.value;
+});
+
+const userCardH = computed(() => {
+  const h = Number((store.config.theme as any)?.siteCard?.h ?? 1);
+  return Number.isFinite(h) ? Math.max(1, Math.min(6, h)) : 1;
+});
+
+/** =========================
+ *  1) 核心布局：动态计算顶部间距
+ *  ========================= */
 const mainContainerClass = computed(() => {
-  const base = 'flex flex-col w-full h-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
+  const base =
+      'flex flex-col w-full h-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
   // 侧边栏留白 (仅普通模式)
   let paddingX = '';
@@ -35,26 +61,21 @@ const mainContainerClass = computed(() => {
   }
 
   if (props.isFocusMode) {
-    // 调整策略：加大顶部间距，将内容进一步下压
-    // 无时间：之前是 38vh，现在改为 45vh (接近屏幕中心)
-    // 有时间：之前是 22vh，现在改为 30vh
     const topSpacing = store.config.theme.showTime ? 'pt-[20vh]' : 'pt-[25vh]';
-
     return `${base} justify-start ${topSpacing} items-center ${paddingX}`;
   } else {
-    // 普通模式：在这里补回原本在 App.vue 中的 padding
     return `${base} justify-start pt-24 md:pt-14 ${paddingX}`;
   }
 });
-// 2. 搜索框容器
-const searchWrapperClass = computed(() => {
-  const base = 'w-full flex justify-center px-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
-  if (props.isFocusMode) {
-    // 专注模式：放大，增加沉浸感
-    return `${base} relative z-30 mb-8 scale-110`;
-  }
-  // 普通模式：正常大小，吸顶
+/** =========================
+ *  2) 搜索框容器
+ *  ========================= */
+const searchWrapperClass = computed(() => {
+  const base =
+      'w-full flex justify-center px-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
+
+  if (props.isFocusMode) return `${base} relative z-30 mb-8 scale-110`;
   return `${base} sticky top-0 z-30 pb-2`;
 });
 
@@ -78,7 +99,6 @@ const handleBackgroundClick = () => {
       @contextmenu="handleGlobalContextMenu"
       @click="handleBackgroundClick"
   >
-
     <transition name="fade-slide">
       <div
           v-if="store.config.theme.showTime"
@@ -97,17 +117,26 @@ const handleBackgroundClick = () => {
 
     <div
         class="w-full px-4 md:px-12 pb-16 min-h-[450px] transition-all duration-500 ease-out origin-top"
-        :class="isFocusMode ? 'opacity-0 translate-y-10 pointer-events-none scale-95 blur-sm' : 'opacity-100 translate-y-0 scale-100 blur-0'"
+        :class="
+        isFocusMode
+          ? 'opacity-0 translate-y-10 pointer-events-none scale-95 blur-sm'
+          : 'opacity-100 translate-y-0 scale-100 blur-0'
+      "
         @contextmenu.stop="handleGlobalContextMenu"
     >
-      <MainGrid v-if="!isFocusMode" :activeGroupId="activeGroupId" :isEditMode="isEditMode"/>
+      <!--  关键：把“最终卡片尺寸”传给 MainGrid -->
+      <MainGrid
+          v-if="!isFocusMode"
+          :activeGroupId="activeGroupId"
+          :isEditMode="isEditMode"
+          :siteCardW="effectiveCardW"
+          :siteCardH="userCardH"
+      />
     </div>
-
   </main>
 </template>
 
 <style scoped>
-/* 优化的淡入淡出+位移 */
 .fade-slide-enter-active,
 .fade-slide-leave-active {
   transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);

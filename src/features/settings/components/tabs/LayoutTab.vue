@@ -4,6 +4,9 @@ import {useConfigStore} from "../../../../stores/useConfigStore.ts";
 
 const store = useConfigStore();
 
+/** ---------------------------
+ * Layout mode
+ * -------------------------- */
 const mode = computed<"icon" | "card">({
   get() {
     return (store.config.theme as any).siteLayoutMode || "icon";
@@ -12,6 +15,66 @@ const mode = computed<"icon" | "card">({
     (store.config.theme as any).siteLayoutMode = v;
   },
 });
+
+/** ---------------------------
+ * Card size (w×h)
+ * - 预设：2×1 / 3×1
+ * - 自定义：滑块调整 w/h（目前你只需要 1 行高度，可保留扩展）
+ * -------------------------- */
+const cardW = computed<number>({
+  get() {
+    return Number((store.config.theme as any).siteCard?.w ?? 3);
+  },
+  set(v) {
+    (store.config.theme as any).siteCard = {
+      ...(store.config.theme as any).siteCard,
+      w: v,
+    };
+  },
+});
+
+const cardH = computed<number>({
+  get() {
+    return Number((store.config.theme as any).siteCard?.h ?? 1);
+  },
+  set(v) {
+    (store.config.theme as any).siteCard = {
+      ...(store.config.theme as any).siteCard,
+      h: v,
+    };
+  },
+});
+
+type CardPreset = "2x1" | "3x1" | "custom";
+
+const preset = computed<CardPreset>({
+  get() {
+    const w = cardW.value;
+    const h = cardH.value;
+    if (w === 2 && h === 1) return "2x1";
+    if (w === 3 && h === 1) return "3x1";
+    return "custom";
+  },
+  set(v) {
+    if (v === "2x1") {
+      cardW.value = 2;
+      cardH.value = 1;
+    } else if (v === "3x1") {
+      cardW.value = 3;
+      cardH.value = 1;
+    }
+    // custom：不强制改值
+  },
+});
+
+/** 预览：用 3 列网格模拟占格 */
+const previewCardColSpan = computed(() => {
+  const w = Math.max(2, Math.min(3, cardW.value));
+  return w === 2 ? "col-span-2" : "col-span-3";
+});
+
+/** 预览：3×1 允许备注两行；2×1 一行更稳 */
+const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
 </script>
 
 <template>
@@ -46,13 +109,93 @@ const mode = computed<"icon" | "card">({
         </div>
       </div>
 
-      <!-- 预览小图（模拟效果） -->
-      <div class="grid grid-cols-2 gap-3">
-        <!-- Icon preview -->
+      <!-- ✅ 卡片大小（仅在卡片模式显示） -->
+      <div v-if="mode === 'card'" class="space-y-3">
+        <div class="flex justify-between items-center">
+          <label class="font-bold text-sm">卡片大小</label>
+
+          <div class="flex rounded-lg p-1 bg-[var(--modal-input-bg)]">
+            <button
+                type="button"
+                @click="preset = '2x1'"
+                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                :class="preset === '2x1'
+                ? 'bg-[var(--accent-color)] text-white shadow'
+                : 'opacity-50 hover:opacity-100'"
+            >
+              2×1
+            </button>
+
+            <button
+                type="button"
+                @click="preset = '3x1'"
+                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                :class="preset === '3x1'
+                ? 'bg-[var(--accent-color)] text-white shadow'
+                : 'opacity-50 hover:opacity-100'"
+            >
+              3×1
+            </button>
+
+            <button
+                type="button"
+                @click="preset = 'custom'"
+                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                :class="preset === 'custom'
+                ? 'bg-[var(--accent-color)] text-white shadow'
+                : 'opacity-50 hover:opacity-100'"
+            >
+              自定义
+            </button>
+          </div>
+        </div>
+
+        <!-- 自定义：w/h 滑块（目前你的卡片高度建议固定 1，这里保留扩展） -->
+        <div v-if="preset === 'custom'" class="space-y-3">
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs opacity-60" style="color: var(--text-secondary);">宽度（列）</span>
+              <span class="text-xs opacity-60" style="color: var(--text-secondary);">{{ cardW }}</span>
+            </div>
+            <input
+                type="range"
+                v-model.number="cardW"
+                min="2"
+                max="3"
+                step="1"
+                class="w-full accent-[var(--accent-color)]"
+            />
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs opacity-60" style="color: var(--text-secondary);">高度（行）</span>
+              <span class="text-xs opacity-60" style="color: var(--text-secondary);">{{ cardH }}</span>
+            </div>
+            <input
+                type="range"
+                v-model.number="cardH"
+                min="1"
+                max="1"
+                step="1"
+                class="w-full accent-[var(--accent-color)]"
+            />
+          </div>
+        </div>
+
+        <div class="text-[11px] opacity-60" style="color: var(--text-secondary);">
+          2×1 更紧凑；3×1 更适合标题较长或备注较多的站点。
+        </div>
+      </div>
+
+      <!-- ✅ 预览小图（模拟效果） -->
+      <!-- 用 3 列，让 3×1 的预览能“变宽”看出来 -->
+      <div class="grid grid-cols-3 gap-3">
+        <!-- Icon preview (占 1 列) -->
         <button
             type="button"
             @click="mode = 'icon'"
-            class="w-full rounded-2xl p-3 text-left transition-all"
+            class="col-span-1 w-full rounded-2xl p-3 text-left transition-all"
             :class="mode === 'icon' ? 'ring-2 ring-[var(--accent-color)]' : 'opacity-80 hover:opacity-100'"
             style="background: rgba(var(--overlay-rgb), 0.14); border: 1px solid rgba(var(--overlay-rgb), 0.14);"
         >
@@ -68,24 +211,24 @@ const mode = computed<"icon" | "card">({
                 开发资源
               </div>
               <div class="text-[11px] opacity-60 truncate" style="color: var(--text-secondary);">
-                图标 + 标题（更简洁）
+                图标 + 标题
               </div>
             </div>
           </div>
         </button>
 
-        <!-- Card preview (2×1 风格：只保留 title/domain/remark) -->
+        <!-- Card preview：随 2×1 / 3×1 变宽（不显示 tags/数字） -->
         <button
             type="button"
             @click="mode = 'card'"
             class="w-full rounded-2xl p-3 text-left transition-all"
-            :class="mode === 'card' ? 'ring-2 ring-[var(--accent-color)]' : 'opacity-80 hover:opacity-100'"
+            :class="[
+            mode === 'card' ? 'ring-2 ring-[var(--accent-color)]' : 'opacity-80 hover:opacity-100',
+            previewCardColSpan
+          ]"
             style="background: rgba(var(--overlay-rgb), 0.14); border: 1px solid rgba(var(--overlay-rgb), 0.14);"
         >
-          <div
-              class="preview-card flex items-center gap-3 min-w-0"
-              style="min-height: 72px;"
-          >
+          <div class="preview-card flex items-center gap-3 min-w-0" style="min-height: 72px;">
             <div
                 class="shrink-0 rounded-2xl flex items-center justify-center font-extrabold"
                 style="width: 44px; height: 44px; background: rgba(var(--accent-color-rgb), 0.9); color: white;"
@@ -104,14 +247,18 @@ const mode = computed<"icon" | "card">({
                   </div>
                 </div>
 
-                <!-- 右侧极简装饰点（可删），不显示数字、不显示 tags -->
+                <!-- 右侧极简装饰点（可删） -->
                 <div
                     class="shrink-0 rounded-full"
                     style="width: 8px; height: 8px; background: rgba(var(--overlay-rgb), 0.28); border: 1px solid rgba(var(--overlay-rgb), 0.18);"
                 ></div>
               </div>
 
-              <div class="mt-2 text-[11px] opacity-80 line-clamp-2" style="color: var(--text-primary);">
+              <div
+                  class="mt-2 text-[11px] opacity-80"
+                  style="color: var(--text-primary);"
+                  :class="previewRemarkClamp === 2 ? 'line-clamp-2' : 'truncate'"
+              >
                 这里显示备注：用途、账号、环境说明等…
               </div>
             </div>

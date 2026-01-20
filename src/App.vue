@@ -22,7 +22,7 @@ const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDi
 const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/GroupDialog.vue'));
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
-import { useThemeRuntimeSync } from './shared/composables/theme/useThemeRuntimeSync.ts';
+import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
 
 
 const store = useConfigStore();
@@ -180,6 +180,19 @@ const handleEditWidgetSettings = (item: any) => {
   console.log("配置组件", item);
   // 这里可以添加打开组件配置弹窗的逻辑
 }
+
+
+//  移动端视口信息：由 MobileGroupNav emit
+const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
+  width: 0,
+  isNarrow: false,
+});
+
+//  监听 MobileGroupNav 的 viewport 事件
+const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
+  mobileViewport.value = v;
+};
+
 </script>
 
 <template>
@@ -256,7 +269,10 @@ const handleEditWidgetSettings = (item: any) => {
             @update:isEditMode="isGlobalEditMode = $event"
             :sidebarPos="store.config.theme.sidebarPos"
             @openSettings="showSettings = true"
+            :mobileNarrow="mobileViewport.isNarrow"
+            :mobileWidth="mobileViewport.width"
         />
+
 
         <ContextMenu
             @toggleEdit="handleToggleEdit"
@@ -272,6 +288,7 @@ const handleEditWidgetSettings = (item: any) => {
           :activeGroupId="activeGroupId"
           @update:activeGroupId="setActiveGroupId"
           @openSettings="showSettings = true"
+          @viewport="handleMobileViewport"
       />
 
       <Transition name="slide-fade">
