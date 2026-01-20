@@ -6,7 +6,9 @@ import {
   PhArrowRight,
   PhCheck,
   PhPlus,
-  PhAppWindow
+  PhAppWindow,
+  PhGear,
+  PhCode
 } from '@phosphor-icons/vue';
 
 defineProps<{
@@ -27,6 +29,9 @@ const emit = defineEmits<{
   (e: 'addWidget'): void;
   (e: 'configWidget'): void;
   (e: 'edit'): void;
+
+  (e: 'openSettings'): void;
+  (e: 'openDevTools'): void;
 }>();
 </script>
 
@@ -40,57 +45,59 @@ const emit = defineEmits<{
         @click.stop
         @contextmenu.prevent
     >
+      <!-- ============ blank ============ -->
       <template v-if="menuType === 'blank'">
-        <button
-            @click="emit('addSite')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('addSite')" class="menu-btn" type="button">
           <PhPlus size="16" class="opacity-70"/>
           添加图标
         </button>
 
-        <button
-            @click="emit('addWidget')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('addWidget')" class="menu-btn" type="button">
           <PhAppWindow size="16" class="opacity-70"/>
           添加组件
         </button>
 
-        <div class="border-t border-black/5 dark:border-white/10 my-1"></div>
+        <div class="divider"></div>
 
-        <button
-            @click="emit('toggleGlobalEdit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
-          <PhPencilSimple size="16"/>
+        <button @click="emit('toggleGlobalEdit')" class="menu-btn" type="button">
+          <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
+        </button>
+
+        <div class="divider"></div>
+
+        <button @click="emit('openSettings')" class="menu-btn" type="button">
+          <PhGear size="16" class="opacity-70"/>
+          设置
+        </button>
+
+        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+          <PhCode size="16" class="opacity-70"/>
+          开发者工具 (F12)
         </button>
       </template>
 
+      <!-- ============ site ============ -->
       <template v-else-if="menuType === 'site'">
-        <button
-            @click="emit('edit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('edit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           编辑图标
         </button>
 
-        <button
-            @click="emit('toggleGlobalEdit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('toggleGlobalEdit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
 
-        <div class="border-t border-black/5 dark:border-white/10 my-1"></div>
+        <div class="divider"></div>
 
         <div
             class="px-3 py-1.5 text-[10px] uppercase tracking-wider opacity-50 font-bold flex justify-between items-center">
           <span>移动到...</span>
-          <span v-if="currentGroupName" class="text-[9px] bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded">
+          <span
+              v-if="currentGroupName"
+              class="text-[9px] bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded"
+          >
             当前: {{ currentGroupName }}
           </span>
         </div>
@@ -102,10 +109,10 @@ const emit = defineEmits<{
               @click="emit('move', group.id)"
               class="group px-3 py-2 rounded-md flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer"
               :class="[
-                group.id === currentGroupId
-                  ? 'opacity-50 cursor-default'
-                  : 'hover:bg-[var(--accent-color)] hover:text-white'
-              ]"
+              group.id === currentGroupId
+                ? 'opacity-50 cursor-default'
+                : 'hover:bg-[var(--accent-color)] hover:text-white'
+            ]"
           >
             <div class="flex items-center gap-2">
               <PhFolderNotch size="14" :weight="group.id === currentGroupId ? 'fill' : 'regular'"/>
@@ -121,30 +128,30 @@ const emit = defineEmits<{
           </div>
         </div>
 
-        <div class="border-t border-black/5 dark:border-white/10 my-1"></div>
+        <div class="divider"></div>
 
-        <button
-            @click="emit('delete')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-red-500/10 text-red-500 text-left w-full group"
-        >
+        <!-- ✅ group 放这里，不放 @apply -->
+        <button @click="emit('delete')" class="danger-btn group" type="button">
           <PhTrash size="16" class="group-hover:scale-110 transition-transform"/>
           删除
         </button>
+
+        <div class="divider"></div>
+
+        <button @click="emit('openSettings')" class="menu-btn" type="button">
+          <PhGear size="16" class="opacity-70"/>
+          设置
+        </button>
+
+        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+          <PhCode size="16" class="opacity-70"/>
+          开发者工具 (F12)
+        </button>
       </template>
 
+      <!-- ============ widget ============ -->
       <template v-else-if="menuType === 'widget'">
-<!--        <button-->
-<!--            @click="emit('configWidget')"-->
-<!--            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"-->
-<!--        >-->
-<!--          <PhGear size="16" class="opacity-70"/>-->
-<!--          配置组件-->
-<!--        </button>-->
-
-        <button
-            @click="emit('toggleGlobalEdit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('toggleGlobalEdit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
@@ -152,59 +159,73 @@ const emit = defineEmits<{
         <div class="border-t border-black/5 dark:border-white/10 mt-1 pt-2 px-2 pb-1">
           <div class="text-[10px] opacity-40 mb-1.5 font-bold tracking-wider">布局尺寸</div>
           <div class="grid grid-cols-4 gap-1">
-            <button @click="emit('resize', 1, 1)" class="size-btn" title="1x1">
+            <button @click="emit('resize', 1, 1)" class="size-btn" title="1x1" type="button">
               <div class="w-1.5 h-1.5 bg-current rounded-[1px]"></div>
             </button>
-            <button @click="emit('resize', 2, 1)" class="size-btn" title="2x1">
+            <button @click="emit('resize', 2, 1)" class="size-btn" title="2x1" type="button">
               <div class="w-3 h-1.5 bg-current rounded-[1px]"></div>
             </button>
-            <button @click="emit('resize', 1, 2)" class="size-btn" title="1x2">
+            <button @click="emit('resize', 1, 2)" class="size-btn" title="1x2" type="button">
               <div class="w-1.5 h-3 bg-current rounded-[1px]"></div>
             </button>
-            <button @click="emit('resize', 2, 2)" class="size-btn" title="2x2">
+            <button @click="emit('resize', 2, 2)" class="size-btn" title="2x2" type="button">
               <div class="w-3 h-3 bg-current rounded-[1px]"></div>
             </button>
-            <button @click="emit('resize', 4, 2)" class="col-span-4 size-btn h-6" title="4x2 (Wide)">
+            <button @click="emit('resize', 4, 2)" class="col-span-4 size-btn h-6" title="4x2 (Wide)" type="button">
               <div class="w-6 h-3 bg-current rounded-[1px]"></div>
             </button>
           </div>
         </div>
 
-        <div class="border-t border-black/5 dark:border-white/10 my-1"></div>
+        <div class="divider"></div>
 
-        <button
-            @click="emit('delete')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-red-500/10 text-red-500 text-left w-full group"
-        >
+        <button @click="emit('delete')" class="danger-btn group" type="button">
           <PhTrash size="16" class="group-hover:scale-110 transition-transform"/>
           删除
         </button>
+
+        <div class="divider"></div>
+
+        <button @click="emit('openSettings')" class="menu-btn" type="button">
+          <PhGear size="16" class="opacity-70"/>
+          设置
+        </button>
+
+        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+          <PhCode size="16" class="opacity-70"/>
+          开发者工具 (F12)
+        </button>
       </template>
 
+      <!-- ============ group ============ -->
       <template v-else-if="menuType === 'group'">
-        <button
-            @click="emit('edit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('edit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           编辑分组
         </button>
 
-        <button
-            @click="emit('toggleGlobalEdit')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-black/5 dark:hover:bg-white/10 text-left w-full"
-        >
+        <button @click="emit('toggleGlobalEdit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
 
-        <div class="border-t border-black/5 dark:border-white/10 my-1"></div>
-        <button
-            @click="emit('delete')"
-            class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all hover:bg-red-500/10 text-red-500 text-left w-full group"
-        >
+        <div class="divider"></div>
+
+        <button @click="emit('delete')" class="danger-btn group" type="button">
           <PhTrash size="16" class="group-hover:scale-110 transition-transform"/>
           删除分组
+        </button>
+
+        <div class="divider"></div>
+
+        <button @click="emit('openSettings')" class="menu-btn" type="button">
+          <PhGear size="16" class="opacity-70"/>
+          设置
+        </button>
+
+        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+          <PhCode size="16" class="opacity-70"/>
+          开发者工具 (F12)
         </button>
       </template>
     </div>
@@ -247,6 +268,22 @@ const emit = defineEmits<{
 
 :global(.dark) .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
+}
+
+/* ✅ 这里只用 @apply 支持的 utility */
+.menu-btn {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all
+  hover:bg-black/5 dark:hover:bg-white/10 text-left w-full;
+}
+
+/* ✅ 不要在 @apply 里写 group */
+.danger-btn {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all
+  hover:bg-red-500/10 text-red-500 text-left w-full;
+}
+
+.divider {
+  @apply border-t border-black/5 dark:border-white/10 my-1;
 }
 
 .size-btn {

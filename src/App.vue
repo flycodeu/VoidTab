@@ -5,6 +5,7 @@ import {useConfigStore} from './stores/useConfigStore';
 import {useUiStore} from './stores/ui/useUiStore.ts';
 import {PhSpinner} from '@phosphor-icons/vue';
 import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
+import { PhWarning } from '@phosphor-icons/vue';
 
 // 基础组件
 import SideBar from './features/navigation/components/SideBar.vue';
@@ -23,6 +24,7 @@ const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/Group
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
 import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
+import ConfirmDialog from "./shared/ui/dialogs/ConfirmDialog.vue";
 
 
 const store = useConfigStore();
@@ -193,6 +195,42 @@ const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
   mobileViewport.value = v;
 };
 
+const showDevtoolsTip = ref(false);
+
+const openDevToolsTip = () => {
+  showDevtoolsTip.value = true;
+};
+
+const closeDevToolsTip = () => {
+  showDevtoolsTip.value = false;
+};
+
+// ✅ 原来是 alert(...) 的地方，改成调用这个
+const handleOpenDevTools = () => {
+  // 浏览器安全策略下，网页无法强制打开 DevTools
+  openDevToolsTip();
+};
+
+const tryOpenDevTools = () => {
+  // 1) 尝试派发 F12（多数浏览器会拦截，但试一下没坏处）
+  try {
+    const evt = new KeyboardEvent('keydown', {
+      key: 'F12',
+      code: 'F12',
+      keyCode: 123,
+      which: 123,
+      bubbles: true,
+      cancelable: true,
+    } as any);
+    window.dispatchEvent(evt);
+  } catch (e) {
+    // ignore
+  }
+  // 2) 提示用户（最可靠）
+  handleOpenDevTools()
+};
+
+
 </script>
 
 <template>
@@ -278,6 +316,8 @@ const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
             @toggleEdit="handleToggleEdit"
             @editWidgetSettings="handleEditWidgetSettings"
             @edit="dialogLogic.handleContextMenuEdit"
+            @openSettings="showSettings = true"
+            @openDevTools="tryOpenDevTools"
         />
       </div>
 
@@ -326,6 +366,28 @@ const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
 
 
   </div>
+
+  <ConfirmDialog
+      :show="showDevtoolsTip"
+      title="无法自动打开开发者工具"
+      :message="[
+      '浏览器出于安全策略，页面无法强制打开 DevTools。',
+      '',
+      '请使用快捷键：',
+      'Windows/Linux：F12 或 Ctrl + Shift + I',
+      'macOS：⌥⌘I'
+    ]"
+      confirmText="我知道了"
+      cancelText="关闭"
+      :danger="false"
+      :closeOnBackdrop="true"
+      @cancel="closeDevToolsTip"
+      @confirm="closeDevToolsTip"
+  >
+    <template #icon>
+      <PhWarning :size="32" weight="duotone"/>
+    </template>
+  </ConfirmDialog>
 </template>
 
 <style>

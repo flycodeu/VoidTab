@@ -18,11 +18,14 @@ const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | un
 // 菜单容器 Ref
 const menuRef = ref<HTMLElement | null>(null);
 
-// 完整定义 emits，防止事件无法穿透
+// ✅ 新增 emits：openSettings / openDevTools
 const emit = defineEmits<{
   (e: 'edit'): void;
-  (e: 'toggleEdit'): void;          // 向 HomeMain 发送开启编辑模式信号
-  (e: 'editWidgetSettings', item: any): void; // 向 HomeMain 发送配置组件信号
+  (e: 'toggleEdit'): void;
+  (e: 'editWidgetSettings', item: any): void;
+
+  (e: 'openSettings'): void;     // ✅ 打开设置
+  (e: 'openDevTools'): void;     // ✅ 尝试打开 DevTools（F12）
 }>();
 
 const showWidgetModal = ref(false);
@@ -172,7 +175,6 @@ const currentGroupName = computed(() => {
 });
 
 // --- 事件处理 ---
-
 const moveTo = (targetGroupId: string) => {
   if (targetGroupId === ui.contextMenu.groupId) return;
   if (ui.contextMenu.type === 'site' && ui.contextMenu.item) {
@@ -202,7 +204,6 @@ const handleResizeItem = (w: number, h: number) => {
   ui.closeContextMenu();
 };
 
-//  修复 2: 响应 Panel 的事件，并向上抛出
 const handleToggleGlobalEdit = () => {
   emit('toggleEdit');
   ui.closeContextMenu();
@@ -212,6 +213,18 @@ const handleConfigWidget = () => {
   if (ui.contextMenu.item) {
     emit('editWidgetSettings', ui.contextMenu.item);
   }
+  ui.closeContextMenu();
+};
+
+// ✅ 新增：打开设置
+const handleOpenSettings = () => {
+  emit('openSettings');
+  ui.closeContextMenu();
+};
+
+// ✅ 新增：尝试打开 DevTools（由上层决定怎么处理）
+const handleOpenDevTools = () => {
+  emit('openDevTools');
   ui.closeContextMenu();
 };
 
@@ -270,7 +283,9 @@ onUnmounted(() => {
         @addSite="handleAddSite"
         @addWidget="handleAddWidgetRequest"
         @configWidget="handleConfigWidget"
-        @edit="() => { emit('edit'); ui.closeContextMenu(); }"
+        @openSettings="handleOpenSettings"
+      @openDevTools="handleOpenDevTools"
+       @edit="() => { emit('edit'); ui.closeContextMenu(); }"
     />
   </div>
 
