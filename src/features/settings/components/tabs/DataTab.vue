@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import {ref} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
-// 引入图标，新增 PhCheck
-import {PhDownloadSimple, PhFileArrowUp, PhBookmarkSimple, PhWarning, PhCheck} from '@phosphor-icons/vue';
+// 引入图标，新增 PhCheck + （可选）PhCode
+import {
+  PhDownloadSimple,
+  PhFileArrowUp,
+  PhBookmarkSimple,
+  PhWarning,
+  PhCheck,
+  PhCode
+} from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
+
+// HTML 导出函数（你放到 core/bookmarks/export.ts）
+import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
 
 const store = useConfigStore();
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -28,12 +38,35 @@ const showFeedback = (success: boolean, msg: string) => {
   }, 3000);
 };
 
-// 导出逻辑不变
+// 导出 JSON
 const handleExport = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(store.config, null, 2)], {type: 'application/json'}));
   a.download = `voidtab-backup.json`;
   a.click();
+};
+
+//  导出浏览器书签 HTML（只导出分组+网站）
+const handleExportHtml = () => {
+  try {
+    const html = exportBookmarksToHtml(store.config);
+
+    const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voidtab-bookmarks.html`;
+    a.click();
+
+    // 释放 URL
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+
+    showFeedback(true, '已导出浏览器书签 HTML（可在 Edge/Chrome 导入）');
+  } catch (e) {
+    console.error(e);
+    showFeedback(false, '导出 HTML 失败');
+  }
 };
 
 const triggerImport = () => fileInput.value?.click();
@@ -97,7 +130,6 @@ const executeImport = () => {
     showConfirm.value = false;
     pendingData.value = null;
 
-    // 🟢 修改：使用页面提示代替 alert
     showFeedback(true, '配置导入成功');
 
   } catch (e) {
@@ -118,7 +150,6 @@ const handleBookmarkUpload = (event: Event) => {
 
     const result = store.importBookmarks(content);
 
-    // 🟢 修改：使用页面提示代替 alert
     if (result.success) {
       showFeedback(true, `导入成功！共导入 ${result.groupCount} 个分组，${result.count} 个书签`);
     } else {
@@ -136,19 +167,35 @@ const handleBookmarkUpload = (event: Event) => {
     <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
       <div class="flex justify-between items-center">
         <h3 class="font-bold text-sm">导出数据</h3>
-        <button @click="handleExport"
-                class="px-4 py-2 rounded-lg bg-[var(--accent-color)] text-white text-xs font-bold flex items-center gap-2">
-          <PhDownloadSimple size="16" weight="bold"/>
-          导出 JSON
-        </button>
+
+        <div class="flex items-center gap-2">
+          <button
+              @click="handleExportHtml"
+              class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold flex items-center gap-2 hover:bg-white/5 transition"
+              title="导出为浏览器书签 HTML（Edge/Chrome/Firefox 可导入）"
+          >
+            <PhCode size="16" weight="bold"/>
+            导出 HTML
+          </button>
+
+          <button
+              @click="handleExport"
+              class="px-4 py-2 rounded-lg bg-[var(--accent-color)] text-white text-xs font-bold flex items-center gap-2"
+          >
+            <PhDownloadSimple size="16" weight="bold"/>
+            导出 JSON
+          </button>
+        </div>
       </div>
 
       <hr class="opacity-10"/>
 
       <div class="flex justify-between items-center">
         <h3 class="font-bold text-sm">导入数据</h3>
-        <button @click="triggerImport"
-                class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold flex items-center gap-2 hover:bg-white/5 transition">
+        <button
+            @click="triggerImport"
+            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold flex items-center gap-2 hover:bg-white/5 transition"
+        >
           <PhFileArrowUp size="16" weight="bold"/>
           导入 JSON
           <input type="file" ref="fileInput" class="hidden" @change="handleImport"/>
@@ -180,9 +227,11 @@ const handleBookmarkUpload = (event: Event) => {
       </div>
     </div>
 
-    <div v-if="opResult"
-         class="flex items-center justify-center gap-2 text-sm font-bold animate-fade-in py-2"
-         :class="opResult.success ? 'text-green-500' : 'text-red-500'">
+    <div
+        v-if="opResult"
+        class="flex items-center justify-center gap-2 text-sm font-bold animate-fade-in py-2"
+        :class="opResult.success ? 'text-green-500' : 'text-red-500'"
+    >
       <component :is="opResult.success ? PhCheck : PhWarning" size="18" weight="fill"/>
       {{ opResult.msg }}
     </div>
