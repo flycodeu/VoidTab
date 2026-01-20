@@ -7,17 +7,13 @@ import {PhRows, PhSquaresFour, PhGridFour, PhTextT, PhCube} from '@phosphor-icon
 const store = useConfigStore();
 
 /**
- *   密度切换：不再“强行覆盖用户的开关”
- * - compact：推荐关闭名称（但只在当前为开启时才关闭，避免用户反复调）
- * - normal/comfortable：推荐开启（如果用户之前关了，也不强制打开）
- *
- * 如果你希望“密度切换强制行为”，把 if 条件去掉即可。
+ * 密度切换：不强行覆盖用户的开关
+ * - compact：推荐关闭名称（仅当当前为开启时才关闭）
  */
 const setDensity = (val: 'compact' | 'normal' | 'comfortable') => {
   store.config.theme.density = val;
 
   if (val === 'compact') {
-    // 推荐：紧凑模式下关闭名称
     if (store.config.theme.showIconName) store.config.theme.showIconName = false;
     if (store.config.theme.showWidgetName) store.config.theme.showWidgetName = false;
   }
@@ -25,179 +21,199 @@ const setDensity = (val: 'compact' | 'normal' | 'comfortable') => {
 
 const densityLabel = computed(() => store.config.theme.density || 'normal');
 
-// 统一 label 高度逻辑（复用你主页上的算法）
+// 统一 label 高度逻辑（保持你的算法）
 const labelH = computed(() => {
   const show = store.config.theme.showIconName || store.config.theme.showWidgetName;
   if (!show) return 0;
   const textSize = Number(store.config.theme.iconTextSize || 12);
   return Math.max(18, Math.ceil(textSize * 1.35 + 6));
 });
+
+/**
+ * ✅ 关键：预览强制刷新 key
+ * 很多预览组件内部用 canvas/计算布局，只在 mounted 时跑一次
+ * 用 key 可以确保在关键配置变更时重建组件，达到“实时预览”
+ */
+const previewKey = computed(() => {
+  const t = store.config.theme;
+  return [
+    t.density,
+    t.iconSize,
+    t.radius,
+    t.gap,
+    t.iconTextSize,
+    t.showIconName ? 1 : 0,
+    // 如果你预览里也想区分 widget name，可保留
+    t.showWidgetName ? 1 : 0,
+  ].join('|');
+});
 </script>
 
 <template>
-  <div class="space-y-6 animate-fade-in pb-4">
+  <div class="space-y-3 animate-fade-in pb-3">
 
-    <!-- 预览 -->
-    <div class="rounded-2xl border border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="font-bold text-sm opacity-80">控制台预览</h3>
-        <div class="text-xs opacity-60 font-mono bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded capitalize">
-          {{ densityLabel }}
+    <!-- 预览（更小、更紧凑） -->
+    <div class="panel">
+      <div class="panel-h">
+        <h3 class="panel-title">预览</h3>
+        <div class="badge capitalize font-mono">{{ densityLabel }}</div>
+      </div>
+
+      <!-- 预览视窗：限制高度 + 裁切 -->
+      <div class="preview-viewport">
+        <!-- 缩放容器：把预览整体缩小 -->
+        <div class="preview-scale">
+          <MiniHomePreview
+              :key="previewKey"
+              :icon-size="store.config.theme.iconSize"
+              :radius="store.config.theme.radius"
+              :gap="store.config.theme.gap"
+              :show-name="store.config.theme.showIconName"
+              :text-size="store.config.theme.iconTextSize"
+          />
         </div>
       </div>
 
-      <MiniHomePreview
-          :icon-size="store.config.theme.iconSize"
-          :radius="store.config.theme.radius"
-          :gap="store.config.theme.gap"
-          :show-name="store.config.theme.showIconName"
-          :text-size="store.config.theme.iconTextSize"
-      />
-
-      <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] opacity-70">
-        <div class="flex items-center justify-between bg-black/5 dark:bg-white/5 rounded-lg px-2 py-1">
-          <span>图标名称</span>
+      <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] opacity-70">
+        <div class="mini-kv">
+          <span>图标名</span>
           <span class="font-mono">{{ store.config.theme.showIconName ? 'ON' : 'OFF' }}</span>
         </div>
-        <div class="flex items-center justify-between bg-black/5 dark:bg-white/5 rounded-lg px-2 py-1">
-          <span>组件名称</span>
+        <div class="mini-kv">
+          <span>组件名</span>
           <span class="font-mono">{{ store.config.theme.showWidgetName ? 'ON' : 'OFF' }}</span>
         </div>
       </div>
     </div>
 
-    <!-- 密度 -->
-    <div class="rounded-2xl border border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 space-y-3">
-      <div class="flex justify-between items-center">
-        <label class="font-bold text-sm">布局密度</label>
-        <span class="text-xs opacity-60 bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded capitalize font-mono">
-          {{ densityLabel }}
-        </span>
+    <!-- 密度（更扁平、更紧凑） -->
+    <div class="panel space-y-2">
+      <div class="panel-h">
+        <label class="panel-title">布局密度</label>
+        <span class="badge capitalize font-mono">{{ densityLabel }}</span>
       </div>
 
-      <div class="grid grid-cols-3 gap-2 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+      <div class="grid grid-cols-3 gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
         <button
             @click="setDensity('compact')"
-            class="flex flex-col items-center justify-center gap-1 py-3 rounded-lg transition-all border border-transparent active:scale-95"
+            class="seg"
             :class="store.config.theme.density === 'compact'
-            ? 'bg-white shadow-sm text-black'
-            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+            ? 'seg-active'
+            : 'seg-idle'"
             title="更紧凑"
         >
-          <PhGridFour size="22" weight="duotone"/>
+          <PhGridFour size="20" weight="duotone"/>
           <span class="text-[11px] font-medium">紧凑</span>
         </button>
 
         <button
             @click="setDensity('normal')"
-            class="flex flex-col items-center justify-center gap-1 py-3 rounded-lg transition-all border border-transparent active:scale-95"
+            class="seg"
             :class="(store.config.theme.density === 'normal' || !store.config.theme.density)
-            ? 'bg-white shadow-sm text-black'
-            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+            ? 'seg-active'
+            : 'seg-idle'"
             title="默认"
         >
-          <PhSquaresFour size="22" weight="duotone"/>
+          <PhSquaresFour size="20" weight="duotone"/>
           <span class="text-[11px] font-medium">默认</span>
         </button>
 
         <button
             @click="setDensity('comfortable')"
-            class="flex flex-col items-center justify-center gap-1 py-3 rounded-lg transition-all border border-transparent active:scale-95"
+            class="seg"
             :class="store.config.theme.density === 'comfortable'
-            ? 'bg-white shadow-sm text-black'
-            : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+            ? 'seg-active'
+            : 'seg-idle'"
             title="更舒适"
         >
-          <PhRows size="22" weight="duotone"/>
+          <PhRows size="20" weight="duotone"/>
           <span class="text-[11px] font-medium">舒适</span>
         </button>
       </div>
 
       <div class="text-[11px] opacity-60 leading-relaxed">
-        提示：紧凑模式会<strong>建议</strong>隐藏名称以获得更高密度（不会强制覆盖你的选择）。
+        紧凑模式会<strong>建议</strong>隐藏名称以获得更高密度（不会强制覆盖你的选择）。
       </div>
     </div>
 
-    <!-- 尺寸 -->
-    <div class="rounded-2xl border border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 space-y-5">
-      <div class="flex items-center justify-between">
-        <h3 class="font-bold text-sm">尺寸与间距</h3>
-        <span class="text-xs font-mono opacity-60 bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded">
-          labelH: {{ labelH }}px
-        </span>
+    <!-- 尺寸（收紧行高/间距） -->
+    <div class="panel space-y-3">
+      <div class="panel-h">
+        <h3 class="panel-title">尺寸与间距</h3>
+        <span class="badge font-mono opacity-70">labelH: {{ labelH }}px</span>
       </div>
 
-      <div class="space-y-2">
-        <div class="flex justify-between items-center">
-          <label class="font-bold text-sm">图标尺寸</label>
-          <span class="text-xs font-mono opacity-60 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded">
-            {{ store.config.theme.iconSize }}px
-          </span>
+      <div class="ctrl">
+        <div class="ctrl-h">
+          <label class="ctrl-title">图标尺寸</label>
+          <span class="badge font-mono">{{ store.config.theme.iconSize }}px</span>
         </div>
         <input type="range" v-model.number="store.config.theme.iconSize" min="40" max="120" step="2"
                class="range-input w-full"/>
       </div>
 
-      <div class="space-y-2">
-        <div class="flex justify-between items-center">
-          <label class="font-bold text-sm">圆角半径</label>
-          <span class="text-xs font-mono opacity-60 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded">
-            {{ store.config.theme.radius }}px
-          </span>
+      <div class="ctrl">
+        <div class="ctrl-h">
+          <label class="ctrl-title">圆角半径</label>
+          <span class="badge font-mono">{{ store.config.theme.radius }}px</span>
         </div>
-        <input type="range" v-model.number="store.config.theme.radius" min="0" max="60" class="range-input w-full"/>
+        <input type="range" v-model.number="store.config.theme.radius" min="0" max="60"
+               class="range-input w-full"/>
       </div>
 
-      <div class="space-y-2">
-        <div class="flex justify-between items-center">
-          <label class="font-bold text-sm">网格间距</label>
-          <span class="text-xs font-mono opacity-60 bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded">
-            {{ store.config.theme.gap }}px
-          </span>
+      <div class="ctrl">
+        <div class="ctrl-h">
+          <label class="ctrl-title">网格间距</label>
+          <span class="badge font-mono">{{ store.config.theme.gap }}px</span>
         </div>
-        <input type="range" v-model.number="store.config.theme.gap" min="6" max="60" class="range-input w-full"/>
+        <input type="range" v-model.number="store.config.theme.gap" min="6" max="60"
+               class="range-input w-full"/>
       </div>
     </div>
 
-    <!-- 名称控制 -->
-    <div class="rounded-2xl border border-black/5 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="font-bold text-sm">名称显示</h3>
-        <span class="text-xs opacity-60">分别控制图标与组件</span>
+    <!-- 名称控制（紧凑卡片 + 更小开关） -->
+    <div class="panel space-y-2">
+      <div class="panel-h">
+        <h3 class="panel-title">名称显示</h3>
+        <span class="text-xs opacity-60">图标 / 组件</span>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-2">
         <!-- 图标名称 -->
-        <label
-            class="flex items-center justify-between gap-3 rounded-xl bg-black/5 dark:bg-white/5 px-3 py-3 cursor-pointer">
+        <label class="toggle-card">
           <div class="flex items-center gap-2">
-            <PhTextT :size="18" class="opacity-70"/>
-            <div>
-              <div class="text-sm font-semibold">图标名称</div>
-              <div class="text-[11px] opacity-60">书签/站点标题</div>
+            <PhTextT :size="16" class="opacity-70"/>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold leading-tight">图标名称</div>
+              <div class="text-[11px] opacity-60 leading-tight">书签标题</div>
             </div>
           </div>
-          <input type="checkbox" v-model="store.config.theme.showIconName"
-                 class="w-5 h-5 accent-[var(--accent-color)] cursor-pointer rounded"/>
+          <input
+              type="checkbox"
+              v-model="store.config.theme.showIconName"
+              class="chk"
+          />
         </label>
 
         <!-- 组件名称 -->
-        <label
-            class="flex items-center justify-between gap-3 rounded-xl bg-black/5 dark:bg-white/5 px-3 py-3 cursor-pointer">
+        <label class="toggle-card">
           <div class="flex items-center gap-2">
-            <PhCube :size="18" class="opacity-70"/>
-            <div>
-              <div class="text-sm font-semibold">组件名称</div>
-              <div class="text-[11px] opacity-60">Widget 标题</div>
+            <PhCube :size="16" class="opacity-70"/>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold leading-tight">组件名称</div>
+              <div class="text-[11px] opacity-60 leading-tight">Widget 标题</div>
             </div>
           </div>
-          <input type="checkbox" v-model="store.config.theme.showWidgetName"
-                 class="w-5 h-5 accent-[var(--accent-color)] cursor-pointer rounded"/>
+          <input
+              type="checkbox"
+              v-model="store.config.theme.showWidgetName"
+              class="chk"
+          />
         </label>
       </div>
 
       <div v-if="store.config.theme.showIconName || store.config.theme.showWidgetName"
-           class="space-y-2 animate-slide-down">
+           class="space-y-2 animate-slide-down pt-1">
         <div class="flex justify-between items-center">
           <label class="text-xs opacity-70">文字大小</label>
           <span class="text-xs font-mono opacity-60">{{ store.config.theme.iconTextSize }}px</span>
@@ -206,26 +222,167 @@ const labelH = computed(() => {
                class="range-input w-full"/>
       </div>
 
-      <div v-else class="text-[11px] opacity-60">
+      <div v-else class="text-[11px] opacity-60 pt-1">
         已隐藏所有名称，布局会更紧凑。
       </div>
     </div>
+
   </div>
 </template>
 
 <style scoped>
+/* 统一 panel：更紧凑 */
+.panel {
+  border-radius: 16px;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:global(.dark) .panel {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.panel-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.panel-title {
+  font-weight: 800;
+  font-size: 13px;
+  opacity: .86;
+}
+
+.badge {
+  font-size: 11px;
+  opacity: .70;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:global(.dark) .badge {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mini-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:global(.dark) .mini-kv {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* segmented btn */
+.seg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 0;
+  border-radius: 10px;
+  transition: all .15s;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.seg:active {
+  transform: scale(0.98);
+}
+
+.seg-active {
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+:global(.dark) .seg-active {
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
+  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.seg-idle {
+  color: rgba(55, 65, 81, 0.8);
+}
+
+:global(.dark) .seg-idle {
+  color: rgba(229, 231, 235, 0.75);
+}
+
+.seg-idle:hover {
+  filter: brightness(1.05);
+}
+
+/* ctrl rows tighter */
+.ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ctrl-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ctrl-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* toggle cards tighter */
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+}
+
+:global(.dark) .toggle-card {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chk {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-color);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+/* animations */
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
+  animation: fadeIn 0.22s ease-out forwards;
 }
 
 .animate-slide-down {
-  animation: slideDown 0.2s ease-out forwards;
+  animation: slideDown 0.18s ease-out forwards;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -236,7 +393,7 @@ const labelH = computed(() => {
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-5px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
@@ -244,26 +401,54 @@ const labelH = computed(() => {
   }
 }
 
+/* range */
 .range-input {
   -webkit-appearance: none;
   height: 6px;
-  background: rgba(128, 128, 128, 0.2);
-  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.22);
+  border-radius: 999px;
   outline: none;
   cursor: pointer;
 }
 
 .range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   background: var(--accent-color);
-  border-radius: 50%;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   transition: transform 0.1s;
 }
 
 .range-input::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
+  transform: scale(1.08);
 }
+
+/* 预览区域：固定高度，避免撑爆 */
+.preview-viewport {
+  height: 220px; /* 你想更小就 180/200 */
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .preview-viewport {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+/* 关键：缩放整个预览 */
+.preview-scale {
+  transform: scale(0.72); /* 0.6~0.8 之间调 */
+  transform-origin: top left;
+  width: calc(100% / 0.72); /* 与 scale 保持一致 */
+}
+
+/* 想更紧凑：把预览下面的信息行也稍微压扁 */
+.mini-kv {
+  padding: 5px 8px; /* 原来 6px 也行，想更紧就 4px */
+}
+
 </style>

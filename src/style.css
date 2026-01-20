@@ -109,6 +109,8 @@
     --term-shadow: 0 22px 60px rgba(0,0,0,0.65);
     --term-scanline-alpha: 0.25;
     --term-glow-alpha: 0.18;
+    --sidebar-active: rgba(var(--accent-color-rgb), 0.12);
+
 }
 
 html.light {
@@ -198,6 +200,9 @@ html.light {
     --term-shadow: var(--settings-shadow-soft);
     --term-scanline-alpha: 0.18;
     --term-glow-alpha: 0.10;
+
+    --sidebar-active: rgba(var(--accent-color-rgb), 0.08);
+
 }
 
 /* -------------------------------------------------------------------------- */

@@ -2,9 +2,16 @@
 import {computed, ref} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 import type {WebDavProfile} from '../../../../core/sync';
-import {PhCloudArrowUp, PhCloudArrowDown, PhWarning, PhSpinner, PhCheck, PhLightning} from '@phosphor-icons/vue';
+import {
+  PhCloudArrowUp,
+  PhCloudArrowDown,
+  PhWarning,
+  PhSpinner,
+  PhCheck,
+  PhLightning,
+  PhInfo
+} from '@phosphor-icons/vue';
 
-// 引入确认弹窗组件
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 
 const store = useConfigStore();
@@ -74,13 +81,14 @@ const isUploading = ref(false);
 const isDownloading = ref(false);
 const testResult = ref<{ success: boolean; msg: string } | null>(null);
 
-// 控制确认弹窗显示
 const showRestoreConfirm = ref(false);
 
-// 使用通用的操作结果状态（
+/** 操作结果提示状态 */
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
 
-// 显示操作反馈并自动消失
+/** 新增：说明折叠 */
+const showRemoteHelp = ref(false);
+
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
   setTimeout(() => {
@@ -121,34 +129,28 @@ const handleTestConnection = async () => {
 
 const handleUpload = async () => {
   isUploading.value = true;
-  opResult.value = null; // 清除旧提示
+  opResult.value = null;
 
   const res = await store.uploadBackup();
 
   isUploading.value = false;
 
-  // 移除 alert，使用 showFeedback 显示结果
   const isSuccess = res.success !== false;
   showFeedback(isSuccess, res.msg);
 };
 
-// 1. 点击“恢复数据”按钮：只打开弹窗
 const openRestoreDialog = () => {
   showRestoreConfirm.value = true;
 };
 
-// 2. 确认后的执行逻辑
 const executeRestore = async () => {
-  showRestoreConfirm.value = false; // 关闭弹窗
+  showRestoreConfirm.value = false;
   isDownloading.value = true;
-  opResult.value = null; // 清除旧提示
+  opResult.value = null;
 
   try {
     const res = await store.downloadBackup();
-
-    // 使用 showFeedback
     showFeedback(true, res.msg);
-
   } catch (error) {
     showFeedback(false, '恢复失败，请检查网络或配置');
   } finally {
@@ -158,145 +160,221 @@ const executeRestore = async () => {
 </script>
 
 <template>
-  <div class="space-y-6 animate-fade-in">
-    <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
-      <div class="flex justify-between items-center">
-        <div class="flex flex-col">
-          <span class="font-bold text-sm">启用同步</span>
-          <span class="text-[10px] opacity-50">关闭后将不会自动同步（手动备份仍可用）</span>
-        </div>
-        <input type="checkbox" v-model="syncEnabled" class="w-5 h-5 accent-[var(--accent-color)]"/>
-      </div>
-
-      <div class="flex justify-between items-center">
-        <div class="flex flex-col">
-          <span class="font-bold text-sm">自动同步</span>
-          <span class="text-[10px] opacity-50">开启后后台定时检查并自动上传/下载</span>
-        </div>
-        <input type="checkbox" v-model="syncAuto" class="w-5 h-5 accent-[var(--accent-color)]"/>
-      </div>
-
-      <div class="flex justify-between items-center">
-        <div class="flex flex-col">
-          <span class="font-bold text-sm">同步间隔</span>
-          <span class="text-[10px] opacity-50">单位：分钟（默认 10）</span>
+  <div class="space-y-4 animate-fade-in">
+    <!-- =========================
+     * 1) 基础同步开关（更紧凑）
+     * ========================= -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">同步设置</div>
+          <div class="panel-sub">开启后可使用 WebDAV 备份与恢复</div>
         </div>
 
-        <select v-model.number="intervalMinutesProxy"
-                class="bg-transparent border border-current/20 rounded-xl px-3 py-2 text-sm outline-none focus:border-[var(--accent-color)]">
-          <option :value="5">5</option>
-          <option :value="10">10</option>
-          <option :value="15">15</option>
-          <option :value="30">30</option>
-          <option :value="60">60</option>
-        </select>
+        <!-- 右侧状态 -->
+        <div class="meta">
+          <span class="meta-label">上次同步</span>
+          <span class="meta-value">{{ lastSyncTimeStr }}</span>
+        </div>
       </div>
-    </div>
 
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">启用同步</div>
+            <div class="setting-desc">关闭后不自动同步</div>
+          </div>
+          <input type="checkbox" v-model="syncEnabled" class="toggle"/>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">自动同步</div>
+            <div class="setting-desc">后台定时上传/下载</div>
+          </div>
+          <input type="checkbox" v-model="syncAuto" class="toggle"/>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">同步间隔</div>
+            <div class="setting-desc">单位：分钟</div>
+          </div>
+
+          <select
+              v-model.number="intervalMinutesProxy"
+              class="select"
+          >
+            <option :value="5">5</option>
+            <option :value="10">10</option>
+            <option :value="15">15</option>
+            <option :value="30">30</option>
+            <option :value="60">60</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 操作反馈（更靠下更窄） -->
+      <div v-if="opResult" class="feedback" :class="opResult.success ? 'ok' : 'bad'">
+        <component :is="opResult.success ? PhCheck : PhWarning" size="16" weight="fill"/>
+        <span class="truncate">{{ opResult.msg }}</span>
+      </div>
+    </section>
+
+    <!-- =========================
+     * 2) WebDAV 配置区
+     * ========================= -->
     <template v-if="isWebdav">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-        <div class="space-y-1">
-          <label class="text-xs font-bold opacity-60 uppercase ml-1">文件夹</label>
-          <input v-model="webdavFolder" type="text" placeholder="voidtab"
-                 class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors"/>
-        </div>
-        <div class="space-y-1">
-          <label class="text-xs font-bold opacity-60 uppercase ml-1">文件名</label>
-          <input v-model="webdavFilename" type="text" placeholder="voidtab-backup.json"
-                 class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors"/>
-        </div>
-      </div>
-
-      <div class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm leading-relaxed">
-        <p class="font-bold text-blue-400 mb-1 flex items-center gap-2">
-          <PhCloudArrowUp size="16" weight="fill"/>
-          WebDAV 同步
-        </p>
-        <p class="opacity-60 text-xs mt-1">注意：部分网盘需要生成“应用专用密码”。</p>
-      </div>
-
-      <div class="space-y-4 p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)]">
-        <div class="space-y-1">
-          <label class="text-xs font-bold opacity-60 uppercase ml-1">服务器地址 (URL)</label>
-          <input v-model="webdavUrl" type="text" placeholder="https://dav.jianguoyun.com/dav/"
-                 class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors"/>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-          <div class="space-y-1">
-            <label class="text-xs font-bold opacity-60 uppercase ml-1">账号 (Email)</label>
-            <input v-model="webdavUsername" type="text" placeholder="你的账号"
-                   class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors"/>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">WebDAV 配置</div>
+            <div class="panel-sub">部分网盘需使用“应用专用密码”</div>
           </div>
-          <div class="space-y-1">
-            <label class="text-xs font-bold opacity-60 uppercase ml-1">密码 / 应用密码</label>
-            <input v-model="webdavPassword" type="password" placeholder="建议使用应用专用密码"
-                   class="w-full bg-transparent border-b-2 border-current/10 py-2 px-1 text-sm outline-none focus:border-[var(--accent-color)] transition-colors"/>
+
+          <div class="badge">
+            <PhCloudArrowUp size="14" weight="fill"/>
+            WebDAV
           </div>
         </div>
 
-        <div v-if="testResult" class="flex items-center gap-2 text-sm font-bold pt-2 animate-fade-in"
-             :class="testResult.success ? 'text-green-500' : 'text-red-500'">
-          <component :is="testResult.success ? PhCheck : PhWarning" size="18" weight="fill"/>
-          {{ testResult.msg }}
+        <!-- 文件夹/文件名：更紧凑两列 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          <div class="field">
+            <label class="label">文件夹</label>
+            <input
+                v-model="webdavFolder"
+                type="text"
+                placeholder="voidtab"
+                class="input"
+            />
+          </div>
+
+          <div class="field">
+            <label class="label">文件名</label>
+            <input
+                v-model="webdavFilename"
+                type="text"
+                placeholder="voidtab-backup.json"
+                class="input"
+            />
+          </div>
         </div>
-      </div>
 
-      <div class="flex flex-col sm:flex-row items-center gap-3">
-        <button @click="handleTestConnection" :disabled="isTesting"
-                class="w-full sm:w-auto px-5 py-3 rounded-xl border border-[var(--glass-border)] font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-[var(--sidebar-active)]">
-          <PhSpinner v-if="isTesting" class="animate-spin" size="18"/>
-          <PhLightning v-else size="18" weight="bold"/>
-          测试连接
-        </button>
-        <div v-if="opResult"
-             class="flex items-center justify-center gap-2 text-sm font-bold pt-3 animate-fade-in"
-             :class="opResult.success ? 'text-green-500' : 'text-red-500'">
-          <component :is="opResult.success ? PhCheck : PhWarning" size="18" weight="fill"/>
-          {{ opResult.msg }}
+        <div class="field mt-3">
+          <label class="label">服务器地址 (URL)</label>
+          <input
+              v-model="webdavUrl"
+              type="text"
+              placeholder="https://dav.jianguoyun.com/dav/"
+              class="input"
+          />
         </div>
-        <div class="text-center pt-2">
-          <span class="text-xs opacity-40 font-mono">上次同步: {{ lastSyncTimeStr }}</span>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          <div class="field">
+            <label class="label">账号 (Email)</label>
+            <input
+                v-model="webdavUsername"
+                type="text"
+                placeholder="你的账号"
+                class="input"
+            />
+          </div>
+
+          <div class="field">
+            <label class="label">密码 / 应用密码</label>
+            <input
+                v-model="webdavPassword"
+                type="password"
+                placeholder="建议使用应用专用密码"
+                class="input"
+            />
+          </div>
         </div>
-        <div class="hidden sm:block flex-1"></div>
 
-        <button @click="openRestoreDialog" :disabled="isDownloading"
-                class="w-full sm:w-auto px-5 py-3 rounded-xl border border-[var(--glass-border)] font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2 hover:bg-[var(--sidebar-active)]">
-          <PhSpinner v-if="isDownloading" class="animate-spin" size="18"/>
-          <PhCloudArrowDown v-else size="18" weight="bold"/>
-          恢复数据
-        </button>
+        <div v-if="testResult" class="feedback mt-3" :class="testResult.success ? 'ok' : 'bad'">
+          <component :is="testResult.success ? PhCheck : PhWarning" size="16" weight="fill"/>
+          <span class="truncate">{{ testResult.msg }}</span>
+        </div>
 
-        <button @click="handleUpload" :disabled="isUploading"
-                class="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent-color)] text-white font-bold text-sm transition-all hover:brightness-110 active:scale-95 shadow-lg flex items-center justify-center gap-2">
-          <PhSpinner v-if="isUploading" class="animate-spin" size="18"/>
-          <PhCloudArrowUp v-else size="18" weight="bold"/>
-          立即备份
-        </button>
-      </div>
+        <!-- 按钮区：更紧凑、对齐 -->
+        <div class="btn-row mt-4">
+          <button
+              @click="handleTestConnection"
+              :disabled="isTesting"
+              class="btn btn-ghost"
+          >
+            <PhSpinner v-if="isTesting" class="animate-spin" size="16"/>
+            <PhLightning v-else size="16" weight="bold"/>
+            测试连接
+          </button>
 
+          <button
+              @click="openRestoreDialog"
+              :disabled="isDownloading"
+              class="btn btn-ghost"
+          >
+            <PhSpinner v-if="isDownloading" class="animate-spin" size="16"/>
+            <PhCloudArrowDown v-else size="16" weight="bold"/>
+            恢复数据
+          </button>
 
+          <button
+              @click="handleUpload"
+              :disabled="isUploading"
+              class="btn btn-primary"
+          >
+            <PhSpinner v-if="isUploading" class="animate-spin" size="16"/>
+            <PhCloudArrowUp v-else size="16" weight="bold"/>
+            立即备份
+          </button>
+        </div>
+
+        <!-- ✅ 新增：远程同步说明（默认不展示，点击才展开） -->
+        <div class="mt-4">
+          <button class="link" @click="showRemoteHelp = !showRemoteHelp">
+            <PhInfo size="16" weight="duotone"/>
+            {{ showRemoteHelp ? '收起说明' : '远程同步需求？点此查看说明' }}
+          </button>
+
+          <Transition name="fade">
+            <div v-if="showRemoteHelp" class="help">
+              <div class="help-title">远程同步（可选）</div>
+              <div class="help-text">
+                如果你有远程同步需求，可关注 <b>程序员飞云</b>，发送关键词：<b>远程同步</b>。<br/>
+                可免费协助同步，帮助你保存与找回数据。
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </section>
     </template>
 
-    <div v-else class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)]">
+    <!-- provider 不是 webdav -->
+    <div v-else class="panel">
       <div class="flex items-start gap-3">
-        <div class="p-2 rounded-lg bg-yellow-500/10 text-yellow-500">
-          <PhWarning size="20" weight="duotone"/>
+        <div class="icon-warn">
+          <PhWarning size="18" weight="duotone"/>
         </div>
         <div class="flex-1">
-          <p class="font-bold text-sm">当前未启用 WebDAV</p>
-          <p class="text-xs opacity-60 mt-1">
+          <div class="panel-title">当前未启用 WebDAV</div>
+          <div class="panel-sub mt-1">
             provider=none 时不包含 WebDAV 字段，因此不显示配置表单。需要 WebDAV 请将 provider 设置为
             <code class="opacity-90">webdav</code>。
-          </p>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- 恢复确认弹窗 -->
     <ConfirmDialog
         :show="showRestoreConfirm"
         title="恢复云端数据？"
-        :message="['此操作将下载云端备份文件，并完全覆盖当前的本地配置。', '建议您在恢复前先手动导出当前配置作为备份，操作不可撤销。']"
+        :message="[
+        '此操作将下载云端备份文件，并完全覆盖当前的本地配置。',
+        '建议您在恢复前先手动导出当前配置作为备份，操作不可撤销。'
+      ]"
         confirmText="确认恢复"
         cancelText="取消"
         :danger="true"
@@ -307,23 +385,307 @@ const executeRestore = async () => {
         <PhWarning :size="32" weight="duotone"/>
       </template>
     </ConfirmDialog>
-
   </div>
 </template>
 
 <style scoped>
+/* 更紧凑的面板风格 */
+.panel {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--glass-border);
+  background: var(--modal-input-bg);
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-title {
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.panel-sub {
+  font-size: 11px;
+  opacity: 0.6;
+  line-height: 1.35;
+}
+
+/* 右侧 meta */
+.meta {
+  text-align: right;
+  min-width: 160px;
+}
+
+.meta-label {
+  display: block;
+  font-size: 10px;
+  opacity: 0.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meta-value {
+  display: block;
+  font-size: 11px;
+  opacity: 0.8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* 小 badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.10);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  color: rgba(59, 130, 246, 0.95);
+}
+
+/* 设置行（紧凑） */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:global(.dark) .setting-row {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.setting-text {
+  min-width: 0;
+}
+
+.setting-title {
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.setting-desc {
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.toggle {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-color);
+}
+
+/* 表单 */
+.field {
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0.55;
+  margin-left: 2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+:global(.dark) .input {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.input:focus {
+  border-color: rgba(var(--accent-color-rgb), 0.45);
+  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.12);
+}
+
+.select {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+:global(.dark) .select {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* 按钮区：紧凑 grid */
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .btn-row {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.btn {
+  height: 42px;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 12px;
+  transition: transform .12s ease, filter .12s ease, background .12s ease, border-color .12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--glass-border);
+}
+
+.btn-ghost:hover {
+  background: var(--sidebar-active);
+}
+
+.btn-primary {
+  background: var(--accent-color);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: white;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+/* 反馈条：更窄更紧凑 */
+.feedback {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 10px;
+  border-radius: 12px;
+  max-width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+:global(.dark) .feedback {
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.feedback.ok {
+  color: rgb(34 197 94);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.feedback.bad {
+  color: rgb(239 68 68);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 说明折叠 */
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.78;
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.link:hover {
+  opacity: 1;
+}
+
+.link:active {
+  transform: scale(0.98);
+}
+
+.help {
+  margin-top: 10px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.18);
+  background: rgba(var(--accent-color-rgb), 0.06);
+}
+
+.help-title {
+  font-weight: 900;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.help-text {
+  font-size: 12px;
+  opacity: 0.78;
+  line-height: 1.5;
+}
+
+/* 未启用提示 icon */
+.icon-warn {
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.10);
+  color: rgb(245 158 11);
+}
+
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
+  animation: fadeIn 0.22s ease-out forwards;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity .18s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 </style>

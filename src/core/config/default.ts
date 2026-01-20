@@ -50,7 +50,165 @@ export const defaultConfig: Config = {
                     icon: 'https://www.bilibili.com/favicon.ico'
                 }
             ]
+        },
+        {
+            id: 'group-games',
+            title: '游戏',
+            icon: 'GameController',
+            sortKey: 'custom',
+            iconColor: '#a855f7',
+            iconBgColor: 'rgba(168, 85, 247, 0.15)',
+            items: [
+                // Minecraft
+                {
+                    id: 'mc-wiki',
+                    title: 'Minecraft Wiki',
+                    url: 'https://minecraft.wiki/',
+                    icon: 'https://minecraft.wiki/favicon.ico'
+                },
+                {
+                    id: 'mc-official',
+                    title: 'Minecraft 官网',
+                    url: 'https://www.minecraft.net/',
+                    icon: 'https://www.minecraft.net/favicon.ico'
+                },
+
+                // 缺氧（Oxygen Not Included）
+                {
+                    id: 'oni-wiki',
+                    title: '缺氧 Wiki（Fandom）',
+                    url: 'https://oxygennotincluded.fandom.com/wiki/Oxygen_Not_Included_Wiki',
+                    icon: 'https://static.wikia.nocookie.net/oxygennotincluded/images/6/63/Site-favicon.ico/revision/latest?cb=20170215100446'
+                },
+                {
+                    id: 'oni-klei',
+                    title: '缺氧 Klei 官网页',
+                    url: 'https://www.klei.com/games/oxygen-not-included',
+                    icon: 'https://www.klei.com/favicon.ico'
+                },
+
+                // 泰拉瑞亚（Terraria）
+                {
+                    id: 'terraria-wiki',
+                    title: 'Terraria Wiki',
+                    url: 'https://terraria.wiki.gg/wiki/Terraria_Wiki',
+                    icon: 'https://terraria.wiki.gg/favicon.ico'
+                },
+                {
+                    id: 'terraria-official',
+                    title: 'Terraria 官网',
+                    url: 'https://terraria.org/',
+                    icon: 'https://terraria.org/favicon.ico'
+                },
+
+                // 星露谷物语（Stardew Valley）
+                {
+                    id: 'sv-wiki',
+                    title: '星露谷 Wiki',
+                    url: 'https://stardewvalleywiki.com/Stardew_Valley_Wiki',
+                    icon: 'https://stardewvalleywiki.com/favicon.ico'
+                },
+                {
+                    id: 'sv-official',
+                    title: 'Stardew Valley 官网',
+                    url: 'https://www.stardewvalley.net/',
+                    icon: 'https://www.stardewvalley.net/favicon.ico'
+                }
+            ]
+        },
+        {
+            id: 'group-ai',
+            title: 'AI',
+            icon: 'Robot',
+            sortKey: 'custom',
+            iconColor: '#22c55e',
+            iconBgColor: 'rgba(34, 197, 94, 0.15)',
+            items: [
+                // 通用聊天/助手
+                {
+                    id: 'ai-chatgpt',
+                    title: 'ChatGPT',
+                    url: 'https://chat.openai.com/',
+                    icon: 'https://chat.openai.com/favicon.ico'
+                },
+                {id: 'ai-claude', title: 'Claude', url: 'https://claude.ai/', icon: 'https://claude.ai/favicon.ico'},
+                {
+                    id: 'ai-gemini',
+                    title: 'Gemini',
+                    url: 'https://gemini.google.com/',
+                    icon: 'https://gemini.google.com/favicon.ico'
+                },
+                {id: 'ai-grok', title: 'Grok', url: 'https://grok.com/', icon: 'https://grok.com/favicon.ico'},
+                {
+                    id: 'ai-deepseek',
+                    title: 'DeepSeek',
+                    url: 'https://chat.deepseek.com/',
+                    icon: 'https://chat.deepseek.com/favicon.ico'
+                },
+                {
+                    id: 'ai-kimi',
+                    title: 'Kimi（月之暗面）',
+                    url: 'https://kimi.moonshot.cn/',
+                    icon: 'https://kimi.moonshot.cn/favicon.ico'
+                },
+                {
+                    id: 'ai-doubao',
+                    title: '豆包',
+                    url: 'https://www.doubao.com/',
+                    icon: 'https://www.doubao.com/favicon.ico'
+                },
+                {
+                    id: 'ai-tongyi',
+                    title: '通义千问',
+                    url: 'https://tongyi.aliyun.com/',
+                    icon: 'https://tongyi.aliyun.com/favicon.ico'
+                },
+                {
+                    id: 'ai-ernie',
+                    title: '文心一言',
+                    url: 'https://yiyan.baidu.com/',
+                    icon: 'https://yiyan.baidu.com/favicon.ico'
+                },
+
+                // 图片 AI
+                {
+                    id: 'ai-midjourney',
+                    title: 'Midjourney',
+                    url: 'https://www.midjourney.com/',
+                    icon: 'https://www.midjourney.com/favicon.ico'
+                },
+                {
+                    id: 'ai-leonardo',
+                    title: 'Leonardo AI',
+                    url: 'https://leonardo.ai/',
+                    icon: 'https://leonardo.ai/favicon.ico'
+                },
+                {
+                    id: 'ai-ideogram',
+                    title: 'Ideogram',
+                    url: 'https://ideogram.ai/',
+                    icon: 'https://ideogram.ai/favicon.ico'
+                },
+
+                // 视频 AI
+                {
+                    id: 'ai-runway',
+                    title: 'Runway',
+                    url: 'https://runwayml.com/',
+                    icon: 'https://runwayml.com/favicon.ico'
+                },
+                {id: 'ai-pika', title: 'Pika', url: 'https://pika.art/', icon: 'https://pika.art/favicon.ico'},
+
+                // 音频/语音 AI
+                {
+                    id: 'ai-elevenlabs',
+                    title: 'ElevenLabs',
+                    url: 'https://elevenlabs.io/',
+                    icon: 'https://elevenlabs.io/favicon.ico'
+                }
+            ]
         }
+
     ],
 
     theme: {
