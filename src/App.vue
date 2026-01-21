@@ -26,12 +26,10 @@ const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/comp
 import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
 import ConfirmDialog from "./shared/ui/dialogs/ConfirmDialog.vue";
 
-
 const store = useConfigStore();
 const ui = useUiStore();
-useTheme(); // 初始化主题
+useTheme();
 useThemeRuntimeSync(store);
-
 
 const showAiPanel = ref(false);
 const showSettings = ref(false);
@@ -40,7 +38,7 @@ const showWidgetModal = ref(false);
 const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
 
-// 核心状态：终端模式是否开启 (依赖持久化 Store)
+// 核心状态：终端模式是否开启
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
 
 const isFocusMode = computed({
@@ -69,13 +67,28 @@ let lastWheelTs = 0;
 let wheelLocked = false;
 let wheelHandler: ((e: WheelEvent) => void) | null = null;
 
+/**
+ *  新增：判断鼠标是否在侧栏分组列表区域内
+ * 依赖 SideBar 列表容器有 data-sidebar-list="1"
+ */
+function isPointerInsideSidebarList(e: WheelEvent) {
+  const el = document.querySelector('[data-sidebar-list="1"]') as HTMLElement | null;
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
-  if (isGlobalEditMode.value) return false; // 编辑模式下禁用滚轮切组
+  if (isGlobalEditMode.value) return false;
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
-  if (isTerminalOpen.value) return false; // 终端模式下禁用滚轮切组
+  if (isTerminalOpen.value) return false;
   if (ui.dragState?.isDragging) return false;
+
+  //  新增：分组排序拖拽中禁止滚轮切组（避免抢 wheel）
+  if ((ui as any).isGroupSorting) return false;
+
   return true;
 }
 
@@ -101,8 +114,23 @@ function switchGroup(dir: 1 | -1) {
 
 function onWheelCapture(e: WheelEvent) {
   if (!e.cancelable) return;
+
+  //  1) 鼠标在侧栏列表区域内：放行，让侧栏自然滚动
+  // （拖拽时 target 可能是 ghost，但鼠标位置仍在侧栏区域）
+  if (isPointerInsideSidebarList(e)) return;
+
+  //  2) 分组排序中：放行（避免抢 wheel）
+  if ((ui as any).isGroupSorting) return;
+
   const target = e.target as HTMLElement | null;
-  const scrollContainer = target?.closest('[data-main-scroll="1"], .overflow-y-auto') as HTMLElement | null;
+
+  /**
+   *  关键修改：不要用 ".overflow-y-auto" 来推断滚动容器
+   * 因为拖拽时 target 常常是 ghost/overlay（不在容器树中），会误判为“无滚动容器”，进而触发切组。
+   *
+   * 这里只保留你自己显式标记的主滚动容器：data-main-scroll="1"
+   */
+  const scrollContainer = target?.closest('[data-main-scroll="1"]') as HTMLElement | null;
 
   if (scrollContainer) {
     const {scrollTop, scrollHeight, clientHeight} = scrollContainer;
@@ -112,16 +140,20 @@ function onWheelCapture(e: WheelEvent) {
       const isScrollingDown = e.deltaY > 0;
       const isAtTop = scrollTop <= 0;
       const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+      // 主滚动容器还能滚就放行，不切组
       if ((isScrollingUp && !isAtTop) || (isScrollingDown && !isAtBottom)) {
         return;
       }
     }
   }
 
+  // 保留你原逻辑：显式允许滚轮的区域，不切组
   if (target?.closest?.('[data-wheel-allow="true"]')) return;
+
   if (!canWheelSwitchGroup()) return;
   if (isTypingTarget(target)) return;
 
+  // 走到这里才会阻止默认滚动并做切组
   e.preventDefault();
 
   if (wheelLocked) return;
@@ -140,7 +172,7 @@ function onWheelCapture(e: WheelEvent) {
   }, WHEEL_COOLDOWN);
 }
 
-// 切换终端模式 (更新 Store 并保存)
+// 切换终端模式
 const handleToggleTerminal = () => {
   if (!store.config.runtime.terminal) {
     store.config.runtime.terminal = {history: [], theme: 'dark', isOpen: false};
@@ -149,7 +181,7 @@ const handleToggleTerminal = () => {
   store.saveConfig();
 };
 
-// 关闭终端 (由终端组件触发)
+// 关闭终端
 const closeTerminal = () => {
   if (store.config.runtime.terminal) {
     store.config.runtime.terminal.isOpen = false;
@@ -175,44 +207,28 @@ onUnmounted(() => {
 // 处理事件：切换编辑模式
 const handleToggleEdit = () => {
   isGlobalEditMode.value = !isGlobalEditMode.value;
-}
+};
 
 // 处理事件：配置组件
 const handleEditWidgetSettings = (item: any) => {
   console.log("配置组件", item);
-  // 这里可以添加打开组件配置弹窗的逻辑
-}
+};
 
-
-//  移动端视口信息：由 MobileGroupNav emit
+// 移动端视口信息
 const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
   width: 0,
   isNarrow: false,
 });
-
-//  监听 MobileGroupNav 的 viewport 事件
 const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
   mobileViewport.value = v;
 };
 
 const showDevtoolsTip = ref(false);
-
-const openDevToolsTip = () => {
-  showDevtoolsTip.value = true;
-};
-
-const closeDevToolsTip = () => {
-  showDevtoolsTip.value = false;
-};
-
-// ✅ 原来是 alert(...) 的地方，改成调用这个
-const handleOpenDevTools = () => {
-  // 浏览器安全策略下，网页无法强制打开 DevTools
-  openDevToolsTip();
-};
+const openDevToolsTip = () => { showDevtoolsTip.value = true; };
+const closeDevToolsTip = () => { showDevtoolsTip.value = false; };
+const handleOpenDevTools = () => { openDevToolsTip(); };
 
 const tryOpenDevTools = () => {
-  // 1) 尝试派发 F12（多数浏览器会拦截，但试一下没坏处）
   try {
     const evt = new KeyboardEvent('keydown', {
       key: 'F12',
@@ -226,13 +242,9 @@ const tryOpenDevTools = () => {
   } catch (e) {
     // ignore
   }
-  // 2) 提示用户（最可靠）
-  handleOpenDevTools()
+  handleOpenDevTools();
 };
-
-
 </script>
-
 <template>
   <div v-if="!store.isLoaded" class="fixed inset-0 flex items-center justify-center bg-[#121212] text-white z-[9999]">
     <div class="flex flex-col items-center gap-4">

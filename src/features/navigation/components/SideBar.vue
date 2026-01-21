@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import {computed, nextTick, ref, watch} from 'vue';
+import {computed, nextTick, onBeforeUnmount, ref, watch} from 'vue';
 import {VueDraggable} from 'vue-draggable-plus';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
-import { PhPlus, PhGear} from '@phosphor-icons/vue';
+import {PhPlus, PhGear} from '@phosphor-icons/vue';
 
 import SidebarGroupButton from './sidebar/SidebarGroupButton.vue';
 import {useSidebarDragHandlers} from '../composables/useSidebarDragHandlers.ts';
@@ -26,7 +26,7 @@ const handleGroupContextMenu = (e: MouseEvent, group: any) => {
   ui.openContextMenu(e, group, 'group', group.id);
 };
 
-/** 拖拽逻辑 */
+/** 拖拽逻辑（站点拖入分组等，你原有逻辑保持不动） */
 const {handleDragEnter, handleDragLeave, handleDrop} = useSidebarDragHandlers({
   dragState: ui.dragState,
   getActiveGroupId: () => props.activeGroupId,
@@ -64,10 +64,6 @@ const transitionName = computed(() => {
   return store.config.theme.sidebarPos === 'right' ? 'slide-fade-right' : 'slide-fade';
 });
 
-const onGroupSortEnd = () => {
-  store.saveConfig();
-};
-
 /** 呼吸灯频率（秒） */
 const breathSeconds = computed<number>(() => {
   const raw = Number((store.config.theme as any).breathingDuration ?? 3);
@@ -80,6 +76,64 @@ const railStyle = computed(() => {
   return {
     '--sidebar-breath-duration': `${breathSeconds.value}s`
   } as Record<string, string>;
+});
+
+/** ================================
+ *  拖拽排序期间：滚轮滚动分组列表（关键）
+ *  - 解决拖拽时 target 变 ghost，wheel 无法命中 listRef 的问题
+ *  - 避免全局 wheel 切组逻辑抢事件
+ * ================================ */
+
+const isGroupSorting = ref(false);
+
+/** 滚动速度倍率（触摸板可调小一些，鼠标滚轮可调大一些） */
+const WHEEL_SPEED = 1.15;
+
+const onWheelWhileSorting = (e: WheelEvent) => {
+  if (!isGroupSorting.value) return;
+
+  const host = listRef.value;
+  if (!host) return;
+
+  // 我们要“接管”这次滚轮，让它只滚侧栏列表
+  // 必须 passive:false 才能 preventDefault
+  if (e.cancelable) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  host.scrollTop += e.deltaY * WHEEL_SPEED;
+};
+
+const bindSortingWheel = () => {
+  // 捕获阶段监听更稳：拖拽时 wheel target 可能是 ghost/overlay
+  window.addEventListener('wheel', onWheelWhileSorting, {capture: true, passive: false});
+};
+
+const unbindSortingWheel = () => {
+  window.removeEventListener('wheel', onWheelWhileSorting as any, true);
+};
+
+const onGroupSortStart = () => {
+  isGroupSorting.value = true;
+
+  // 给全局 wheel 切组逻辑一个“硬退出”信号（建议你在 App 的 canWheelSwitchGroup 里判断它）
+  (ui as any).isGroupSorting = true;
+
+  bindSortingWheel();
+};
+
+const onGroupSortEnd = () => {
+  isGroupSorting.value = false;
+  (ui as any).isGroupSorting = false;
+
+  unbindSortingWheel();
+  store.saveConfig();
+};
+
+onBeforeUnmount(() => {
+  (ui as any).isGroupSorting = false;
+  unbindSortingWheel();
 });
 </script>
 
@@ -102,9 +156,8 @@ const railStyle = computed(() => {
         <!-- 顶部 -->
         <div class="flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider">
           <div
-              class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand"
-          >
-            <BrandLogo />
+              class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand">
+            <BrandLogo/>
           </div>
 
           <transition name="fade">
@@ -123,7 +176,14 @@ const railStyle = computed(() => {
             <span class="text-[10px] font-bold uppercase tracking-widest sidebar-muted">分组</span>
           </div>
 
-          <div ref="listRef" class="flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2">
+          <!-- 关键：加 data-wheel-allow="true" 让全局滚轮切组逻辑放行正常滚动
+               同时加 data-sidebar-list="1" 便于你后续在 App 里按区域放行（可选） -->
+          <div
+              ref="listRef"
+              data-wheel-allow="true"
+              data-sidebar-list="1"
+              class="flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2"
+          >
             <VueDraggable
                 v-model="store.config.layout"
                 :animation="180"
@@ -133,6 +193,7 @@ const railStyle = computed(() => {
                 drag-class="group-drag"
                 class="flex flex-col gap-2"
                 :disabled="!!ui.dragState?.isDragging"
+                @start="onGroupSortStart"
                 @end="onGroupSortEnd"
             >
               <SidebarGroupButton
@@ -283,28 +344,26 @@ const railStyle = computed(() => {
 }
 
 @keyframes rail-breath-left {
-  0%, 100% {
+  0%,
+  100% {
     border-right-color: rgba(var(--accent-color-rgb), 0.18);
-    box-shadow: var(--sidebar-shadow),
-    inset -8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+    box-shadow: var(--sidebar-shadow), inset -8px 0 18px rgba(var(--accent-color-rgb), 0.02);
   }
   50% {
     border-right-color: rgba(var(--accent-color-rgb), 0.65);
-    box-shadow: var(--sidebar-shadow),
-    inset -10px 0 22px rgba(var(--accent-color-rgb), 0.20);
+    box-shadow: var(--sidebar-shadow), inset -10px 0 22px rgba(var(--accent-color-rgb), 0.2);
   }
 }
 
 @keyframes rail-breath-right {
-  0%, 100% {
+  0%,
+  100% {
     border-left-color: rgba(var(--accent-color-rgb), 0.18);
-    box-shadow: var(--sidebar-shadow),
-    inset 8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+    box-shadow: var(--sidebar-shadow), inset 8px 0 18px rgba(var(--accent-color-rgb), 0.02);
   }
   50% {
     border-left-color: rgba(var(--accent-color-rgb), 0.65);
-    box-shadow: var(--sidebar-shadow),
-    inset 10px 0 22px rgba(var(--accent-color-rgb), 0.20);
+    box-shadow: var(--sidebar-shadow), inset 10px 0 22px rgba(var(--accent-color-rgb), 0.2);
   }
 }
 
@@ -332,7 +391,7 @@ const railStyle = computed(() => {
 
 :deep(.sidebar-group-btn.is-active) {
   border-color: rgba(var(--accent-color-rgb), 0.45) !important;
-  background: rgba(var(--accent-color-rgb), 0.10) !important;
+  background: rgba(var(--accent-color-rgb), 0.1) !important;
   box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.08) inset;
 }
 
@@ -357,29 +416,35 @@ const railStyle = computed(() => {
 /* ------------------------------ */
 /* 动效（保留你原来的）            */
 /* ------------------------------ */
-.slide-fade-enter-active, .slide-fade-leave-active {
+.slide-fade-enter-active,
+.slide-fade-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.slide-fade-enter-from, .slide-fade-leave-to {
+.slide-fade-enter-from,
+.slide-fade-leave-to {
   transform: translateX(-20px);
   opacity: 0;
 }
 
-.slide-fade-right-enter-active, .slide-fade-right-leave-active {
+.slide-fade-right-enter-active,
+.slide-fade-right-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.slide-fade-right-enter-from, .slide-fade-right-leave-to {
+.slide-fade-right-enter-from,
+.slide-fade-right-leave-to {
   transform: translateX(20px);
   opacity: 0;
 }
 
-.fade-enter-active, .fade-leave-active {
+.fade-enter-active,
+.fade-leave-active {
   transition: opacity 0.3s ease;
 }
 
-.fade-enter-from, .fade-leave-to {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 </style>
