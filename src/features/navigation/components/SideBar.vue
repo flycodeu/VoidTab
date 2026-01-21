@@ -269,20 +269,29 @@ onBeforeUnmount(() => {
 }
 
 /* ------------------------------ */
-/* Rail：主题变量驱动（完全适配）  */
+/* Rail：玻璃化，但不“染色”         */
 /* ------------------------------ */
 .sidebar-rail {
   position: relative;
-  isolation: isolate;              /* 防止混合模式污染 */
+  isolation: isolate;
+
+  /* 玻璃底：由变量控制（你已经在用） */
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
   border: 1px solid var(--sidebar-border);
   box-shadow: var(--sidebar-shadow);
   color: var(--sidebar-text);
 
-  backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate));
-  -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate));
+  /* 玻璃效果：建议饱和度不要太高，避免 accent 扩散显蓝 */
+  backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate, 120%));
+  -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate, 120%));
+
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
+/*  关键：不要给 rail 自己 hover accent（防止整条变色） */
+.sidebar-rail:hover {
+  background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
+}
 
 /* 贴边那侧不画边框 */
 .sidebar-rail[data-side='left'] {
@@ -303,39 +312,69 @@ onBeforeUnmount(() => {
 
 .sidebar-title {
   color: var(--sidebar-text);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
 }
 
-/* 顶部 logo 与 accent 联动 */
+/* ------------------------------ */
+/* 顶部 Logo：改为中性玻璃，不用 accent 底 */
+/* ------------------------------ */
 .sidebar-brand {
   color: var(--sidebar-text);
-  background: rgba(var(--accent-color-rgb), 0.18);
-  border: 1px solid rgba(var(--accent-color-rgb), 0.22);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+
+  /* dark: 轻微白雾 */
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
 }
 
-/* 底部 footer：使用 sidebar 变量 */
+.sidebar-brand:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+html.light .sidebar-brand {
+  /* light: 轻微黑雾 */
+  background: rgba(0, 0, 0, 0.04);
+}
+
+html.light .sidebar-brand:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ------------------------------ */
+/* footer 与 icon button           */
+/* ------------------------------ */
 .sidebar-footer {
   background: var(--sidebar-footer);
   border-top: 1px solid var(--sidebar-divider);
 }
 
-/* 底部 icon btn：用 sidebar surface/hover 来适配深浅 */
 .sidebar-icon-btn {
-  background: var(--sidebar-surface);
+  /*  不用 var(--sidebar-surface)（它可能是纯白）改为中性半透明 */
+  background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
   transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .sidebar-icon-btn:hover {
-  background: var(--sidebar-surface-hover);
-  border-color: rgba(var(--accent-color-rgb), 0.25);
-  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.12);
+  /*  hover 中性，不用 accent，不要 ring 扩散 */
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--sidebar-border);
+  box-shadow: none;
+}
+
+html.light .sidebar-icon-btn {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+html.light .sidebar-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 /* ------------------------------ */
-/* 呼吸灯：用 accent + 主题阴影     */
+/* 呼吸灯：你需要就保留，不需要就关 */
 /* ------------------------------ */
 .sidebar-rail.is-breathing[data-side='left'] {
   animation: rail-breath-left var(--sidebar-breath-duration, 3s) ease-in-out infinite;
@@ -348,24 +387,24 @@ onBeforeUnmount(() => {
 @keyframes rail-breath-left {
   0%,
   100% {
-    border-right-color: rgba(var(--accent-color-rgb), 0.18);
-    box-shadow: var(--sidebar-shadow), inset -8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+    border-right-color: rgba(var(--accent-color-rgb), 0.14);
+    box-shadow: var(--sidebar-shadow);
   }
   50% {
-    border-right-color: rgba(var(--accent-color-rgb), 0.65);
-    box-shadow: var(--sidebar-shadow), inset -10px 0 22px rgba(var(--accent-color-rgb), 0.2);
+    border-right-color: rgba(var(--accent-color-rgb), 0.28);
+    box-shadow: var(--sidebar-shadow);
   }
 }
 
 @keyframes rail-breath-right {
   0%,
   100% {
-    border-left-color: rgba(var(--accent-color-rgb), 0.18);
-    box-shadow: var(--sidebar-shadow), inset 8px 0 18px rgba(var(--accent-color-rgb), 0.02);
+    border-left-color: rgba(var(--accent-color-rgb), 0.14);
+    box-shadow: var(--sidebar-shadow);
   }
   50% {
-    border-left-color: rgba(var(--accent-color-rgb), 0.65);
-    box-shadow: var(--sidebar-shadow), inset 10px 0 22px rgba(var(--accent-color-rgb), 0.2);
+    border-left-color: rgba(var(--accent-color-rgb), 0.28);
+    box-shadow: var(--sidebar-shadow);
   }
 }
 
@@ -376,7 +415,7 @@ onBeforeUnmount(() => {
 }
 
 /* ------------------------------ */
-/* Edge 风格：组按钮 hover/active   */
+/* 组按钮 hover/active：全部中性化   */
 /* ------------------------------ */
 :deep(.sidebar-group-btn) {
   background: transparent !important;
@@ -385,34 +424,90 @@ onBeforeUnmount(() => {
   transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
+/*  hover：中性灰，不用 accent 背景 */
 :deep(.sidebar-group-btn:hover) {
-  border-color: rgba(var(--accent-color-rgb), 0.28) !important;
-  background: rgba(var(--accent-color-rgb), 0.06) !important;
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.10) !important;
+  border-color: rgba(255, 255, 255, 0.20) !important;
+}
+html.light :deep(.sidebar-group-btn:hover) {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(0, 0, 0, 0.10) !important;
 }
 
+
+/*  active：中性灰，不用 accent 背景/发光 */
 :deep(.sidebar-group-btn.is-active) {
-  border-color: rgba(var(--accent-color-rgb), 0.45) !important;
-  background: rgba(var(--accent-color-rgb), 0.1) !important;
-  box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.08) inset;
+  outline: none !important;
+  position: relative !important;
+  border-radius: 16px !important;
+
+  /* 胶囊底：dark / light 各自适配 */
+  background: rgba(255, 255, 255, 0.16) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+
+  /* 微抬起：增加层级感 */
+  transform: translateY(-1px) !important;
+
+  /* 轻阴影：让当前项“浮起来” */
+  box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.14),
+      0 0 0 1px rgba(0, 0, 0, 0.06) inset !important;
+}
+html.light :deep(.sidebar-group-btn.is-active) {
+  background: rgba(0, 0, 0, 0.06) !important;
+  border: 1px solid rgba(0, 0, 0, 0.14) !important;
+  box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(255, 255, 255, 0.55) inset !important;
 }
 
+:deep(.sidebar-group-btn.is-active)::before {
+  content: none !important;
+  position: absolute;
+  left: -6px;            /* 贴边更明显 */
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 999px;
+
+  /*  指示条可以用 accent，但面积很小，不会“整块染色” */
+  background: rgba(var(--accent-color-rgb), 0.9);
+  box-shadow: 0 0 10px rgba(var(--accent-color-rgb), 0.35);
+}
+
+:deep(.sidebar-group-btn.is-active .group-title),
+:deep(.sidebar-group-btn.is-active span) {
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+/* focus 可保留轻微框，不要 accent 扩散 */
 :deep(.sidebar-group-btn:focus-visible) {
   outline: none;
-  box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.10);
 }
 
-/* 新建分组按钮 */
+html.light :deep(.sidebar-group-btn:focus-visible) {
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ------------------------------ */
+/* 新建分组按钮：中性 hover         */
+/* ------------------------------ */
 .sidebar-add-btn {
   border: 1px dashed var(--sidebar-border);
   color: var(--sidebar-muted);
   background: transparent;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 .sidebar-add-btn:hover {
-  border-color: rgba(var(--accent-color-rgb), 0.28);
-  color: var(--accent-color);
-  background: rgba(var(--accent-color-rgb), 0.06);
+  border-color: var(--sidebar-border);
+  color: var(--sidebar-text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.light .sidebar-add-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
 }
 
 /* ------------------------------ */
