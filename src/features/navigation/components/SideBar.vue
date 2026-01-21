@@ -258,153 +258,145 @@ onBeforeUnmount(() => {
   transform: scale(0.95);
   filter: grayscale(1);
 }
-
 .group-chosen {
   opacity: 1;
   transform: scale(1.02);
 }
-
 .group-drag {
   cursor: grabbing;
 }
 
-/* ------------------------------ */
-/* Rail：玻璃化，但不“染色”         */
-/* ------------------------------ */
+/* ===================================================================== */
+/* ✅ Sidebar Rail：玻璃底 + 贴边框呼吸灯（不外扩）                        */
+/* - 呼吸灯只作用在边框附近（inset ring），不做大面积 glow               */
+/* ===================================================================== */
 .sidebar-rail {
   position: relative;
   isolation: isolate;
 
-  /* 玻璃底：由变量控制（你已经在用） */
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
   border: 1px solid var(--sidebar-border);
   box-shadow: var(--sidebar-shadow);
   color: var(--sidebar-text);
 
-  /* 玻璃效果：建议饱和度不要太高，避免 accent 扩散显蓝 */
   backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate, 120%));
   -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate, 120%));
 
   transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-/*  关键：不要给 rail 自己 hover accent（防止整条变色） */
+/* ✅ rail hover 不染色 */
 .sidebar-rail:hover {
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
 }
 
-/* 贴边那侧不画边框 */
-.sidebar-rail[data-side='left'] {
-  border-left: none;
-}
+/* 贴边那侧不画边框（Edge 风格） */
+.sidebar-rail[data-side='left'] { border-left: none; }
+.sidebar-rail[data-side='right'] { border-right: none; }
 
-.sidebar-rail[data-side='right'] {
-  border-right: none;
-}
-
-.sidebar-divider {
-  border-color: var(--sidebar-divider) !important;
-}
-
-.sidebar-muted {
-  color: var(--sidebar-muted) !important;
-}
-
+.sidebar-divider { border-color: var(--sidebar-divider) !important; }
+.sidebar-muted { color: var(--sidebar-muted) !important; }
 .sidebar-title {
   color: var(--sidebar-text);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
 }
 
-/* ------------------------------ */
-/* 顶部 Logo：改为中性玻璃，不用 accent 底 */
-/* ------------------------------ */
+/* 顶部 Logo：中性玻璃 */
 .sidebar-brand {
   color: var(--sidebar-text);
-
-  /* dark: 轻微白雾 */
   background: rgba(255, 255, 255, 0.10);
   border: 1px solid var(--sidebar-border);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
-
   transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
 }
+.sidebar-brand:hover { background: rgba(255, 255, 255, 0.14); }
+html.light .sidebar-brand { background: rgba(0, 0, 0, 0.04); }
+html.light .sidebar-brand:hover { background: rgba(0, 0, 0, 0.06); }
 
-.sidebar-brand:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-html.light .sidebar-brand {
-  /* light: 轻微黑雾 */
-  background: rgba(0, 0, 0, 0.04);
-}
-
-html.light .sidebar-brand:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-/* ------------------------------ */
-/* footer 与 icon button           */
-/* ------------------------------ */
+/* footer */
 .sidebar-footer {
   background: var(--sidebar-footer);
   border-top: 1px solid var(--sidebar-divider);
 }
 
+/* 底部 icon btn：中性 hover */
 .sidebar-icon-btn {
-  /*  不用 var(--sidebar-surface)（它可能是纯白）改为中性半透明 */
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
   transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
-
 .sidebar-icon-btn:hover {
-  /*  hover 中性，不用 accent，不要 ring 扩散 */
   background: rgba(255, 255, 255, 0.12);
   border-color: var(--sidebar-border);
   box-shadow: none;
 }
+html.light .sidebar-icon-btn { background: rgba(0, 0, 0, 0.04); }
+html.light .sidebar-icon-btn:hover { background: rgba(0, 0, 0, 0.06); }
 
-html.light .sidebar-icon-btn {
-  background: rgba(0, 0, 0, 0.04);
+/* ===================================================================== */
+/* ✅ 贴边框呼吸灯（关键）                                                 */
+/* - 用“inset ring”模拟贴边发光，不外扩                                    */
+/* - 只对 rail 生效，不影响内部按钮                                         */
+/* ===================================================================== */
+
+/* 给 rail 加一个贴边的内层高光，默认很淡 */
+.sidebar-rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+
+  /* 默认不亮 */
+  opacity: 0;
 }
 
-html.light .sidebar-icon-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-/* ------------------------------ */
-/* 呼吸灯：你需要就保留，不需要就关 */
-/* ------------------------------ */
+/* 呼吸灯动画：只改变边框色 + 内侧贴边线（inset shadow），不做外圈大光晕 */
 .sidebar-rail.is-breathing[data-side='left'] {
-  animation: rail-breath-left var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+  animation: rail-border-breath-left var(--sidebar-breath-duration, 3s) ease-in-out infinite;
 }
-
 .sidebar-rail.is-breathing[data-side='right'] {
-  animation: rail-breath-right var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+  animation: rail-border-breath-right var(--sidebar-breath-duration, 3s) ease-in-out infinite;
 }
 
-@keyframes rail-breath-left {
-  0%,
-  100% {
-    border-right-color: rgba(var(--accent-color-rgb), 0.14);
-    box-shadow: var(--sidebar-shadow);
+/* 内层贴边“光线”——只在呼吸时出现 */
+.sidebar-rail.is-breathing::after {
+  opacity: 1;
+  animation: rail-innerline-breath var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+}
+
+/* 左贴边：强调右边框 */
+@keyframes rail-border-breath-left {
+  0%, 100% {
+    border-right-color: rgba(var(--accent-color-rgb), 0.30);
   }
   50% {
-    border-right-color: rgba(var(--accent-color-rgb), 0.28);
-    box-shadow: var(--sidebar-shadow);
+    border-right-color: rgba(var(--accent-color-rgb), 0.85);
   }
 }
 
-@keyframes rail-breath-right {
-  0%,
-  100% {
-    border-left-color: rgba(var(--accent-color-rgb), 0.14);
-    box-shadow: var(--sidebar-shadow);
+/* 右贴边：强调左边框 */
+@keyframes rail-border-breath-right {
+  0%, 100% {
+    border-left-color: rgba(var(--accent-color-rgb), 0.30);
   }
   50% {
-    border-left-color: rgba(var(--accent-color-rgb), 0.28);
-    box-shadow: var(--sidebar-shadow);
+    border-left-color: rgba(var(--accent-color-rgb), 0.85);
+  }
+}
+
+/* 内侧贴边线：用 inset box-shadow 做“紧贴边框”的发光 */
+@keyframes rail-innerline-breath {
+  0%, 100% {
+    box-shadow:
+        inset 0 0 0 1px rgba(var(--accent-color-rgb), 0.10),
+        inset 0 0 10px rgba(var(--accent-color-rgb), 0.06);
+  }
+  50% {
+    box-shadow:
+        inset 0 0 0 1px rgba(var(--accent-color-rgb), 0.28),
+        inset 0 0 14px rgba(var(--accent-color-rgb), 0.16);
   }
 }
 
@@ -412,100 +404,85 @@ html.light .sidebar-icon-btn:hover {
   .sidebar-rail.is-breathing {
     animation: none !important;
   }
+  .sidebar-rail.is-breathing::after {
+    animation: none !important;
+    opacity: 0.6;
+  }
 }
 
-/* ------------------------------ */
-/* 组按钮 hover/active：全部中性化   */
-/* ------------------------------ */
+/* ===================================================================== */
+/* ✅ 分组按钮：不加“边框呼吸灯/外圈 glow”                                   */
+/* - hover 仍然有轻微中性反馈                                               */
+/* - active 只做清晰选中（背景 + 小阴影），不做发光 ring                     */
+/* ===================================================================== */
 :deep(.sidebar-group-btn) {
   background: transparent !important;
-  border: 1px solid transparent !important;
+  border: 1px solid transparent !important;  /* 不要发光边 */
   border-radius: 16px !important;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
-/*  hover：中性灰，不用 accent 背景 */
+/* hover：中性雾面 */
 :deep(.sidebar-group-btn:hover) {
   background: rgba(255, 255, 255, 0.10) !important;
-  border-color: rgba(255, 255, 255, 0.20) !important;
+  border-color: transparent !important;      /* ✅ hover 不出边框 */
+  transform: translateY(-1px);
 }
 html.light :deep(.sidebar-group-btn:hover) {
   background: rgba(0, 0, 0, 0.04) !important;
-  border-color: rgba(0, 0, 0, 0.10) !important;
 }
 
-
-/*  active：中性灰，不用 accent 背景/发光 */
+/* active：更直观但不发光（无 ring、无 accent 外圈） */
 :deep(.sidebar-group-btn.is-active) {
-  outline: none !important;
   position: relative !important;
-  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  border-color: transparent !important;      /* ✅ active 不出边框 */
 
-  /* 胶囊底：dark / light 各自适配 */
-  background: rgba(255, 255, 255, 0.16) !important;
-  border: 1px solid rgba(255, 255, 255, 0.28) !important;
-
-  /* 微抬起：增加层级感 */
   transform: translateY(-1px) !important;
-
-  /* 轻阴影：让当前项“浮起来” */
   box-shadow:
       0 10px 24px rgba(0, 0, 0, 0.14),
-      0 0 0 1px rgba(0, 0, 0, 0.06) inset !important;
+      0 0 0 1px rgba(0, 0, 0, 0.06) inset !important; /* ✅ 仅内描边阴影 */
 }
 html.light :deep(.sidebar-group-btn.is-active) {
   background: rgba(0, 0, 0, 0.06) !important;
-  border: 1px solid rgba(0, 0, 0, 0.14) !important;
   box-shadow:
-      0 10px 24px rgba(0, 0, 0, 0.08),
+      0 10px 20px rgba(0, 0, 0, 0.08),
       0 0 0 1px rgba(255, 255, 255, 0.55) inset !important;
 }
 
+/* ✅ 去除左侧竖线 */
 :deep(.sidebar-group-btn.is-active)::before {
   content: none !important;
-  position: absolute;
-  left: -6px;            /* 贴边更明显 */
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  border-radius: 999px;
-
-  /*  指示条可以用 accent，但面积很小，不会“整块染色” */
-  background: rgba(var(--accent-color-rgb), 0.9);
-  box-shadow: 0 0 10px rgba(var(--accent-color-rgb), 0.35);
 }
 
-:deep(.sidebar-group-btn.is-active .group-title),
-:deep(.sidebar-group-btn.is-active span) {
+/* 文本更醒目 */
+:deep(.sidebar-group-btn.is-active span),
+:deep(.sidebar-group-btn.is-active .group-title) {
   opacity: 1 !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
 }
-/* focus 可保留轻微框，不要 accent 扩散 */
+
+/* focus：小范围提示（不做 ring glow） */
 :deep(.sidebar-group-btn:focus-visible) {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.10);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.10);
 }
-
 html.light :deep(.sidebar-group-btn:focus-visible) {
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
 }
 
-/* ------------------------------ */
-/* 新建分组按钮：中性 hover         */
-/* ------------------------------ */
+/* 新建分组按钮：中性 hover */
 .sidebar-add-btn {
   border: 1px dashed var(--sidebar-border);
   color: var(--sidebar-muted);
   background: transparent;
   transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
-
 .sidebar-add-btn:hover {
   border-color: var(--sidebar-border);
   color: var(--sidebar-text);
   background: rgba(255, 255, 255, 0.08);
 }
-
 html.light .sidebar-add-btn:hover {
   background: rgba(0, 0, 0, 0.04);
 }
@@ -517,31 +494,28 @@ html.light .sidebar-add-btn:hover {
 .slide-fade-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-
 .slide-fade-enter-from,
 .slide-fade-leave-to {
   transform: translateX(-20px);
   opacity: 0;
 }
-
 .slide-fade-right-enter-active,
 .slide-fade-right-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-
 .slide-fade-right-enter-from,
 .slide-fade-right-leave-to {
   transform: translateX(20px);
   opacity: 0;
 }
-
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
-
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
 </style>
+
+
