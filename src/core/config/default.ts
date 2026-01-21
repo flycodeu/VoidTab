@@ -255,6 +255,14 @@ export const defaultConfig: Config = {
             showRemark: true,
             showDomain: true,
         },
+        readability: {
+            enabled: true,
+            mode: 'auto',
+            strength: 22,     // 建议 18~25，默认给 22 更稳
+            blur: 0,          // 默认不启用 blur，性能更好
+            desaturate: 0,    // 默认不降饱和，避免壁纸发灰
+            // tint: undefined
+        },
     },
 
     searchEngines: [

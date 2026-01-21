@@ -8,6 +8,29 @@ function deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
 }
 
+function clamp(n: any, min: number, max: number, fallback: number) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(min, Math.min(max, v));
+}
+
+function normalizeReadability(inputRb: any, defRb: any) {
+    const rb = (inputRb && typeof inputRb === 'object') ? inputRb : {};
+
+    const mode = (rb.mode === 'darken' || rb.mode === 'lighten' || rb.mode === 'auto')
+        ? rb.mode
+        : defRb.mode;
+
+    return {
+        enabled: typeof rb.enabled === 'boolean' ? rb.enabled : defRb.enabled,
+        mode,
+        strength: clamp(rb.strength, 0, 100, defRb.strength),
+        blur: clamp(rb.blur, 0, 12, defRb.blur),
+        desaturate: clamp(rb.desaturate, 0, 100, defRb.desaturate),
+        tint: typeof rb.tint === 'string' ? rb.tint : defRb.tint,
+    };
+}
+
 // 🎨 颜色生成器
 function generateColor(str: string) {
     const colors = [
@@ -163,6 +186,17 @@ export function normalizeConfig(raw: any): Config {
             ...base.theme.siteCard,
             ...(input.theme?.siteCard || {}),
         },
+        readability: normalizeReadability(
+            (input.theme as any)?.readability,
+            (base.theme as any)?.readability ?? {
+                enabled: true,
+                mode: 'auto',
+                strength: 22,
+                blur: 0,
+                desaturate: 0,
+                tint: undefined,
+            }
+        ),
     };
 
 

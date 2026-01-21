@@ -102,6 +102,24 @@ export interface ThemeConfig {
         showDomain: boolean;    // url 域名
     };
 
+    /**
+     * 可读性遮罩层：用于提升壁纸上 UI 的可读性
+     * - enabled: 是否启用遮罩层
+     * - mode: 自动/压暗/提亮
+     * - strength: 强度 0~100（建议默认 18~25）
+     * - blur: backdrop blur（0~12，默认 0）
+     * - desaturate: 降饱和 0~100（默认 0）
+     * - tint: 可选自定义遮罩色（如 '#000000' 或 '#ffffff'），一般不需要
+     */
+    readability: {
+        enabled: boolean;
+        mode: 'auto' | 'darken' | 'lighten';
+        strength: number;      // 0~100
+        blur: number;          // 0~12
+        desaturate: number;    // 0~100
+        tint?: string;         // optional: '#000000' | '#ffffff' | 'rgba(...)'
+    };
+
 }
 
 export interface SearchEngine {

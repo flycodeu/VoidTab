@@ -273,14 +273,16 @@ onBeforeUnmount(() => {
 /* ------------------------------ */
 .sidebar-rail {
   position: relative;
-  background: var(--sidebar-surface);
+  isolation: isolate;              /* 防止混合模式污染 */
+  background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
   border: 1px solid var(--sidebar-border);
   box-shadow: var(--sidebar-shadow);
   color: var(--sidebar-text);
 
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate));
+  -webkit-backdrop-filter: blur(var(--sidebar-blur)) saturate(var(--sidebar-saturate));
 }
+
 
 /* 贴边那侧不画边框 */
 .sidebar-rail[data-side='left'] {

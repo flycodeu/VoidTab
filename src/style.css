@@ -78,6 +78,17 @@
     --sidebar-text: rgba(255, 255, 255, 0.92);
     --sidebar-muted: rgba(255, 255, 255, 0.55);
     --sidebar-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+    --sidebar-surface-rgb: 21, 21, 24; /* dark: 接近你现在 #151518 */
+    --sidebar-alpha: 0.58; /* 透明度强度（0~1） */
+    --sidebar-blur: 18px; /* 背景模糊强度 */
+    --sidebar-saturate: 140%; /* 背景饱和度提升，玻璃更“干净” */
+    --sidebar-control-alpha: 0.78;
+    --sidebar-accent-hover-bg: 0.03; /* hover 背景的 accent 强度 */
+    --sidebar-accent-hover-border: 0.16; /* hover 边框的 accent 强度 */
+    --sidebar-accent-ring: 0.10; /* hover 外圈光晕强度 */
+
+    --sidebar-accent-brand-bg: 0.10; /* 顶部 Logo 背景强度 */
+    --sidebar-accent-brand-border: 0.14; /* 顶部 Logo 边框强度 */
 
     /* ================= Modal Fix Vars (dark) ================= */
     --modal-footer-bg: rgba(255, 255, 255, 0.03);
@@ -91,22 +102,22 @@
     --app-cursor: auto;
     --app-cursor-pointer: pointer;
 
-    --fab-bg: rgba(255,255,255,0.08);
-    --fab-bg-hover: rgba(255,255,255,0.10);
-    --fab-border: rgba(255,255,255,0.12);
-    --fab-shadow: 0 12px 26px rgba(0,0,0,0.22);
+    --fab-bg: rgba(255, 255, 255, 0.08);
+    --fab-bg-hover: rgba(255, 255, 255, 0.10);
+    --fab-border: rgba(255, 255, 255, 0.12);
+    --fab-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
 
     /* 图标默认颜色（非 hover） */
-    --fab-icon: rgba(255,255,255,0.88);
-    --fab-icon-muted: rgba(255,255,255,0.72);
+    --fab-icon: rgba(255, 255, 255, 0.88);
+    --fab-icon-muted: rgba(255, 255, 255, 0.72);
 
     --term-bg: #0c0c0c;
-    --term-panel: rgba(255,255,255,0.05);
-    --term-border: rgba(255,255,255,0.10);
-    --term-fg: rgba(255,255,255,0.90);
-    --term-muted: rgba(255,255,255,0.72);
-    --term-dim: rgba(255,255,255,0.46);
-    --term-shadow: 0 22px 60px rgba(0,0,0,0.65);
+    --term-panel: rgba(255, 255, 255, 0.05);
+    --term-border: rgba(255, 255, 255, 0.10);
+    --term-fg: rgba(255, 255, 255, 0.90);
+    --term-muted: rgba(255, 255, 255, 0.72);
+    --term-dim: rgba(255, 255, 255, 0.46);
+    --term-shadow: 0 22px 60px rgba(0, 0, 0, 0.65);
     --term-scanline-alpha: 0.25;
     --term-glow-alpha: 0.18;
     --sidebar-active: rgba(var(--accent-color-rgb), 0.12);
@@ -174,6 +185,16 @@ html.light {
     --sidebar-text: rgba(17, 24, 39, 0.92);
     --sidebar-muted: rgba(17, 24, 39, 0.55);
     --sidebar-shadow: 0 18px 40px rgba(0, 0, 0, 0.12);
+    --sidebar-surface-rgb: 255, 255, 255; /* light: 白底玻璃 */
+    --sidebar-alpha: 0.55; /* 浅色可稍微更透明 */
+    --sidebar-blur: 16px;
+    --sidebar-saturate: 140%;
+    --sidebar-control-alpha: 0.72;
+    --sidebar-accent-hover-bg: 0.02;
+    --sidebar-accent-hover-border: 0.14;
+    --sidebar-accent-ring: 0.08;
+    --sidebar-accent-brand-bg: 0.08;
+    --sidebar-accent-brand-border: 0.12;
 
     /* ================= Modal Fix Vars (light) ================= */
     --modal-footer-bg: rgba(0, 0, 0, 0.02);
@@ -183,13 +204,13 @@ html.light {
 
 
     /* FAB（悬浮按钮）*/
-    --fab-bg: rgba(15,23,42,0.06);
-    --fab-bg-hover: rgba(15,23,42,0.08);
-    --fab-border: rgba(0,0,0,0.10);
-    --fab-shadow: 0 12px 26px rgba(0,0,0,0.10);
+    --fab-bg: rgba(15, 23, 42, 0.06);
+    --fab-bg-hover: rgba(15, 23, 42, 0.08);
+    --fab-border: rgba(0, 0, 0, 0.10);
+    --fab-shadow: 0 12px 26px rgba(0, 0, 0, 0.10);
 
-    --fab-icon: rgba(17,24,39,0.88);
-    --fab-icon-muted: rgba(17,24,39,0.72);
+    --fab-icon: rgba(17, 24, 39, 0.88);
+    --fab-icon-muted: rgba(17, 24, 39, 0.72);
 
     --term-bg: var(--page-fallback);
     --term-panel: var(--widget-surface-2);
@@ -547,7 +568,6 @@ html.light .panel-modal [class*="text-white"] {
     border-color: var(--modal-border);
     color: var(--modal-text);
 }
-
 
 
 /*  科技字体：改为变量驱动（不再写死 JetBrains） */
