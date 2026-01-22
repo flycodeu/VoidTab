@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
 }
 
 /* ===================================================================== */
-/* ✅ Sidebar Rail：玻璃底 + 贴边框呼吸灯（不外扩）                        */
+/*  Sidebar Rail：玻璃底 + 贴边框呼吸灯（不外扩）                        */
 /* - 呼吸灯只作用在边框附近（inset ring），不做大面积 glow               */
 /* ===================================================================== */
 .sidebar-rail {
@@ -285,7 +285,7 @@ onBeforeUnmount(() => {
   transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-/* ✅ rail hover 不染色 */
+/*  rail hover 不染色 */
 .sidebar-rail:hover {
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
 }
@@ -335,7 +335,7 @@ html.light .sidebar-icon-btn { background: rgba(0, 0, 0, 0.04); }
 html.light .sidebar-icon-btn:hover { background: rgba(0, 0, 0, 0.06); }
 
 /* ===================================================================== */
-/* ✅ 贴边框呼吸灯（关键）                                                 */
+/*  贴边框呼吸灯（关键）                                                 */
 /* - 用“inset ring”模拟贴边发光，不外扩                                    */
 /* - 只对 rail 生效，不影响内部按钮                                         */
 /* ===================================================================== */
@@ -411,7 +411,7 @@ html.light .sidebar-icon-btn:hover { background: rgba(0, 0, 0, 0.06); }
 }
 
 /* ===================================================================== */
-/* ✅ 分组按钮：不加“边框呼吸灯/外圈 glow”                                   */
+/*  分组按钮：不加“边框呼吸灯/外圈 glow”                                   */
 /* - hover 仍然有轻微中性反馈                                               */
 /* - active 只做清晰选中（背景 + 小阴影），不做发光 ring                     */
 /* ===================================================================== */
@@ -425,7 +425,7 @@ html.light .sidebar-icon-btn:hover { background: rgba(0, 0, 0, 0.06); }
 /* hover：中性雾面 */
 :deep(.sidebar-group-btn:hover) {
   background: rgba(255, 255, 255, 0.10) !important;
-  border-color: transparent !important;      /* ✅ hover 不出边框 */
+  border-color: transparent !important;      /*  hover 不出边框 */
   transform: translateY(-1px);
 }
 html.light :deep(.sidebar-group-btn:hover) {
@@ -436,12 +436,12 @@ html.light :deep(.sidebar-group-btn:hover) {
 :deep(.sidebar-group-btn.is-active) {
   position: relative !important;
   background: rgba(255, 255, 255, 0.22) !important;
-  border-color: transparent !important;      /* ✅ active 不出边框 */
+  border-color: transparent !important;      /*  active 不出边框 */
 
   transform: translateY(-1px) !important;
   box-shadow:
       0 10px 24px rgba(0, 0, 0, 0.14),
-      0 0 0 1px rgba(0, 0, 0, 0.06) inset !important; /* ✅ 仅内描边阴影 */
+      0 0 0 1px rgba(0, 0, 0, 0.06) inset !important; /*  仅内描边阴影 */
 }
 html.light :deep(.sidebar-group-btn.is-active) {
   background: rgba(0, 0, 0, 0.06) !important;
@@ -450,7 +450,7 @@ html.light :deep(.sidebar-group-btn.is-active) {
       0 0 0 1px rgba(255, 255, 255, 0.55) inset !important;
 }
 
-/* ✅ 去除左侧竖线 */
+/*  去除左侧竖线 */
 :deep(.sidebar-group-btn.is-active)::before {
   content: none !important;
 }

@@ -78,6 +78,12 @@ function isPointerInsideSidebarList(e: WheelEvent) {
   return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
 }
 
+function isInsideAnyModal(e: WheelEvent) {
+  const t = e.target as HTMLElement | null;
+  return !!t?.closest?.('[data-modal="1"]');
+}
+
+
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
@@ -115,6 +121,7 @@ function switchGroup(dir: 1 | -1) {
 function onWheelCapture(e: WheelEvent) {
   if (!e.cancelable) return;
 
+  if (isInsideAnyModal(e)) return;
   //  1) 鼠标在侧栏列表区域内：放行，让侧栏自然滚动
   // （拖拽时 target 可能是 ghost，但鼠标位置仍在侧栏区域）
   if (isPointerInsideSidebarList(e)) return;

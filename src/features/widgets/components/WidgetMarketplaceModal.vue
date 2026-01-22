@@ -50,43 +50,53 @@ const select = (type: string) => {
   emit('close');
 };
 </script>
-
 <template>
   <Transition name="modal-fade">
     <div v-if="show" class="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" @click="$emit('close')"></div>
+      <div
+          class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+          @click="$emit('close')"
+      ></div>
 
       <div
+          data-modal="1"
           class="relative w-full max-w-5xl h-[80vh] flex flex-col md:flex-row bg-[var(--settings-surface)] border border-[var(--settings-border)] rounded-2xl shadow-2xl overflow-hidden transition-colors duration-300"
           @click.stop
       >
+        <!-- 左侧分类 -->
         <div
-            class="w-full md:w-60 bg-[var(--settings-panel)] border-b md:border-b-0 md:border-r border-[var(--settings-border)] flex flex-col p-4">
+            class="w-full md:w-60 bg-[var(--settings-panel)] border-b md:border-b-0 md:border-r border-[var(--settings-border)] flex flex-col p-4 min-h-0"
+        >
           <div class="text-sm font-bold text-[var(--settings-text-secondary)] uppercase tracking-wider mb-4 px-2 pt-2">
             Widget Store
           </div>
 
-          <div class="flex flex-col gap-1 overflow-y-auto custom-scroll">
+          <!-- ✅ 关键：加 data-wheel-allow，让全局 wheel 不拦截 -->
+          <div
+              data-wheel-allow="true"
+              class="flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto custom-scroll"
+          >
             <button
                 v-for="cat in categories"
                 :key="cat.id"
                 @click="activeCategory = cat.id"
                 class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium group relative overflow-hidden"
                 :class="[
-                  activeCategory === cat.id
-                    ? 'bg-[var(--accent-color)] text-white shadow-md'
-                    : 'text-[var(--settings-text-secondary)] hover:bg-[var(--settings-input-bg)] hover:text-[var(--settings-text)]'
-                ]"
+                activeCategory === cat.id
+                  ? 'bg-[var(--accent-color)] text-white shadow-md'
+                  : 'text-[var(--settings-text-secondary)] hover:bg-[var(--settings-input-bg)] hover:text-[var(--settings-text)]'
+              ]"
             >
-              <component :is="cat.icon" :size="18" :weight="activeCategory === cat.id ? 'fill' : 'regular'"/>
+              <component :is="cat.icon" :size="18" :weight="activeCategory === cat.id ? 'fill' : 'regular'" />
               <span class="relative z-10">{{ cat.label }}</span>
             </button>
           </div>
         </div>
 
-        <div class="flex-1 flex flex-col min-w-0 bg-[var(--settings-surface)]">
-          <div
-              class="h-16 border-b border-[var(--settings-border)] flex items-center justify-between px-6 gap-4 shrink-0">
+        <!-- 右侧内容 -->
+        <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--settings-surface)]">
+          <!-- 头部（固定） -->
+          <div class="h-16 border-b border-[var(--settings-border)] flex items-center justify-between px-6 gap-4 shrink-0">
             <div class="relative flex-1 max-w-md group">
               <PhMagnifyingGlass
                   :size="18"
@@ -104,11 +114,15 @@ const select = (type: string) => {
                 @click="$emit('close')"
                 class="p-2 rounded-lg text-[var(--settings-text-secondary)] hover:bg-[var(--settings-input-bg)] hover:text-[var(--settings-text)] transition-colors"
             >
-              <PhX :size="20"/>
+              <PhX :size="20" />
             </button>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-6 custom-scroll">
+          <!-- ✅ 关键：这里也加 data-wheel-allow -->
+          <div
+              data-wheel-allow="true"
+              class="flex-1 min-h-0 overflow-y-auto p-6 custom-scroll"
+          >
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <button
                   v-for="widget in filteredWidgets"
@@ -121,7 +135,7 @@ const select = (type: string) => {
                       class="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md bg-gradient-to-br transition-transform duration-300 group-hover:scale-110"
                       :class="widget.color"
                   >
-                    <component :is="widget.icon" :size="24" weight="fill"/>
+                    <component :is="widget.icon" :size="24" weight="fill" />
                   </div>
 
                   <div
@@ -140,17 +154,20 @@ const select = (type: string) => {
 
                 <div class="mt-4 flex items-center justify-end">
                   <div
-                      class="px-3 py-1.5 rounded-lg bg-[var(--accent-color)] text-white text-xs font-bold flex items-center gap-1.5 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 shadow-lg shadow-[var(--accent-color)]/20">
-                    <PhPlus weight="bold"/>
+                      class="px-3 py-1.5 rounded-lg bg-[var(--accent-color)] text-white text-xs font-bold flex items-center gap-1.5 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 shadow-lg shadow-[var(--accent-color)]/20"
+                  >
+                    <PhPlus weight="bold" />
                     <span>添加</span>
                   </div>
                 </div>
               </button>
             </div>
 
-            <div v-if="filteredWidgets.length === 0"
-                 class="h-full flex flex-col items-center justify-center opacity-40 text-[var(--settings-text-secondary)] min-h-[300px]">
-              <PhLayout :size="48" weight="duotone" class="mb-2"/>
+            <div
+                v-if="filteredWidgets.length === 0"
+                class="h-full flex flex-col items-center justify-center opacity-40 text-[var(--settings-text-secondary)] min-h-[300px]"
+            >
+              <PhLayout :size="48" weight="duotone" class="mb-2" />
               <p class="text-sm">没有找到相关组件</p>
             </div>
           </div>
@@ -159,6 +176,8 @@ const select = (type: string) => {
     </div>
   </Transition>
 </template>
+
+
 
 <style scoped>
 .modal-fade-enter-active,
@@ -170,6 +189,9 @@ const select = (type: string) => {
 .modal-fade-leave-to {
   opacity: 0;
   transform: scale(0.96);
+}
+.custom-scroll {
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 滚动条优化 */
