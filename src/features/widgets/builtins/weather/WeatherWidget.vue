@@ -381,7 +381,7 @@ const onClickCard = () => {
 </template>
 
 <style scoped>
-/*  关键：硬裁剪 + 隔离绘制层（解决 loaded 后阴影/滤镜溢出） */
+/*  硬裁剪 + 隔离绘制层（解决 loaded 后阴影/滤镜溢出） */
 .weather-card {
   clip-path: inset(0 round 18px);
   isolation: isolate;

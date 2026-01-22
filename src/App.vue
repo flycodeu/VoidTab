@@ -5,7 +5,7 @@ import {useConfigStore} from './stores/useConfigStore';
 import {useUiStore} from './stores/ui/useUiStore.ts';
 import {PhSpinner} from '@phosphor-icons/vue';
 import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
-import { PhWarning } from '@phosphor-icons/vue';
+import {PhWarning} from '@phosphor-icons/vue';
 
 // 基础组件
 import SideBar from './features/navigation/components/SideBar.vue';
@@ -24,7 +24,7 @@ const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/Group
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
 import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
-import ConfirmDialog from "./shared/ui/dialogs/ConfirmDialog.vue";
+import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -46,7 +46,7 @@ const isFocusMode = computed({
   set: (val: boolean) => {
     store.config.focusMode = val;
     store.saveConfig();
-  }
+  },
 });
 
 const toggleSidebarPos = () => {
@@ -59,7 +59,9 @@ const setActiveGroupId = (id: string) => {
 
 const dialogLogic = useDialogs(store, ui);
 
-// --- 滚轮切换分组逻辑 ---
+// ======================================================
+// 滚轮切换分组逻辑：只在“没有可滚容器还能滚”时才切组
+// ======================================================
 const WHEEL_THRESHOLD = 80;
 const WHEEL_COOLDOWN = 360;
 let wheelAcc = 0;
@@ -67,10 +69,6 @@ let lastWheelTs = 0;
 let wheelLocked = false;
 let wheelHandler: ((e: WheelEvent) => void) | null = null;
 
-/**
- *  新增：判断鼠标是否在侧栏分组列表区域内
- * 依赖 SideBar 列表容器有 data-sidebar-list="1"
- */
 function isPointerInsideSidebarList(e: WheelEvent) {
   const el = document.querySelector('[data-sidebar-list="1"]') as HTMLElement | null;
   if (!el) return false;
@@ -78,11 +76,32 @@ function isPointerInsideSidebarList(e: WheelEvent) {
   return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
 }
 
-function isInsideAnyModal(e: WheelEvent) {
-  const t = e.target as HTMLElement | null;
-  return !!t?.closest?.('[data-modal="1"]');
+function isInsideAnyModalByTarget(target: HTMLElement | null) {
+  return !!target?.closest?.('[data-modal="1"]');
 }
 
+function getPointerElementFromWheel(e: WheelEvent) {
+  return (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) || (e.target as HTMLElement | null);
+}
+
+function findScrollableAncestor(start: HTMLElement | null) {
+  let el: HTMLElement | null = start;
+  while (el) {
+    const style = window.getComputedStyle(el);
+    const oy = style.overflowY;
+    const isScrollableY = oy === 'auto' || oy === 'scroll' || oy === 'overlay';
+    const hasScroll = el.scrollHeight > el.clientHeight + 1;
+    if (isScrollableY && hasScroll) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function canScrollInDirection(el: HTMLElement, deltaY: number) {
+  if (deltaY < 0) return el.scrollTop > 0;
+  if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+  return false;
+}
 
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
@@ -91,10 +110,7 @@ function canWheelSwitchGroup() {
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
   if (isTerminalOpen.value) return false;
   if (ui.dragState?.isDragging) return false;
-
-  //  新增：分组排序拖拽中禁止滚轮切组（避免抢 wheel）
   if ((ui as any).isGroupSorting) return false;
-
   return true;
 }
 
@@ -111,7 +127,7 @@ function switchGroup(dir: 1 | -1) {
   const groups = store.config.layout || [];
   if (groups.length <= 1) return;
   const current = activeGroupId.value;
-  const idx = groups.findIndex(g => g.id === current);
+  const idx = groups.findIndex((g) => g.id === current);
   const base = idx >= 0 ? idx : 0;
   const nextIdx = (base + dir + groups.length) % groups.length;
   const nextId = groups[nextIdx]?.id;
@@ -121,46 +137,28 @@ function switchGroup(dir: 1 | -1) {
 function onWheelCapture(e: WheelEvent) {
   if (!e.cancelable) return;
 
-  if (isInsideAnyModal(e)) return;
-  //  1) 鼠标在侧栏列表区域内：放行，让侧栏自然滚动
-  // （拖拽时 target 可能是 ghost，但鼠标位置仍在侧栏区域）
+  const pointerEl = getPointerElementFromWheel(e);
+
+  // 任意 modal 内直接放行（不要抢滚动）
+  if (isInsideAnyModalByTarget(pointerEl)) return;
+
+  // 侧栏列表区域放行
   if (isPointerInsideSidebarList(e)) return;
 
-  //  2) 分组排序中：放行（避免抢 wheel）
+  // 分组排序放行
   if ((ui as any).isGroupSorting) return;
 
-  const target = e.target as HTMLElement | null;
+  // 指针下存在可滚容器且还能滚 -> 放行
+  const scrollable = findScrollableAncestor(pointerEl);
+  if (scrollable && canScrollInDirection(scrollable, e.deltaY)) return;
 
-  /**
-   *  关键修改：不要用 ".overflow-y-auto" 来推断滚动容器
-   * 因为拖拽时 target 常常是 ghost/overlay（不在容器树中），会误判为“无滚动容器”，进而触发切组。
-   *
-   * 这里只保留你自己显式标记的主滚动容器：data-main-scroll="1"
-   */
-  const scrollContainer = target?.closest('[data-main-scroll="1"]') as HTMLElement | null;
-
-  if (scrollContainer) {
-    const {scrollTop, scrollHeight, clientHeight} = scrollContainer;
-    const hasScrollbar = scrollHeight > clientHeight + 1;
-    if (hasScrollbar) {
-      const isScrollingUp = e.deltaY < 0;
-      const isScrollingDown = e.deltaY > 0;
-      const isAtTop = scrollTop <= 0;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
-      // 主滚动容器还能滚就放行，不切组
-      if ((isScrollingUp && !isAtTop) || (isScrollingDown && !isAtBottom)) {
-        return;
-      }
-    }
-  }
-
-  // 保留你原逻辑：显式允许滚轮的区域，不切组
-  if (target?.closest?.('[data-wheel-allow="true"]')) return;
+  // 显式允许区域放行
+  if (pointerEl?.closest?.('[data-wheel-allow="true"]')) return;
 
   if (!canWheelSwitchGroup()) return;
-  if (isTypingTarget(target)) return;
+  if (isTypingTarget(pointerEl)) return;
 
-  // 走到这里才会阻止默认滚动并做切组
+  // 只有无处可滚时才切组
   e.preventDefault();
 
   if (wheelLocked) return;
@@ -170,6 +168,7 @@ function onWheelCapture(e: WheelEvent) {
   wheelAcc += e.deltaY;
 
   if (Math.abs(wheelAcc) < WHEEL_THRESHOLD) return;
+
   const dir = wheelAcc > 0 ? 1 : -1;
   wheelAcc = 0;
   wheelLocked = true;
@@ -179,7 +178,156 @@ function onWheelCapture(e: WheelEvent) {
   }, WHEEL_COOLDOWN);
 }
 
-// 切换终端模式
+// ======================================================
+// 修复：整理模式拖拽靠边自动滚动（使用 dragover 而不是 pointermove）
+// ======================================================
+
+/** 边缘触发范围（px） */
+const AUTO_SCROLL_MARGIN = 110;
+/** 基础速度（px/帧） */
+const AUTO_SCROLL_BASE_SPEED = 10;
+/** 最大速度（px/帧） */
+const AUTO_SCROLL_MAX_SPEED = 28;
+
+let autoScrollRaf: number | null = null;
+let lastPointerY = 0;
+
+/** 选择真正可滚动的主容器：
+ * - 允许你在多个 data-main-scroll="1" 中选“真的能滚”的那个
+ */
+function pickMainScrollEl(): HTMLElement | null {
+  const list = Array.from(document.querySelectorAll('[data-main-scroll="1"]')) as HTMLElement[];
+  if (!list.length) return null;
+
+  // 选 scrollHeight - clientHeight 最大的那个（最可能是主滚动容器）
+  let best: HTMLElement | null = null;
+  let bestDelta = 0;
+
+  for (const el of list) {
+    const delta = el.scrollHeight - el.clientHeight;
+    if (delta > bestDelta + 1) {
+      best = el;
+      bestDelta = delta;
+    }
+  }
+
+  return best ?? list[0] ?? null;
+}
+
+/** 判断“现在是否在拖拽中”
+ * - 不只依赖 ui.dragState（site/icon 拖拽可能不走这套）
+ * - 兜底用 DOM class（Sortable/VueDraggable 常见）
+ */
+function isAnyDraggingNow(): boolean {
+  if (ui.dragState?.isDragging) return true;
+  if ((ui as any).isGroupSorting) return true;
+
+  // DOM 兜底（按你项目里出现过的 class）
+  const hit =
+      document.querySelector('.sortable-ghost') ||
+      document.querySelector('.group-ghost') ||
+      document.querySelector('.group-drag') ||
+      document.querySelector('.vue-draggable-dragging') ||
+      document.querySelector('.dragging') ||
+      document.querySelector('[draggable="true"].dragging');
+
+  return !!hit;
+}
+
+/** auto-scroll 生效条件：只在整理模式拖拽时 */
+function canAutoScroll(): boolean {
+  if (!store.isLoaded) return false;
+  if (isFocusMode.value) return false;
+  if (!isGlobalEditMode.value) return false;
+  if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
+  if (isTerminalOpen.value) return false;
+
+  // 拖拽中（不只看 ui.dragState）
+  if (!isAnyDraggingNow()) return false;
+
+  return true;
+}
+
+/** 根据靠近边缘程度计算速度（越靠近越快） */
+function calcSpeed(y: number): { dir: -1 | 0 | 1; speed: number } {
+  const vh = window.innerHeight;
+
+  // 顶部
+  if (y <= AUTO_SCROLL_MARGIN) {
+    const k = Math.min(1, (AUTO_SCROLL_MARGIN - y) / AUTO_SCROLL_MARGIN);
+    const speed = AUTO_SCROLL_BASE_SPEED + (AUTO_SCROLL_MAX_SPEED - AUTO_SCROLL_BASE_SPEED) * k;
+    return {dir: -1, speed};
+  }
+
+  // 底部
+  if (y >= vh - AUTO_SCROLL_MARGIN) {
+    const dist = vh - y;
+    const k = Math.min(1, (AUTO_SCROLL_MARGIN - dist) / AUTO_SCROLL_MARGIN);
+    const speed = AUTO_SCROLL_BASE_SPEED + (AUTO_SCROLL_MAX_SPEED - AUTO_SCROLL_BASE_SPEED) * k;
+    return {dir: 1, speed};
+  }
+
+  return {dir: 0, speed: 0};
+}
+
+function stopAutoScroll() {
+  if (autoScrollRaf != null) cancelAnimationFrame(autoScrollRaf);
+  autoScrollRaf = null;
+}
+
+function autoScrollTick() {
+  if (!canAutoScroll()) {
+    stopAutoScroll();
+    return;
+  }
+
+  const sc = pickMainScrollEl();
+  if (!sc) {
+    stopAutoScroll();
+    return;
+  }
+
+  const {dir, speed} = calcSpeed(lastPointerY);
+  if (dir === 0) {
+    // 在中间区域就停，但保持下一次 dragover 可以再启动
+    stopAutoScroll();
+    return;
+  }
+
+  sc.scrollTop += dir * speed;
+  autoScrollRaf = requestAnimationFrame(autoScrollTick);
+}
+
+function ensureAutoScrollRunning() {
+  if (autoScrollRaf != null) return;
+  autoScrollRaf = requestAnimationFrame(autoScrollTick);
+}
+
+/** 用 DragEvent 更新指针位置（拖拽时一定会触发） */
+function onDragOverForAutoScroll(e: DragEvent) {
+  if (!e) return;
+  // dragover 会持续触发，拿 clientY 更新即可
+  lastPointerY = e.clientY || lastPointerY;
+
+  if (!canAutoScroll()) return;
+
+  const {dir} = calcSpeed(lastPointerY);
+  if (dir !== 0) ensureAutoScrollRunning();
+}
+
+/** 兜底：有些实现仍会有 mousemove */
+function onMouseMoveForAutoScroll(e: MouseEvent) {
+  lastPointerY = e.clientY || lastPointerY;
+}
+
+/** dragend/drop 时停止 */
+function onDragEndForAutoScroll() {
+  stopAutoScroll();
+}
+
+// ======================================================
+// 终端
+// ======================================================
 const handleToggleTerminal = () => {
   if (!store.config.runtime.terminal) {
     store.config.runtime.terminal = {history: [], theme: 'dark', isOpen: false};
@@ -188,7 +336,6 @@ const handleToggleTerminal = () => {
   store.saveConfig();
 };
 
-// 关闭终端
 const closeTerminal = () => {
   if (store.config.runtime.terminal) {
     store.config.runtime.terminal.isOpen = false;
@@ -205,10 +352,28 @@ onMounted(async () => {
 
   wheelHandler = (e: WheelEvent) => onWheelCapture(e);
   window.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
+
+  // 核心：dragover 驱动自动滚动（最关键）
+  window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: true});
+  window.addEventListener('dragend', onDragEndForAutoScroll, {capture: true, passive: true});
+  window.addEventListener('drop', onDragEndForAutoScroll, {capture: true, passive: true});
+
+  // 兜底：部分拖拽实现仍会有 mousemove
+  window.addEventListener('mousemove', onMouseMoveForAutoScroll, {capture: true, passive: true});
+
+  window.addEventListener('blur', onDragEndForAutoScroll);
 });
 
 onUnmounted(() => {
   if (wheelHandler) window.removeEventListener('wheel', wheelHandler, true);
+
+  window.removeEventListener('dragover', onDragOverForAutoScroll, true);
+  window.removeEventListener('dragend', onDragEndForAutoScroll, true);
+  window.removeEventListener('drop', onDragEndForAutoScroll, true);
+  window.removeEventListener('mousemove', onMouseMoveForAutoScroll, true);
+  window.removeEventListener('blur', onDragEndForAutoScroll);
+
+  stopAutoScroll();
 });
 
 // 处理事件：切换编辑模式
@@ -218,7 +383,7 @@ const handleToggleEdit = () => {
 
 // 处理事件：配置组件
 const handleEditWidgetSettings = (item: any) => {
-  console.log("配置组件", item);
+  console.log('配置组件', item);
 };
 
 // 移动端视口信息
@@ -231,9 +396,15 @@ const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
 };
 
 const showDevtoolsTip = ref(false);
-const openDevToolsTip = () => { showDevtoolsTip.value = true; };
-const closeDevToolsTip = () => { showDevtoolsTip.value = false; };
-const handleOpenDevTools = () => { openDevToolsTip(); };
+const openDevToolsTip = () => {
+  showDevtoolsTip.value = true;
+};
+const closeDevToolsTip = () => {
+  showDevtoolsTip.value = false;
+};
+const handleOpenDevTools = () => {
+  openDevToolsTip();
+};
 
 const tryOpenDevTools = () => {
   try {
@@ -252,6 +423,7 @@ const tryOpenDevTools = () => {
   handleOpenDevTools();
 };
 </script>
+
 <template>
   <div v-if="!store.isLoaded" class="fixed inset-0 flex items-center justify-center bg-[#121212] text-white z-[9999]">
     <div class="flex flex-col items-center gap-4">
@@ -264,26 +436,19 @@ const tryOpenDevTools = () => {
       v-else
       class="h-screen w-full relative overflow-hidden font-sans isolate"
       :class="[
-        // --- 新增以下绑定 ---
-        { 'theme-tech-font': store.config.theme.techFont },
-        { 'theme-breathing': store.config.theme.breathingLight },
-        { 'theme-neon': store.config.theme.neonGlow }
-      ]"
+      { 'theme-tech-font': store.config.theme.techFont },
+      { 'theme-breathing': store.config.theme.breathingLight },
+      { 'theme-neon': store.config.theme.neonGlow }
+    ]"
       @click="ui.closeContextMenu()"
       @contextmenu="ui.closeContextMenu()"
       style="color: var(--text-primary);"
   >
-
     <Transition name="fade">
-      <TerminalPanel
-          v-if="isTerminalOpen"
-          class="z-[9999]"
-          @close="closeTerminal"
-      />
+      <TerminalPanel v-if="isTerminalOpen" class="z-[9999]" @close="closeTerminal"/>
     </Transition>
 
     <div v-show="!isTerminalOpen" class="w-full h-full relative">
-
       <WallpaperLayer
           :wallpaper="store.config.theme.wallpaper"
           :blur="store.config.theme.blur"
@@ -330,7 +495,6 @@ const tryOpenDevTools = () => {
             :mobileWidth="mobileViewport.width"
         />
 
-
         <ContextMenu
             @toggleEdit="handleToggleEdit"
             @editWidgetSettings="handleEditWidgetSettings"
@@ -351,12 +515,7 @@ const tryOpenDevTools = () => {
       />
 
       <Transition name="slide-fade">
-        <AiChatPanel
-            v-if="showAiPanel"
-            class="z-[80]"
-            :isOpen="showAiPanel"
-            @close="showAiPanel = false"
-        />
+        <AiChatPanel v-if="showAiPanel" class="z-[80]" :isOpen="showAiPanel" @close="showAiPanel = false"/>
       </Transition>
 
       <div class="relative z-[100]">
@@ -382,8 +541,6 @@ const tryOpenDevTools = () => {
         <DeleteConfirmHost/>
       </div>
     </div>
-
-
   </div>
 
   <ConfirmDialog
@@ -410,14 +567,14 @@ const tryOpenDevTools = () => {
 </template>
 
 <style>
-/* 全局强制隐藏滚动条 - 解决插件模式下样式丢失问题 */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  overflow: hidden; /* 防止 body 滚动 */
+  overflow: hidden;
 }
 
-/* 隐藏所有元素的滚动条但保留滚动功能 */
+/* 隐藏所有元素滚动条但保留滚动功能 */
 ::-webkit-scrollbar {
   width: 0;
   height: 0;

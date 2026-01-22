@@ -120,7 +120,7 @@ const updateDensity = (w: number) => {
   else densityMode.value = "wide";
 };
 
-/**  关键：切换 2×1 / 3×1 时强制 nextTick 后重新测量一次 */
+/**  切换 2×1 / 3×1 时强制 nextTick 后重新测量一次 */
 const ensureObserveAndMeasure = async () => {
   await nextTick();
   if (!cardEl.value) return;
@@ -347,7 +347,7 @@ const showDomainRow = computed(() => {
   background: rgba(var(--overlay-rgb), 0.16);
 }
 
-/* 关键：别用 align-items:center，否则高度小会“上下裁切感”更明显 */
+/* 别用 align-items:center，否则高度小会“上下裁切感”更明显 */
 .card-inner {
   height: 100%;
   width: 100%;

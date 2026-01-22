@@ -71,7 +71,7 @@ const select = (type: string) => {
             Widget Store
           </div>
 
-          <!-- ✅ 关键：加 data-wheel-allow，让全局 wheel 不拦截 -->
+          <!-- ✅ 加 data-wheel-allow，让全局 wheel 不拦截 -->
           <div
               data-wheel-allow="true"
               class="flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto custom-scroll"
@@ -118,7 +118,7 @@ const select = (type: string) => {
             </button>
           </div>
 
-          <!-- ✅ 关键：这里也加 data-wheel-allow -->
+          <!-- ✅ 这里也加 data-wheel-allow -->
           <div
               data-wheel-allow="true"
               class="flex-1 min-h-0 overflow-y-auto p-6 custom-scroll"

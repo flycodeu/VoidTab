@@ -30,7 +30,7 @@ const labelH = computed(() => {
 });
 
 /**
- * ✅ 关键：预览强制刷新 key
+ * ✅ 预览强制刷新 key
  * 很多预览组件内部用 canvas/计算布局，只在 mounted 时跑一次
  * 用 key 可以确保在关键配置变更时重建组件，达到“实时预览”
  */
@@ -439,7 +439,7 @@ const previewKey = computed(() => {
   border-color: rgba(255, 255, 255, 0.10);
 }
 
-/* 关键：缩放整个预览 */
+/* 缩放整个预览 */
 .preview-scale {
   transform: scale(0.72); /* 0.6~0.8 之间调 */
   transform-origin: top left;

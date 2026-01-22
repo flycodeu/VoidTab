@@ -74,7 +74,7 @@ function normalizeItem(rawItem: any): SiteItem {
         w: Number(rawItem?.w) || (kind === 'widget' ? 2 : 1),
         h: Number(rawItem?.h) || (kind === 'widget' ? 2 : 1),
 
-        //  关键：站点扩展字段要保留
+        //  站点扩展字段要保留
         remark: typeof rawItem?.remark === 'string' ? rawItem.remark : '',
         createdAt: typeof rawItem?.createdAt === 'number' ? rawItem.createdAt : undefined,
     };

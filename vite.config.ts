@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
             minify: 'esbuild',
 
             rollupOptions: {
-                //   关键：web 构建不要包含 background 入口
+                //   web 构建不要包含 background 入口
                 input: isExt
                     ? {
                         main: resolve(__dirname, 'index.html'),

@@ -166,7 +166,7 @@ export const useConfigStore = defineStore('config', () => {
                     const defW = meta?.defaultW ?? 2;
                     const defH = meta?.defaultH ?? 2;
 
-                    // 关键：不再用 if (!item.w) 这种“falsy”判断（NaN/字符串/0 会出坑）
+                    // 不再用 if (!item.w) 这种“falsy”判断（NaN/字符串/0 会出坑）
                     item.w = clampInt(item.w, 1, MAX_WIDGET_W, defW);
                     item.h = clampInt(item.h, 1, MAX_WIDGET_H, defH);
 

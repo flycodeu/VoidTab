@@ -245,7 +245,7 @@ body {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  关键：主面板 widget 统一用“不透明卡片”                                     */
+/*  主面板 widget 统一用“不透明卡片”                                     */
 /* -------------------------------------------------------------------------- */
 .widget-card {
     background: var(--widget-surface); /*  不要 mix transparent */
@@ -473,7 +473,7 @@ body {
     box-shadow: var(--sidebar-shadow);
     color: var(--sidebar-text);
 
-    /* 关键：不要 glass blur，避免压字/与壁纸混色 */
+    /* 不要 glass blur，避免压字/与壁纸混色 */
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
 

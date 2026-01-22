@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
             <span class="text-[10px] font-bold uppercase tracking-widest sidebar-muted">分组</span>
           </div>
 
-          <!-- 关键：加 data-wheel-allow="true" 让全局滚轮切组逻辑放行正常滚动
+          <!-- 加 data-wheel-allow="true" 让全局滚轮切组逻辑放行正常滚动
                同时加 data-sidebar-list="1" 便于你后续在 App 里按区域放行（可选） -->
           <div
               ref="listRef"

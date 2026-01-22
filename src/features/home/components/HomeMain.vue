@@ -27,7 +27,7 @@ const store = useConfigStore();
 const ui = useUiStore();
 
 /** =========================
- *   关键：计算“最终站点卡片宽度”
+ *   计算“最终站点卡片宽度”
  *  - 用户设置 (store.config.theme.siteCard.w) 可以是 2 或 3
  *  - 窄屏强制 <= 2（保证一行至少两个）
  *  ========================= */
@@ -124,7 +124,7 @@ const handleBackgroundClick = () => {
       "
         @contextmenu.stop="handleGlobalContextMenu"
     >
-      <!--  关键：把“最终卡片尺寸”传给 MainGrid -->
+      <!--  把“最终卡片尺寸”传给 MainGrid -->
       <MainGrid
           v-if="!isFocusMode"
           :activeGroupId="activeGroupId"
