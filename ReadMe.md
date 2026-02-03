@@ -2,6 +2,9 @@
 
 VoidTab 是一个基于 Vue 3 + TypeScript 构建的极简、赛博朋克风格浏览器起始页（New Tab Extension）。
 
+目前已经上架Edge插件：
+![img.png](img/img_0.png)
+
 它摒弃了传统导航页的臃肿与广告，专注于极致的视觉体验与纯粹的效率。拥有高度定制化的毛玻璃 UI、沉浸式的数据控制台（HUD）、**
 双模切换（GUI/CLI）**以及支持多端同步的数据存储。
 ![img.png](img/img.png)
