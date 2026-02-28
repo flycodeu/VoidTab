@@ -1,6 +1,6 @@
 // src/composables/icon/useDebouncedFavicon.ts
 import {ref, watch, onUnmounted, type Ref} from 'vue';
-import {getIconCandidates, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
+import {getIconCandidates, getEffectiveMinEdgePx, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
 
 export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
     const faviconUrl = ref('');
@@ -41,7 +41,8 @@ export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
             if (currentImg === img) {
                 const w = Number(img.naturalWidth || 0);
                 const h = Number(img.naturalHeight || 0);
-                const lowQuality = Math.min(w, h) > 0 && Math.min(w, h) < ICON_MIN_EDGE_PX;
+                const minEdge = getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
+                const lowQuality = Math.min(w, h) > 0 && Math.min(w, h) < minEdge;
                 if (lowQuality && remaining.length > 0) {
                     tryLoadIcons(remaining);
                     return;

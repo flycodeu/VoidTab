@@ -4,7 +4,7 @@ import {useConfigStore} from "../../../stores/useConfigStore.ts";
 import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
-import {resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
+import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -23,7 +23,6 @@ const isAuto = computed(() => props.item.iconType === "auto" || !props.item.icon
 const autoIconUrl = ref("");
 const isObjectUrl = ref(false);
 const resolveToken = ref(0);
-const resolveRetry = ref(0);
 
 const revokeObjectUrl = () => {
   if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
@@ -54,9 +53,11 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 
   if (!result?.url) {
     setAutoIconUrl("", false);
+    hasLoadError.value = true;
     return;
   }
 
+  hasLoadError.value = false;
   setAutoIconUrl(result.url, !!result.objectUrl);
 };
 
@@ -64,7 +65,6 @@ watch(
     () => [props.item.url, props.item.iconType],
     () => {
       hasLoadError.value = false;
-      resolveRetry.value = 0;
       void resolveAutoIcon(false);
     },
     {immediate: true}
@@ -82,10 +82,8 @@ const displayText = computed(() => {
 });
 
 const handleFallback = () => {
-  if (isAuto.value && resolveRetry.value < 1) {
-    resolveRetry.value += 1;
-    void resolveAutoIcon(true);
-    return;
+  if (isAuto.value && props.item.url && !!autoIconUrl.value) {
+    markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error"});
   }
   hasLoadError.value = true;
 };

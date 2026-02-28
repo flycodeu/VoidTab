@@ -1,7 +1,7 @@
 // src/core/config/types.ts
 import type {SyncProfile} from '../sync/types';
 
-export const CURRENT_CONFIG_VERSION = 2 as const;
+export const CURRENT_CONFIG_VERSION = 4 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 // 新增排序类型定义
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
@@ -160,10 +160,29 @@ export interface Config {
 
 export type SiteStateMap = Record<string, { lastVisited: number; count: number }>;
 
+export type SiteIconProvider =
+    | 'browser_favicon'
+    | 'google_s2'
+    | 'yandex'
+    | 'duckduckgo'
+    | 'site_manifest'
+    | 'site_favicon'
+    | 'preset'
+    | 'unknown';
+
+export type SiteIconCacheMode = 'blob' | 'url' | 'miss';
+
 export type SiteIconCacheRecord = {
-    blobKey: string;
+    cacheMode?: SiteIconCacheMode;
+    blobKey?: string;
+    fallbackUrl?: string;
+    retryAfter?: number;
+    lastError?: string;
     updatedAt: number;
     source: string;
+    provider?: SiteIconProvider;
+    dprAtFetch?: number;
+    qualityScore?: number;
     width?: number;
     height?: number;
 };

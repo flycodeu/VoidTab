@@ -67,23 +67,25 @@ const dynamicFontSize = computed(() => {
 const shouldShowText = computed(() => {
   return props.item.iconType === 'text' || (props.isAuto && props.hasError);
 });
+
+const isImageMode = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);
 </script>
 
 <template>
   <div
-      class="site-icon-container flex items-center justify-center text-white shadow-lg overflow-hidden relative transition-all duration-300"
+      class="site-icon-container flex items-center justify-center text-white overflow-hidden relative transition-all duration-300"
       :style="{
-      backgroundColor: bg,
+      backgroundColor: isImageMode ? 'transparent' : bg,
       width: size + 'px',
       height: size + 'px',
       borderRadius: radius + 'px'
     }"
   >
     <img
-        v-if="isAuto && !hasError"
+        v-if="isAuto && !hasError && !!autoIconUrl"
         :key="autoIconUrl"
         :src="autoIconUrl"
-        class="w-full h-full object-contain bg-white/90 p-1"
+        class="w-full h-full object-cover"
         loading="lazy"
         draggable="false"
         @load="emit('loaded')"

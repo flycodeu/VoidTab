@@ -138,8 +138,9 @@ watch(
           <div class="p-4 rounded-2xl flex gap-4 border border-white/5" style="background-color: var(--modal-input-bg);">
             <!-- preview -->
             <div
-                class="w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden relative transition-colors"
-                :style="{ backgroundColor: activeTab === 'auto' ? '#ffffff' : modelValue.bgColor }"
+                class="w-20 h-20 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden relative transition-colors"
+                :class="activeTab === 'auto' && faviconUrl ? 'shadow-none' : 'shadow-lg'"
+                :style="{ backgroundColor: activeTab === 'auto' && faviconUrl ? 'transparent' : (activeTab === 'auto' ? '#ffffff' : modelValue.bgColor) }"
             >
               <template v-if="activeTab === 'auto'">
                 <PhSpinner v-if="isFetchingIcon" class="animate-spin text-gray-400" size="24" />

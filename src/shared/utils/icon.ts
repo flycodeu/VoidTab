@@ -1,3 +1,18 @@
+export type IconProvider =
+    | 'browser_favicon'
+    | 'google_s2'
+    | 'yandex'
+    | 'duckduckgo'
+    | 'site_manifest'
+    | 'site_favicon'
+    | 'preset'
+    | 'unknown';
+
+type IconCandidate = {
+    url: string;
+    provider: IconProvider;
+};
+
 const PRESET_ICONS: Record<string, string> = {
     'github.com': 'https://github.githubassets.com/favicons/favicon.png',
     'bilibili.com': 'https://www.bilibili.com/favicon.ico',
@@ -7,14 +22,17 @@ const PRESET_ICONS: Record<string, string> = {
     'csdn.net': 'https://g.csdnimg.cn/static/logo/favicon32.ico',
 };
 
-export const ICON_MIN_EDGE_PX = 24;
+export const ICON_MIN_EDGE_PX = 48;
+export const RETINA_ICON_MIN_EDGE_PX = 64;
 
 export type IconProbeResult = {
     url: string;
     source: string;
+    provider: IconProvider;
     width: number;
     height: number;
     lowQuality: boolean;
+    qualityScore: number;
 };
 
 function safeParseUrl(rawUrl: string): URL | null {
@@ -26,15 +44,25 @@ function safeParseUrl(rawUrl: string): URL | null {
     }
 }
 
-function dedupe(values: string[]): string[] {
+function dedupe(candidates: IconCandidate[]): IconCandidate[] {
     const seen = new Set<string>();
-    const out: string[] = [];
-    for (const v of values) {
-        if (!v || seen.has(v)) continue;
-        seen.add(v);
-        out.push(v);
+    const out: IconCandidate[] = [];
+    for (const item of candidates) {
+        if (!item?.url || seen.has(item.url)) continue;
+        seen.add(item.url);
+        out.push(item);
     }
     return out;
+}
+
+export function isExtensionContext(): boolean {
+    return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+}
+
+export function getEffectiveMinEdgePx(base = ICON_MIN_EDGE_PX): number {
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    if (dpr >= 2) return Math.max(base, RETINA_ICON_MIN_EDGE_PX);
+    return base;
 }
 
 export function extractSiteDomain(rawUrl: string): string {
@@ -43,25 +71,96 @@ export function extractSiteDomain(rawUrl: string): string {
     return parsed.hostname.replace(/^www\./i, '').toLowerCase();
 }
 
-export function getIconCandidates(rawUrl: string): string[] {
+export function isPrivateOrLocalHost(hostname: string): boolean {
+    if (!hostname) return false;
+    const host = String(hostname).trim().toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost')) return true;
+    if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true;
+    if (/^10(?:\.\d{1,3}){3}$/.test(host)) return true;
+    if (/^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
+    const m = host.match(/^172\.(\d{1,3})(?:\.\d{1,3}){2}$/);
+    if (m) {
+        const second = Number(m[1]);
+        if (second >= 16 && second <= 31) return true;
+    }
+    return false;
+}
+
+export function isPrivateOrLocalUrl(rawUrl: string): boolean {
+    const parsed = safeParseUrl(rawUrl);
+    if (!parsed) return false;
+    return isPrivateOrLocalHost(parsed.hostname);
+}
+
+function buildExtensionCandidates(pageUrl: string): IconCandidate[] {
+    const encoded = encodeURIComponent(pageUrl);
+    return [
+        {
+            url: `chrome://favicon2/?size=128&pageUrl=${encoded}`,
+            provider: 'browser_favicon',
+        },
+        {
+            url: `/_favicon/?pageUrl=${encoded}&size=64`,
+            provider: 'browser_favicon',
+        },
+    ];
+}
+
+export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] {
     const parsed = safeParseUrl(rawUrl);
     if (!parsed) return [];
 
     const host = parsed.hostname.toLowerCase();
     const rootDomain = host.replace(/^www\./i, '');
     const origin = parsed.origin;
+    const privateOrLocal = isPrivateOrLocalHost(host);
+    const candidates: IconCandidate[] = [];
 
-    if (PRESET_ICONS[host]) return [PRESET_ICONS[host]];
-    if (PRESET_ICONS[rootDomain]) return [PRESET_ICONS[rootDomain]];
+    if (isExtensionContext()) {
+        candidates.push(...buildExtensionCandidates(parsed.href));
+    }
 
-    return dedupe([
-        `https://www.google.com/s2/favicons?domain=${encodeURIComponent(rootDomain)}&sz=256`,
-        `https://favicon.yandex.net/favicon/${encodeURIComponent(rootDomain)}?size=256`,
-        `https://icons.duckduckgo.com/ip3/${encodeURIComponent(rootDomain)}.ico`,
-        `${origin}/apple-touch-icon.png`,
-        `${origin}/favicon-32x32.png`,
-        `${origin}/favicon.ico`,
-    ]);
+    if (PRESET_ICONS[host]) {
+        candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
+    } else if (PRESET_ICONS[rootDomain]) {
+        candidates.push({url: PRESET_ICONS[rootDomain], provider: 'preset'});
+    }
+
+    candidates.push(
+        {
+            url: `${origin}/apple-touch-icon.png`,
+            provider: 'site_manifest',
+        },
+        {
+            url: `${origin}/favicon-32x32.png`,
+            provider: 'site_manifest',
+        },
+        {
+            url: `${origin}/favicon.ico`,
+            provider: 'site_favicon',
+        }
+    );
+
+    if (privateOrLocal) {
+        return dedupe(candidates);
+    }
+
+    candidates.push(
+        {
+            url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(rootDomain)}.ico`,
+            provider: 'duckduckgo',
+        },
+        {
+            url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(rootDomain)}&sz=256`,
+            provider: 'google_s2',
+        },
+    );
+
+    return dedupe(candidates);
+}
+
+export function getIconCandidates(rawUrl: string): string[] {
+    return getIconCandidatesWithProviders(rawUrl).map((x) => x.url);
 }
 
 async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: number; height: number } | null> {
@@ -97,22 +196,25 @@ export async function probeBestIconCandidate(
     rawUrl: string,
     options?: { timeoutMs?: number; minEdgePx?: number }
 ): Promise<IconProbeResult | null> {
-    const minEdge = options?.minEdgePx ?? ICON_MIN_EDGE_PX;
-    const candidates = getIconCandidates(rawUrl);
+    const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
+    const candidates = getIconCandidatesWithProviders(rawUrl);
     if (!candidates.length) return null;
 
     let firstLoaded: IconProbeResult | null = null;
     for (const candidate of candidates) {
-        const size = await probeImage(candidate, options?.timeoutMs ?? 2500);
+        const size = await probeImage(candidate.url, options?.timeoutMs ?? 2500);
         if (!size) continue;
 
-        const lowQuality = Math.min(size.width, size.height) < minEdge;
+        const edge = Math.min(size.width, size.height);
+        const lowQuality = edge < minEdge;
         const result: IconProbeResult = {
-            url: candidate,
-            source: candidate,
+            url: candidate.url,
+            source: candidate.url,
+            provider: candidate.provider,
             width: size.width,
             height: size.height,
             lowQuality,
+            qualityScore: edge,
         };
 
         if (!firstLoaded) firstLoaded = result;
@@ -126,4 +228,3 @@ export const getHighResIconUrl = (url: string): string => {
     const candidates = getIconCandidates(url);
     return candidates.length > 0 ? candidates[0] : '';
 };
-

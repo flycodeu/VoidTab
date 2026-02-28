@@ -146,15 +146,32 @@ function normalizeRuntime(input: any): RuntimeConfig {
     for (const [domain, value] of Object.entries(rawRecords)) {
         const rec = value as any;
         if (!rec || typeof rec !== 'object') continue;
-        if (typeof rec.blobKey !== 'string' || !rec.blobKey) continue;
+        const cacheMode = (rec.cacheMode === 'blob' || rec.cacheMode === 'url' || rec.cacheMode === 'miss')
+            ? rec.cacheMode
+            : ((typeof rec.blobKey === 'string' && rec.blobKey) ? 'blob' : 'miss');
 
-        siteIconRecords[String(domain)] = {
-            blobKey: rec.blobKey,
+        const normalized: SiteIconCacheRecord = {
+            cacheMode,
             updatedAt: Number.isFinite(Number(rec.updatedAt)) ? Number(rec.updatedAt) : 0,
             source: typeof rec.source === 'string' ? rec.source : 'unknown',
+            provider: typeof rec.provider === 'string' ? rec.provider : 'unknown',
+            dprAtFetch: Number.isFinite(Number(rec.dprAtFetch)) ? Number(rec.dprAtFetch) : undefined,
+            qualityScore: Number.isFinite(Number(rec.qualityScore)) ? Number(rec.qualityScore) : undefined,
             width: Number.isFinite(Number(rec.width)) ? Number(rec.width) : undefined,
             height: Number.isFinite(Number(rec.height)) ? Number(rec.height) : undefined,
+            blobKey: (typeof rec.blobKey === 'string' && rec.blobKey) ? rec.blobKey : undefined,
+            fallbackUrl: typeof rec.fallbackUrl === 'string' ? rec.fallbackUrl : undefined,
+            retryAfter: Number.isFinite(Number(rec.retryAfter)) ? Number(rec.retryAfter) : undefined,
+            lastError: typeof rec.lastError === 'string' ? rec.lastError : undefined,
         };
+
+        if (normalized.cacheMode === 'blob' && !normalized.blobKey) {
+            normalized.cacheMode = 'miss';
+        }
+        if (normalized.cacheMode === 'url' && !normalized.fallbackUrl) {
+            normalized.cacheMode = normalized.blobKey ? 'blob' : 'miss';
+        }
+        siteIconRecords[String(domain)] = normalized;
     }
 
     const siteIcons = {
