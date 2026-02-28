@@ -4,6 +4,7 @@ import {useConfigStore} from "../../../stores/useConfigStore.ts";
 import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
+import {resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -19,20 +20,54 @@ const props = defineProps<{
  * -------------------------- */
 const hasLoadError = ref(false);
 const isAuto = computed(() => props.item.iconType === "auto" || !props.item.iconType);
+const autoIconUrl = ref("");
+const isObjectUrl = ref(false);
+const resolveToken = ref(0);
+const resolveRetry = ref(0);
 
-const autoIconUrl = computed(() => {
-  if (!props.item.url) return "";
-  try {
-    const domain = new URL(props.item.url).hostname;
-    return `https://unavatar.io/${domain}?fallback=https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-  } catch {
-    return "";
+const revokeObjectUrl = () => {
+  if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
+    URL.revokeObjectURL(autoIconUrl.value);
   }
-});
+  isObjectUrl.value = false;
+};
+
+const setAutoIconUrl = (url: string, objectUrl: boolean) => {
+  revokeObjectUrl();
+  autoIconUrl.value = url;
+  isObjectUrl.value = objectUrl;
+};
+
+const resolveAutoIcon = async (forceRefresh = false) => {
+  if (!isAuto.value || !props.item.url) {
+    setAutoIconUrl("", false);
+    return;
+  }
+
+  const token = ++resolveToken.value;
+  const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {forceRefresh});
+
+  if (token !== resolveToken.value) {
+    if (result?.objectUrl && result.url.startsWith("blob:")) URL.revokeObjectURL(result.url);
+    return;
+  }
+
+  if (!result?.url) {
+    setAutoIconUrl("", false);
+    return;
+  }
+
+  setAutoIconUrl(result.url, !!result.objectUrl);
+};
 
 watch(
-    () => props.item.url,
-    () => (hasLoadError.value = false)
+    () => [props.item.url, props.item.iconType],
+    () => {
+      hasLoadError.value = false;
+      resolveRetry.value = 0;
+      void resolveAutoIcon(false);
+    },
+    {immediate: true}
 );
 
 const displayText = computed(() => {
@@ -46,7 +81,14 @@ const displayText = computed(() => {
   return "";
 });
 
-const handleFallback = () => (hasLoadError.value = true);
+const handleFallback = () => {
+  if (isAuto.value && resolveRetry.value < 1) {
+    resolveRetry.value += 1;
+    void resolveAutoIcon(true);
+    return;
+  }
+  hasLoadError.value = true;
+};
 const handleImgLoad = () => (hasLoadError.value = false);
 
 /** ---------------------------
@@ -147,6 +189,7 @@ onMounted(() => {
 onUnmounted(() => {
   ro?.disconnect();
   ro = null;
+  revokeObjectUrl();
 });
 
 /**  布局跨度变化 / 模式变化时，强制重新测量 */

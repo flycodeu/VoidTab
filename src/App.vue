@@ -344,8 +344,9 @@ const closeTerminal = () => {
 };
 
 onMounted(async () => {
-  await store.loadConfig();
+  if (!store.isLoaded) await store.loadConfig();
   if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
+  void store.refreshAutoSiteIconsBatch();
 
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
   document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');

@@ -1,6 +1,6 @@
 // src/composables/icon/useDebouncedFavicon.ts
 import {ref, watch, onUnmounted, type Ref} from 'vue';
-import {getIconCandidates} from '../../utils/icon.ts';
+import {getIconCandidates, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
 
 export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
     const faviconUrl = ref('');
@@ -39,6 +39,13 @@ export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
             // 只有当这个 img 还是"当前正在请求"的 img 时才赋值
             // 防止快速输入时，旧的请求结果覆盖了新的
             if (currentImg === img) {
+                const w = Number(img.naturalWidth || 0);
+                const h = Number(img.naturalHeight || 0);
+                const lowQuality = Math.min(w, h) > 0 && Math.min(w, h) < ICON_MIN_EDGE_PX;
+                if (lowQuality && remaining.length > 0) {
+                    tryLoadIcons(remaining);
+                    return;
+                }
                 faviconUrl.value = attemptUrl;
                 isFetching.value = false;
             }

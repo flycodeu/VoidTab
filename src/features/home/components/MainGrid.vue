@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {inject, onBeforeUnmount, onMounted, ref, computed, CSSProperties} from "vue";
+import {inject, onBeforeUnmount, onMounted, ref, computed, CSSProperties, watch} from "vue";
 import {VueDraggable} from "vue-draggable-plus";
 
 // Stores
@@ -63,10 +63,15 @@ const currentSortKey = computed<GroupSortKey>(() => (activeGroupData.value?.sort
 const isMobile = ref(false);
 let mq: MediaQueryList | null = null;
 const MOBILE_COLS = 4;
+const MOBILE_COLS_NARROW = 3;
+const NARROW_MOBILE_WIDTH = 360;
+const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
+const mobileCols = computed(() => viewportW.value < NARROW_MOBILE_WIDTH ? MOBILE_COLS_NARROW : MOBILE_COLS);
 
 const gridHostEl = ref<HTMLElement | null>(null);
 const gridCols = ref(8);
 let ro: ResizeObserver | null = null;
+let onWindowResize: (() => void) | null = null;
 
 const widgetLabelH = computed(() => {
   if (!store.config.theme.showWidgetName && !store.config.theme.showIconName) return 0;
@@ -88,21 +93,28 @@ function recalcGrid() {
   const el = gridHostEl.value;
   if (!el) return;
 
-  const width = el.clientWidth;
+  const shellWidth = el.clientWidth;
+  if (shellWidth <= 0) return;
+
+  const style = window.getComputedStyle(el);
+  const padX = (parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0")) || 0;
+  const width = Math.max(0, shellWidth - padX);
   if (width <= 0) return;
 
   const gap = Number(store.config.theme.gap || 20);
 
   if (isMobile.value) {
-    gridCols.value = MOBILE_COLS;
+    gridCols.value = mobileCols.value;
     return;
   }
 
   const MAX_COLS_DESKTOP = 14;
-  const minCellWidth = cellBaseSize.value + 10;
+  const mode = store.config.theme.siteLayoutMode || "icon";
+  const minCellWidth = mode === "card" ? 220 : (cellBaseSize.value + 24);
+  const minDesktopCols = width < 560 ? 3 : 4;
 
   let cols = Math.floor((width + gap) / (minCellWidth + gap));
-  cols = Math.max(4, Math.min(cols, MAX_COLS_DESKTOP));
+  cols = Math.max(minDesktopCols, Math.min(cols, MAX_COLS_DESKTOP));
 
   gridCols.value = cols;
 }
@@ -114,6 +126,11 @@ const onMqChange = () => {
 
 onMounted(() => {
   mq = window.matchMedia("(max-width: 767px)");
+  onWindowResize = () => {
+    viewportW.value = window.innerWidth;
+    recalcGrid();
+  };
+  window.addEventListener("resize", onWindowResize, {passive: true});
   onMqChange();
   mq.addEventListener?.("change", onMqChange);
 
@@ -124,7 +141,20 @@ onMounted(() => {
 onBeforeUnmount(() => {
   mq?.removeEventListener?.("change", onMqChange);
   ro?.disconnect();
+  if (onWindowResize) window.removeEventListener("resize", onWindowResize);
   ro = null;
+  onWindowResize = null;
+});
+
+watch(
+    () => [store.config.theme.iconSize, store.config.theme.gap, store.config.theme.siteLayoutMode, store.config.theme.gridMaxWidth],
+    () => recalcGrid()
+);
+
+const gridShellStyle = computed<CSSProperties>(() => {
+  const safeDesktopWidth = Math.max(420, viewportW.value - 48);
+  const maxWidth = isMobile.value ? "100%" : `${Math.min(Number(store.config.theme.gridMaxWidth || 1600), safeDesktopWidth)}px`;
+  return {maxWidth};
 });
 
 /** 网格容器样式 */
@@ -158,13 +188,14 @@ const getItemStyle = (item: any) => {
     const mode = store.config.theme.siteLayoutMode || 'icon';
 
     if (mode === 'card') {
-      const w = clamp(Number(store.config.theme.siteCard?.w || 3), 1, MAX_W);
-      //const h = clamp(Number(store.config.theme.siteCard?.h || 1), 1, MAX_H);
-      const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : Math.min(w, gridCols.value);
+      const w = clamp(Number(props.siteCardW || store.config.theme.siteCard?.w || 3), 1, MAX_W);
+      const h = clamp(Number(props.siteCardH || store.config.theme.siteCard?.h || 1), 1, MAX_H);
+      const spanW = isMobile.value ? Math.min(w, mobileCols.value) : Math.min(w, gridCols.value);
+      const spanH = Math.min(h, MAX_H);
 
       return {
         gridColumn: `span ${spanW}`,
-        gridRow: `span 1`,
+        gridRow: `span ${spanH}`,
         width: "100%",
         height: "100%",
         minWidth: 0,
@@ -190,7 +221,7 @@ const getItemStyle = (item: any) => {
   const w = clamp(wRaw, 1, MAX_W);
   const h = clamp(hRaw, 1, MAX_H);
 
-  const spanW = isMobile.value ? Math.min(w, MOBILE_COLS) : Math.min(w, gridCols.value);
+  const spanW = isMobile.value ? Math.min(w, mobileCols.value) : Math.min(w, gridCols.value);
 
   return {
     gridColumn: `span ${spanW}`,
@@ -297,7 +328,7 @@ const confirmDelete = () => {
   >
     <div
         class="w-full transition-all duration-300 px-2 md:px-8 overflow-x-hidden"
-        :style="{ maxWidth: isMobile ? '100%' : store.config.theme.gridMaxWidth + 'px' }"
+        :style="gridShellStyle"
         ref="gridHostEl"
     >
       <GroupHeaderBar

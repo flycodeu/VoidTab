@@ -9,6 +9,8 @@ import {migrateConfig} from '../core/config/migrate';
 import {normalizeConfig} from '../core/config/normalize';
 import {configRepository} from '../core/config/repository';
 import {getWidgetLabel, getWidgetMeta} from '../core/registry/widgets';
+import {extractSiteDomain} from '../shared/utils/icon';
+import {ensureSiteIconRuntime, resolveAndCacheSiteIcon} from '../shared/utils/siteIconCache';
 
 // 🎨 颜色生成器
 const generateColor = (str: string) => {
@@ -62,6 +64,7 @@ export const useConfigStore = defineStore('config', () => {
 
         // 数据归一化：确保所有 item 都有 kind/w/h 字段，防止布局崩坏
         normalizeLayoutItems();
+        ensureSiteIconRuntime(config.value.runtime);
 
         isLoaded.value = true;
 
@@ -409,6 +412,59 @@ export const useConfigStore = defineStore('config', () => {
         }
     };
 
+    const refreshAutoSiteIconsBatch = async (options?: { force?: boolean; maxDomains?: number }) => {
+        if (!isLoaded.value) return;
+
+        ensureSiteIconRuntime(config.value.runtime);
+
+        const runtime = config.value.runtime;
+        const now = Date.now();
+        const recentlyRefreshed = now - Number(runtime.siteIcons.lastBatchRefreshAt || 0) < 60 * 60 * 1000;
+        if (!options?.force && recentlyRefreshed) return;
+
+        const urls: string[] = [];
+        const seenDomains = new Set<string>();
+
+        for (const group of config.value.layout as any[]) {
+            for (const item of (group.items || [])) {
+                if (!item || item.kind === 'widget') continue;
+                const iconType = item.iconType || 'auto';
+                if (iconType !== 'auto') continue;
+                if (!item.url) continue;
+
+                const domain = extractSiteDomain(String(item.url));
+                if (!domain || seenDomains.has(domain)) continue;
+
+                seenDomains.add(domain);
+                urls.push(String(item.url));
+            }
+        }
+
+        if (!urls.length) {
+            runtime.siteIcons.lastBatchRefreshAt = now;
+            return;
+        }
+
+        const maxDomains = Math.max(1, Number(options?.maxDomains ?? 160));
+        const targets = urls.slice(0, maxDomains);
+        const concurrency = 3;
+
+        for (let i = 0; i < targets.length; i += concurrency) {
+            const chunk = targets.slice(i, i + concurrency);
+            await Promise.all(chunk.map((url) =>
+                resolveAndCacheSiteIcon(url, runtime, {
+                    forceRefresh: !!options?.force,
+                }).catch(() => null)
+            ));
+
+            if (i + concurrency < targets.length) {
+                await new Promise((resolve) => window.setTimeout(resolve, 300));
+            }
+        }
+
+        runtime.siteIcons.lastBatchRefreshAt = Date.now();
+    };
+
     const testSyncConnection = async (profile?: Config['sync']) => {
         return await syncService.test((profile ?? config.value.sync) as any);
     };
@@ -517,6 +573,7 @@ export const useConfigStore = defineStore('config', () => {
 
         rssCache,
         setIconFallback,
+        refreshAutoSiteIconsBatch,
 
         testSyncConnection,
         uploadBackup,

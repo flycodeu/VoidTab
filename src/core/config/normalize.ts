@@ -1,5 +1,5 @@
 // src/core/config/normalize.ts
-import type {Config, Group, SiteItem, WidgetType, RuntimeConfig} from './types';
+import type {Config, Group, SiteItem, WidgetType, RuntimeConfig, SiteIconCacheRecord} from './types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 
@@ -140,6 +140,31 @@ function normalizeRuntime(input: any): RuntimeConfig {
         const defId = 'default_group';
         siteList.groups[defId] = {id: defId, name: '默认清单', items: []};
     }
+    const rawSiteIcons = (base.siteIcons && typeof base.siteIcons === 'object') ? base.siteIcons : {};
+    const rawRecords = (rawSiteIcons.records && typeof rawSiteIcons.records === 'object') ? rawSiteIcons.records : {};
+    const siteIconRecords: Record<string, SiteIconCacheRecord> = {};
+    for (const [domain, value] of Object.entries(rawRecords)) {
+        const rec = value as any;
+        if (!rec || typeof rec !== 'object') continue;
+        if (typeof rec.blobKey !== 'string' || !rec.blobKey) continue;
+
+        siteIconRecords[String(domain)] = {
+            blobKey: rec.blobKey,
+            updatedAt: Number.isFinite(Number(rec.updatedAt)) ? Number(rec.updatedAt) : 0,
+            source: typeof rec.source === 'string' ? rec.source : 'unknown',
+            width: Number.isFinite(Number(rec.width)) ? Number(rec.width) : undefined,
+            height: Number.isFinite(Number(rec.height)) ? Number(rec.height) : undefined,
+        };
+    }
+
+    const siteIcons = {
+        version: Number.isFinite(Number(rawSiteIcons.version)) ? Number(rawSiteIcons.version) : 1,
+        records: siteIconRecords,
+        lastBatchRefreshAt: Number.isFinite(Number(rawSiteIcons.lastBatchRefreshAt))
+            ? Number(rawSiteIcons.lastBatchRefreshAt)
+            : 0,
+    };
+
     return {
         // 简单字段：优先用旧数据，没有则用默认
         cron: base.cron || def.cron,
@@ -148,6 +173,7 @@ function normalizeRuntime(input: any): RuntimeConfig {
 
         // Map 类型：保留旧数据
         siteState: base.siteState || {},
+        siteIcons,
         terminal: base.terminal || def.terminal,
         // Widget 状态
         widgets: base.widgets || def.widgets,

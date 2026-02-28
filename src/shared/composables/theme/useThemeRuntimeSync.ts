@@ -65,7 +65,7 @@ function applyTechFont(theme: ThemeLike) {
     html.classList.add('theme-tech-font');
     html.style.setProperty(
         '--tech-font-family',
-        `'${fam}', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`
+        `'${fam}', 'Fira Sans', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`
     );
 }
 

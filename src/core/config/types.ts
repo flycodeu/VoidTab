@@ -1,7 +1,7 @@
 // src/core/config/types.ts
 import type {SyncProfile} from '../sync/types';
 
-export const CURRENT_CONFIG_VERSION = 1 as const;
+export const CURRENT_CONFIG_VERSION = 2 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 // 新增排序类型定义
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
@@ -160,6 +160,14 @@ export interface Config {
 
 export type SiteStateMap = Record<string, { lastVisited: number; count: number }>;
 
+export type SiteIconCacheRecord = {
+    blobKey: string;
+    updatedAt: number;
+    source: string;
+    width?: number;
+    height?: number;
+};
+
 export type PhotoRef =
     | { id: string; source: 'url'; url: string; createdAt: number }
     | { id: string; source: 'idb'; blobKey: string; createdAt: number };
@@ -188,6 +196,11 @@ export type RuntimeConfig = {
         theme: string;
     };
     siteState: SiteStateMap;
+    siteIcons: {
+        version: number;
+        records: Record<string, SiteIconCacheRecord>;
+        lastBatchRefreshAt?: number;
+    };
 
     widgets: {
         merit: {

@@ -223,8 +223,8 @@ export const defaultConfig: Config = {
         accent: '#007AFF',
 
         techFont: true,
-        breathingLight: true,
-        neonGlow: true,
+        breathingLight: false,
+        neonGlow: false,
 
         iconSize: 60,
         radius: 16,
@@ -246,7 +246,7 @@ export const defaultConfig: Config = {
 
         enableTerminal: true,
 
-        techFontFamily: 'default',
+        techFontFamily: 'Fira Code',
         breathingDuration: 3,
         siteLayoutMode: "icon",
         siteCard: {
@@ -280,6 +280,11 @@ export const defaultConfig: Config = {
         auth: {jwtToken: ''},
         terminal_buffer: {buffer: '', theme: 'standard'},
         siteState: {},
+        siteIcons: {
+            version: 1,
+            records: {},
+            lastBatchRefreshAt: 0,
+        },
         widgets: {merit: {value: {}, sound: {}}},
         widgetState: {},
         photo: {widgets: {}},
