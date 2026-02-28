@@ -4,15 +4,16 @@ import {
     getEffectiveMinEdgePx,
     ICON_MIN_EDGE_PX,
     isExtensionContext,
+    probeFastIconCandidate,
     probeBestIconCandidate,
     type IconProvider
 } from './icon';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 3;
+export const SITE_ICON_CACHE_VERSION = 4;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 24 * 60 * 60 * 1000;
-export const SITE_ICON_IMG_ERROR_RETRY_MS = 15 * 60 * 1000;
+export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
 
 export type SiteIconResult = {
     url: string;
@@ -249,17 +250,31 @@ function writeMissRecord(runtime: RuntimeConfig, domain: string, retryAfter: num
     };
 }
 
+function touchRecordRetryLock(record: SiteIconCacheRecord, retryAfter: number, error: string) {
+    record.retryAfter = retryAfter;
+    record.lastError = error;
+}
+
 export function markSiteIconMiss(
     rawUrl: string,
     runtime: RuntimeConfig,
-    options?: { retryMs?: number; error?: string }
+    options?: { retryMs?: number; error?: string; preserveExisting?: boolean }
 ): boolean {
     ensureSiteIconRuntime(runtime);
     const domain = extractSiteDomain(rawUrl);
     if (!domain) return false;
     const error = options?.error || 'img_error';
     const retryMs = options?.retryMs ?? (error === 'img_error' ? SITE_ICON_IMG_ERROR_RETRY_MS : SITE_ICON_RETRY_MS);
-    writeMissRecord(runtime, domain, Date.now() + retryMs, error);
+    const retryAfter = Date.now() + retryMs;
+    const existing = runtime.siteIcons.records[domain];
+    const preserveExisting = options?.preserveExisting ?? error === 'img_error';
+    const existingMode = getRecordCacheMode(existing);
+    if (preserveExisting && existing && (existingMode === 'blob' || existingMode === 'url')) {
+        touchRecordRetryLock(existing, retryAfter, error);
+        return true;
+    }
+
+    writeMissRecord(runtime, domain, retryAfter, error);
     return true;
 }
 
@@ -278,7 +293,16 @@ async function fetchIconBlob(iconUrl: string): Promise<Blob | null> {
 export async function resolveAndCacheSiteIcon(
     rawUrl: string,
     runtime: RuntimeConfig,
-    options?: { forceRefresh?: boolean; ttlMs?: number; retryMs?: number; timeoutMs?: number; minEdgePx?: number }
+    options?: {
+        forceRefresh?: boolean;
+        ttlMs?: number;
+        retryMs?: number;
+        timeoutMs?: number;
+        minEdgePx?: number;
+        fastFirst?: boolean;
+        fastTimeoutMs?: number;
+        backgroundUpgrade?: boolean;
+    }
 ): Promise<SiteIconResult | null> {
     ensureSiteIconRuntime(runtime);
 
@@ -287,6 +311,14 @@ export async function resolveAndCacheSiteIcon(
 
     const ttlMs = options?.ttlMs ?? SITE_ICON_TTL_MS;
     const retryMs = options?.retryMs ?? SITE_ICON_RETRY_MS;
+    const slowTimeoutMs = Number.isFinite(Number(options?.timeoutMs))
+        ? Math.max(400, Number(options?.timeoutMs))
+        : 1200;
+    const fastFirst = options?.fastFirst ?? true;
+    const fastTimeoutMsRaw = Number(options?.fastTimeoutMs ?? 800);
+    const fastTimeoutMs = Number.isFinite(fastTimeoutMsRaw) ? Math.max(300, fastTimeoutMsRaw) : 800;
+    const backgroundUpgrade = options?.backgroundUpgrade ?? true;
+    const minEdgePx = options?.minEdgePx ?? getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
     const now = Date.now();
     const record = runtime.siteIcons.records[domain];
     const recordMode = getRecordCacheMode(record);
@@ -308,9 +340,107 @@ export async function resolveAndCacheSiteIcon(
         }
     }
 
+    const materializeProbeResult = async (probe: {
+        url: string;
+        source: string;
+        provider: IconProvider;
+        qualityScore: number;
+        width: number;
+        height: number;
+        lowQuality: boolean;
+    }): Promise<SiteIconResult> => {
+        const canPersist = !probe.lowQuality && canFetchToBlob(probe.url, probe.provider);
+
+        if (canPersist) {
+            const blob = await fetchIconBlob(probe.url);
+            if (blob) {
+                const blobKey = getSiteIconBlobKey(domain);
+                await idbSetBlob(blobKey, blob);
+                writeBlobRecord(runtime, domain, {
+                    blobKey,
+                    source: probe.source,
+                    provider: probe.provider,
+                    qualityScore: probe.qualityScore,
+                    width: probe.width,
+                    height: probe.height,
+                });
+
+                return {
+                    url: URL.createObjectURL(blob),
+                    domain,
+                    fromCache: true,
+                    objectUrl: true,
+                    lowQuality: false,
+                    stale: false,
+                    provider: probe.provider,
+                    qualityScore: probe.qualityScore,
+                };
+            }
+        }
+
+        writeUrlRecord(runtime, domain, {
+            url: probe.url,
+            source: probe.source,
+            provider: probe.provider,
+            qualityScore: probe.qualityScore,
+            width: probe.width,
+            height: probe.height,
+            retryAfter: now + retryMs,
+            error: canPersist ? 'persist_blob_failed' : 'display_only',
+        });
+
+        return {
+            url: probe.url,
+            domain,
+            fromCache: false,
+            objectUrl: false,
+            lowQuality: probe.lowQuality,
+            stale: false,
+            provider: probe.provider,
+            qualityScore: probe.qualityScore,
+        };
+    };
+
+    const releaseUnusedResultObjectUrl = (result: SiteIconResult | null | undefined) => {
+        if (result?.objectUrl && result.url.startsWith('blob:')) {
+            URL.revokeObjectURL(result.url);
+        }
+    };
+
+    if (fastFirst) {
+        const fastProbe = await probeFastIconCandidate(rawUrl, {
+            timeoutMs: fastTimeoutMs,
+            minEdgePx,
+        });
+
+        if (fastProbe) {
+            const fastResult = await materializeProbeResult(fastProbe);
+            releaseCachedIfUnused();
+
+            if (!forceRefresh && backgroundUpgrade && fastProbe.lowQuality) {
+                window.setTimeout(() => {
+                    void resolveAndCacheSiteIcon(rawUrl, runtime, {
+                        forceRefresh: true,
+                        ttlMs,
+                        retryMs,
+                        timeoutMs: slowTimeoutMs,
+                        minEdgePx,
+                        fastFirst: false,
+                        fastTimeoutMs,
+                        backgroundUpgrade: false,
+                    })
+                        .then((result) => releaseUnusedResultObjectUrl(result))
+                        .catch(() => null);
+                }, 0);
+            }
+
+            return fastResult;
+        }
+    }
+
     const probe = await probeBestIconCandidate(rawUrl, {
-        timeoutMs: options?.timeoutMs ?? 2500,
-        minEdgePx: options?.minEdgePx ?? getEffectiveMinEdgePx(ICON_MIN_EDGE_PX),
+        timeoutMs: slowTimeoutMs,
+        minEdgePx,
     });
 
     if (!probe) {
@@ -320,57 +450,7 @@ export async function resolveAndCacheSiteIcon(
         return null;
     }
 
-    const canPersist = !probe.lowQuality && canFetchToBlob(probe.url, probe.provider);
-
-    if (canPersist) {
-        const blob = await fetchIconBlob(probe.url);
-        if (blob) {
-            const blobKey = getSiteIconBlobKey(domain);
-            await idbSetBlob(blobKey, blob);
-            writeBlobRecord(runtime, domain, {
-                blobKey,
-                source: probe.source,
-                provider: probe.provider,
-                qualityScore: probe.qualityScore,
-                width: probe.width,
-                height: probe.height,
-            });
-
-            releaseCachedIfUnused();
-            return {
-                url: URL.createObjectURL(blob),
-                domain,
-                fromCache: true,
-                objectUrl: true,
-                lowQuality: false,
-                stale: false,
-                provider: probe.provider,
-                qualityScore: probe.qualityScore,
-            };
-        }
-    }
-
-    writeUrlRecord(runtime, domain, {
-        url: probe.url,
-        source: probe.source,
-        provider: probe.provider,
-        qualityScore: probe.qualityScore,
-        width: probe.width,
-        height: probe.height,
-        retryAfter: now + retryMs,
-        error: canPersist ? 'persist_blob_failed' : 'display_only',
-    });
-
+    const finalResult = await materializeProbeResult(probe);
     releaseCachedIfUnused();
-
-    return {
-        url: probe.url,
-        domain,
-        fromCache: false,
-        objectUrl: false,
-        lowQuality: probe.lowQuality,
-        stale: false,
-        provider: probe.provider,
-        qualityScore: probe.qualityScore,
-    };
+    return finalResult;
 }

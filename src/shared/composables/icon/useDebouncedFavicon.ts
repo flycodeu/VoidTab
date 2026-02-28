@@ -1,6 +1,6 @@
 // src/composables/icon/useDebouncedFavicon.ts
 import {ref, watch, onUnmounted, type Ref} from 'vue';
-import {getIconCandidates, getEffectiveMinEdgePx, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
+import {getFastIconCandidates, getIconCandidates, getEffectiveMinEdgePx, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
 
 export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
     const faviconUrl = ref('');
@@ -74,7 +74,9 @@ export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
         faviconUrl.value = ''; // 开始加载时先清空，或者保留旧的看你喜好
 
         // 获取候选列表 (例如: [DDG地址, Google地址, /favicon.ico])
-        const candidates = getIconCandidates(url);
+        const fastCandidates = getFastIconCandidates(url);
+        const fullCandidates = getIconCandidates(url);
+        const candidates = [...fastCandidates, ...fullCandidates.filter((x) => !fastCandidates.includes(x))];
 
         tryLoadIcons(candidates);
     };

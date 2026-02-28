@@ -13,6 +13,13 @@ type IconCandidate = {
     provider: IconProvider;
 };
 
+export function isDirectIconSource(value: string | null | undefined): boolean {
+    if (!value) return false;
+    const normalized = String(value).trim();
+    if (!normalized) return false;
+    return normalized.startsWith('data:') || normalized.startsWith('blob:') || normalized.includes('/');
+}
+
 const PRESET_ICONS: Record<string, string> = {
     'github.com': 'https://github.githubassets.com/favicons/favicon.png',
     'bilibili.com': 'https://www.bilibili.com/favicon.ico',
@@ -109,6 +116,33 @@ function dedupe(candidates: IconCandidate[]): IconCandidate[] {
     return out;
 }
 
+function pushPresetCandidate(candidates: IconCandidate[], host: string, rootDomain: string) {
+    if (host && PRESET_ICONS[host]) {
+        candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
+        return;
+    }
+    if (rootDomain && PRESET_ICONS[rootDomain]) {
+        candidates.push({url: PRESET_ICONS[rootDomain], provider: 'preset'});
+    }
+}
+
+function buildSiteOriginCandidates(origin: string): IconCandidate[] {
+    return [
+        {
+            url: `${origin}/favicon.ico`,
+            provider: 'site_favicon',
+        },
+        {
+            url: `${origin}/favicon-32x32.png`,
+            provider: 'site_manifest',
+        },
+        {
+            url: `${origin}/apple-touch-icon.png`,
+            provider: 'site_manifest',
+        },
+    ];
+}
+
 export function isExtensionContext(): boolean {
     return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 }
@@ -175,26 +209,8 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         candidates.push(...buildExtensionCandidates(parsed.href));
     }
 
-    if (host && PRESET_ICONS[host]) {
-        candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
-    } else if (rootDomain && PRESET_ICONS[rootDomain]) {
-        candidates.push({url: PRESET_ICONS[rootDomain], provider: 'preset'});
-    }
-
-    candidates.push(
-        {
-            url: `${origin}/apple-touch-icon.png`,
-            provider: 'site_manifest',
-        },
-        {
-            url: `${origin}/favicon-32x32.png`,
-            provider: 'site_manifest',
-        },
-        {
-            url: `${origin}/favicon.ico`,
-            provider: 'site_favicon',
-        }
-    );
+    pushPresetCandidate(candidates, host, rootDomain);
+    candidates.push(...buildSiteOriginCandidates(origin));
 
     if (privateOrLocal) {
         return dedupe(candidates);
@@ -220,8 +236,32 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     return dedupe(candidates);
 }
 
+export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidate[] {
+    const parsed = safeParseUrl(rawUrl);
+    if (!parsed) return [];
+
+    const host = normalizeHost(parsed.hostname);
+    const rootDomain = getRegistrableDomain(host);
+    const origin = parsed.origin;
+    const candidates: IconCandidate[] = [];
+
+    // Fast path: own origin first, then preset, then extension API.
+    candidates.push(...buildSiteOriginCandidates(origin));
+    pushPresetCandidate(candidates, host, rootDomain);
+
+    if (isExtensionContext()) {
+        candidates.push(...buildExtensionCandidates(parsed.href));
+    }
+
+    return dedupe(candidates);
+}
+
 export function getIconCandidates(rawUrl: string): string[] {
     return getIconCandidatesWithProviders(rawUrl).map((x) => x.url);
+}
+
+export function getFastIconCandidates(rawUrl: string): string[] {
+    return getFastIconCandidatesWithProviders(rawUrl).map((x) => x.url);
 }
 
 async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: number; height: number } | null> {
@@ -259,7 +299,30 @@ export async function probeBestIconCandidate(
 ): Promise<IconProbeResult | null> {
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const candidates = getIconCandidatesWithProviders(rawUrl);
+    return probeBestIconCandidateFromCandidates(candidates, {
+        timeoutMs: options?.timeoutMs,
+        minEdgePx: minEdge,
+    });
+}
+
+export async function probeFastIconCandidate(
+    rawUrl: string,
+    options?: { timeoutMs?: number; minEdgePx?: number }
+): Promise<IconProbeResult | null> {
+    const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
+    const candidates = getFastIconCandidatesWithProviders(rawUrl);
+    return probeBestIconCandidateFromCandidates(candidates, {
+        timeoutMs: options?.timeoutMs,
+        minEdgePx: minEdge,
+    });
+}
+
+async function probeBestIconCandidateFromCandidates(
+    candidates: IconCandidate[],
+    options?: { timeoutMs?: number; minEdgePx?: number }
+): Promise<IconProbeResult | null> {
     if (!candidates.length) return null;
+    const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
 
     let firstLoaded: IconProbeResult | null = null;
     for (const candidate of candidates) {

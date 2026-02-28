@@ -3,6 +3,7 @@ import {computed, onUnmounted, ref, watch} from 'vue';
 import * as PhIcons from '@phosphor-icons/vue';
 import {useConfigStore} from '../../stores/useConfigStore.ts';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../utils/siteIconCache.ts';
+import {isDirectIconSource} from '../utils/icon.ts';
 
 const props = defineProps<{
   item: {
@@ -22,6 +23,13 @@ const imgError = ref(false);
 const iconSource = ref('');
 const iconSourceIsObjectUrl = ref(false);
 const resolveToken = ref(0);
+const hasTriedForceRefresh = ref(false);
+const sourceMode = ref<'auto' | 'direct' | 'none'>('none');
+const normalizedType = computed<'auto' | 'text' | 'icon'>(() => {
+  const type = props.item.iconType;
+  if (type === 'text' || type === 'icon') return type;
+  return 'auto';
+});
 
 const releaseIconObjectUrl = () => {
   if (iconSourceIsObjectUrl.value && iconSource.value.startsWith('blob:')) {
@@ -36,37 +44,61 @@ const setIconSource = (value: string, isObjectUrl = false) => {
   iconSourceIsObjectUrl.value = isObjectUrl;
 };
 
-const isDirectIcon = (value: string | undefined) => !!value && (value.includes('/') || value.startsWith('data:'));
+const getDirectIconUrl = () => {
+  const raw = typeof props.item.icon === 'string' ? props.item.icon.trim() : '';
+  return isDirectIconSource(raw) ? raw : '';
+};
 
-const loadAutoIcon = async () => {
-  const type = props.item.iconType || 'auto';
+const applyDirectIconFallback = (): boolean => {
+  const direct = getDirectIconUrl();
+  if (!direct) return false;
+  sourceMode.value = 'direct';
+  imgError.value = false;
+  setIconSource(direct, false);
+  return true;
+};
+
+const loadAutoIcon = async (forceRefresh = false) => {
+  const type = normalizedType.value;
   if (type !== 'auto') {
     setIconSource('', false);
+    sourceMode.value = 'none';
     return;
   }
 
-  if (isDirectIcon(props.item.icon)) {
-    setIconSource(String(props.item.icon), false);
-    return;
+  const directIconUrl = getDirectIconUrl();
+  if (directIconUrl && !forceRefresh) {
+    sourceMode.value = 'direct';
+    imgError.value = false;
+    setIconSource(directIconUrl, false);
   }
 
   if (!props.item.url) {
+    if (applyDirectIconFallback()) return;
+    sourceMode.value = 'none';
     setIconSource('', false);
     return;
   }
 
   const token = ++resolveToken.value;
-  const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime);
+  const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
+    forceRefresh,
+    fastFirst: true,
+    fastTimeoutMs: 700,
+  });
   if (token !== resolveToken.value) {
     if (result?.objectUrl && result.url.startsWith('blob:')) URL.revokeObjectURL(result.url);
     return;
   }
 
   if (!result?.url) {
+    if (applyDirectIconFallback()) return;
+    sourceMode.value = 'none';
     setIconSource('', false);
     return;
   }
 
+  sourceMode.value = 'auto';
   setIconSource(result.url, !!result.objectUrl);
 };
 
@@ -74,13 +106,14 @@ watch(
     () => [props.item.url, props.item.iconType, props.item.icon],
     () => {
       imgError.value = false;
-      void loadAutoIcon();
+      hasTriedForceRefresh.value = false;
+      void loadAutoIcon(false);
     },
     {deep: true, immediate: true}
 );
 
 const displayMode = computed(() => {
-  const type = props.item.iconType || 'auto';
+  const type = normalizedType.value;
   if (type === 'text') return 'text';
   if (type === 'icon') return 'icon';
 
@@ -98,7 +131,7 @@ const phosphorComp = computed(() => {
 const avatarBg = computed(() => props.item.bgColor || '#3b82f6');
 
 const avatarText = computed(() => {
-  if (props.item.iconType === 'text' && props.item.iconValue) {
+  if (normalizedType.value === 'text' && props.item.iconValue) {
     return props.item.iconValue.substring(0, 4);
   }
 
@@ -107,9 +140,24 @@ const avatarText = computed(() => {
 });
 
 const handleImgError = () => {
-  if ((props.item.iconType || 'auto') === 'auto' && props.item.url && !!iconSource.value) {
-    markSiteIconMiss(props.item.url, store.config.runtime, {error: 'img_error'});
+  if (normalizedType.value !== 'auto') {
+    imgError.value = true;
+    return;
   }
+
+  if (sourceMode.value === 'auto' && props.item.url && !!iconSource.value) {
+    markSiteIconMiss(props.item.url, store.config.runtime, {error: 'img_error', preserveExisting: true});
+    if (!hasTriedForceRefresh.value) {
+      hasTriedForceRefresh.value = true;
+      void loadAutoIcon(true);
+      return;
+    }
+  }
+
+  if (sourceMode.value !== 'direct' && applyDirectIconFallback()) {
+    return;
+  }
+
   imgError.value = true;
 };
 

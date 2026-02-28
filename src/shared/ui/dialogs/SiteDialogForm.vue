@@ -13,6 +13,7 @@ type SiteForm = {
   bgColor: string;
   iconType: IconMode;
   iconValue: string;
+  icon?: string;
 
   remark: string;
 };

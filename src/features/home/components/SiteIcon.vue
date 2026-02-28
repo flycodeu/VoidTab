@@ -65,7 +65,7 @@ const dynamicFontSize = computed(() => {
   return baseSize * 0.5;
 });
 const shouldShowText = computed(() => {
-  return props.item.iconType === 'text' || (props.isAuto && props.hasError);
+  return props.item.iconType === 'text' || (props.isAuto && (props.hasError || !props.autoIconUrl));
 });
 
 const isImageMode = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);

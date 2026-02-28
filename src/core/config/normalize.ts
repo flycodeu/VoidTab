@@ -91,6 +91,9 @@ function normalizeItem(rawItem: any): SiteItem {
 
     //  iconType / internal / bgColor / iconValue 逻辑保持不变
     if (!item.iconType) item.iconType = 'auto';
+    if (item.iconType !== 'auto' && item.iconType !== 'text' && item.iconType !== 'icon') {
+        item.iconType = 'auto';
+    }
 
     const internal = isInternalUrl(item.url);
     if (internal && item.iconType !== 'text') item.iconType = 'text';

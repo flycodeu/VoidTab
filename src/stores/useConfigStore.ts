@@ -37,6 +37,10 @@ const clampInt = (v: any, min: number, max: number, fallback: number) => {
     const n = toInt(v, fallback);
     return Math.max(min, Math.min(max, n));
 };
+const normalizeSiteIconType = (v: any): 'auto' | 'text' | 'icon' => {
+    if (v === 'text' || v === 'icon') return v;
+    return 'auto';
+};
 export const useConfigStore = defineStore('config', () => {
     const config = ref<Config>(JSON.parse(JSON.stringify(defaultConfig)));
     const isLoaded = ref(false);
@@ -272,7 +276,7 @@ export const useConfigStore = defineStore('config', () => {
             title: site.title || '',
             url: site.url || '',
             bgColor: site.bgColor || '#3b82f6',
-            iconType: site.iconType || 'auto',
+            iconType: normalizeSiteIconType(site.iconType),
             iconValue: site.iconValue || '',
             icon: site.icon || '',
 
@@ -298,6 +302,10 @@ export const useConfigStore = defineStore('config', () => {
 
         if ('remark' in patch && typeof patch.remark !== 'string') {
             patch.remark = '';
+        }
+
+        if ('iconType' in patch) {
+            patch.iconType = normalizeSiteIconType(patch.iconType);
         }
 
         if ('tags' in patch) {
@@ -422,7 +430,7 @@ export const useConfigStore = defineStore('config', () => {
         const recentlyRefreshed = now - Number(runtime.siteIcons.lastBatchRefreshAt || 0) < 60 * 60 * 1000;
         if (!options?.force && recentlyRefreshed) return;
 
-        const urls: string[] = [];
+        const candidates: Array<{ url: string; domain: string }> = [];
         const seenDomains = new Set<string>();
 
         for (const group of config.value.layout as any[]) {
@@ -436,18 +444,30 @@ export const useConfigStore = defineStore('config', () => {
                 if (!domain || seenDomains.has(domain)) continue;
 
                 seenDomains.add(domain);
-                urls.push(String(item.url));
+                candidates.push({url: String(item.url), domain});
             }
         }
 
-        if (!urls.length) {
+        if (!candidates.length) {
             runtime.siteIcons.lastBatchRefreshAt = now;
             return;
         }
 
+        const failedDomains = new Set<string>();
+        for (const [domain, value] of Object.entries(runtime.siteIcons.records || {})) {
+            const rec = value as any;
+            if (!rec || typeof rec !== 'object') continue;
+            if (rec.cacheMode === 'miss' || rec.lastError === 'img_error' || rec.lastError === 'probe_failed') {
+                failedDomains.add(domain);
+            }
+        }
+
         const maxDomains = Math.max(1, Number(options?.maxDomains ?? 160));
-        const targets = urls.slice(0, maxDomains);
-        const concurrency = 3;
+        const targets = [...candidates]
+            .sort((a, b) => Number(failedDomains.has(b.domain)) - Number(failedDomains.has(a.domain)))
+            .slice(0, maxDomains)
+            .map((x) => x.url);
+        const concurrency = 6;
 
         for (let i = 0; i < targets.length; i += concurrency) {
             const chunk = targets.slice(i, i + concurrency);
@@ -458,7 +478,7 @@ export const useConfigStore = defineStore('config', () => {
             ));
 
             if (i + concurrency < targets.length) {
-                await new Promise((resolve) => window.setTimeout(resolve, 300));
+                await new Promise((resolve) => window.setTimeout(resolve, 100));
             }
         }
 

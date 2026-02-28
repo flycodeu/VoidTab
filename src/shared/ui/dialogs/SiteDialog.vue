@@ -17,6 +17,7 @@ type SiteForm = {
   bgColor: string;
   iconType: IconMode;
   iconValue: string;
+  icon?: string;
   remark: string;
 };
 
@@ -43,6 +44,7 @@ const formData = ref<SiteForm>({
   bgColor: '#3b82f6',
   iconType: 'auto',
   iconValue: '',
+  icon: '',
   remark: ''
 });
 
@@ -94,6 +96,7 @@ watch(
           bgColor: props.initialData.bgColor || '#3b82f6',
           iconType: (props.initialData.iconType as IconMode) || 'auto',
           iconValue: props.initialData.iconValue || '',
+          icon: (props.initialData as any).icon || '',
           remark: (props.initialData as any).remark || ''
         };
         activeTab.value = formData.value.iconType;
@@ -106,6 +109,7 @@ watch(
           bgColor: randomColor,
           iconType: 'auto',
           iconValue: '',
+          icon: '',
           remark: ''
         };
         activeTab.value = 'auto';
@@ -137,6 +141,7 @@ const handleSubmit = () => {
   if (!formData.value.title) return;
 
   let finalIconValue = formData.value.iconValue;
+  let finalIconSource = (formData.value.icon || '').trim();
 
   if (activeTab.value === 'text' && !finalIconValue) {
     finalIconValue = getSmartInitials(formData.value.title);
@@ -144,10 +149,15 @@ const handleSubmit = () => {
     finalIconValue = 'Globe';
   }
 
+  if (activeTab.value === 'auto' && faviconUrl.value) {
+    finalIconSource = faviconUrl.value;
+  }
+
   emit('submit', {
     ...formData.value,
     iconType: activeTab.value,
-    iconValue: finalIconValue
+    iconValue: finalIconValue,
+    icon: finalIconSource,
   });
 
   emit('close');

@@ -5,6 +5,7 @@ import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
+import {isDirectIconSource} from "../../../shared/utils/icon.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -21,10 +22,17 @@ const props = defineProps<{
  * icon / fallback
  * -------------------------- */
 const hasLoadError = ref(false);
-const isAuto = computed(() => props.item.iconType === "auto" || !props.item.iconType);
+const normalizedIconType = computed(() => {
+  const t = props.item.iconType;
+  if (t === "text" || t === "icon") return t;
+  return "auto";
+});
+const isAuto = computed(() => normalizedIconType.value === "auto");
 const autoIconUrl = ref("");
 const isObjectUrl = ref(false);
 const resolveToken = ref(0);
+const hasTriedForceRefresh = ref(false);
+const iconSourceMode = ref<"auto" | "direct" | "none">("none");
 
 const revokeObjectUrl = () => {
   if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
@@ -39,14 +47,48 @@ const setAutoIconUrl = (url: string, objectUrl: boolean) => {
   isObjectUrl.value = objectUrl;
 };
 
+const getDirectIconUrl = () => {
+  const raw = typeof props.item.icon === "string" ? props.item.icon.trim() : "";
+  return isDirectIconSource(raw) ? raw : "";
+};
+
+const applyDirectIconFallback = (): boolean => {
+  const direct = getDirectIconUrl();
+  if (!direct) return false;
+  hasLoadError.value = false;
+  iconSourceMode.value = "direct";
+  setAutoIconUrl(direct, false);
+  return true;
+};
+
 const resolveAutoIcon = async (forceRefresh = false) => {
-  if (!isAuto.value || !props.item.url) {
+  if (!isAuto.value) {
     setAutoIconUrl("", false);
+    iconSourceMode.value = "none";
+    return;
+  }
+
+  const directIconUrl = getDirectIconUrl();
+  if (directIconUrl && !forceRefresh) {
+    hasLoadError.value = false;
+    iconSourceMode.value = "direct";
+    setAutoIconUrl(directIconUrl, false);
+  }
+
+  if (!props.item.url) {
+    if (applyDirectIconFallback()) return;
+    setAutoIconUrl("", false);
+    iconSourceMode.value = "none";
+    hasLoadError.value = true;
     return;
   }
 
   const token = ++resolveToken.value;
-  const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {forceRefresh});
+  const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
+    forceRefresh,
+    fastFirst: true,
+    fastTimeoutMs: 700,
+  });
 
   if (token !== resolveToken.value) {
     if (result?.objectUrl && result.url.startsWith("blob:")) URL.revokeObjectURL(result.url);
@@ -54,26 +96,30 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   }
 
   if (!result?.url) {
+    if (applyDirectIconFallback()) return;
+    iconSourceMode.value = "none";
     setAutoIconUrl("", false);
     hasLoadError.value = true;
     return;
   }
 
   hasLoadError.value = false;
+  iconSourceMode.value = "auto";
   setAutoIconUrl(result.url, !!result.objectUrl);
 };
 
 watch(
-    () => [props.item.url, props.item.iconType],
+    () => [props.item.url, props.item.iconType, props.item.icon],
     () => {
       hasLoadError.value = false;
+      hasTriedForceRefresh.value = false;
       void resolveAutoIcon(false);
     },
     {immediate: true}
 );
 
 const displayText = computed(() => {
-  if (props.item.iconType === "text" || (isAuto.value && hasLoadError.value)) {
+  if (normalizedIconType.value === "text" || (isAuto.value && hasLoadError.value)) {
     if (props.item.iconValue?.length) return props.item.iconValue.substring(0, 4);
     const clean = (props.item.title || "")
         .trim()
@@ -84,9 +130,24 @@ const displayText = computed(() => {
 });
 
 const handleFallback = () => {
-  if (isAuto.value && props.item.url && !!autoIconUrl.value) {
-    markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error"});
+  if (!isAuto.value) {
+    hasLoadError.value = true;
+    return;
   }
+
+  if (iconSourceMode.value === "auto" && props.item.url && !!autoIconUrl.value) {
+    markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error", preserveExisting: true});
+    if (!hasTriedForceRefresh.value) {
+      hasTriedForceRefresh.value = true;
+      void resolveAutoIcon(true);
+      return;
+    }
+  }
+
+  if (iconSourceMode.value !== "direct" && applyDirectIconFallback()) {
+    return;
+  }
+
   hasLoadError.value = true;
 };
 const handleImgLoad = () => (hasLoadError.value = false);
