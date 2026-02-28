@@ -13,20 +13,20 @@ const showModal = ref(false);
 
 const widgetId = computed(() => String(props.item.id));
 
-// --- 1. 甯冨眬鎰熺煡 (淇绫诲瀷涓㈠け闂) ---
+// 1) Layout detection
 const layout = computed(() => {
   const w = props.item?.w ?? 2;
   const h = props.item?.h ?? 2;
   return {
     isMini: w === 1 && h === 1,          // 1x1
-    isSlim: w === 1 && h >= 2,           // 1x2 (绔栨潯)
-    isWide: w >= 2 && h === 1,           // 2x1 (妯潯)
-    isStandard: w === 2 && h === 2,      // 2x2 (鏍囧噯)
-    isLarge: w >= 2 && h > 2             // 2x4 (澶у睆)
+    isSlim: w === 1 && h >= 2,           // 1x2 vertical
+    isWide: w >= 2 && h === 1,           // 2x1 horizontal
+    isStandard: w === 2 && h === 2,      // 2x2 standard
+    isLarge: w >= 2 && h > 2             // large layout
   };
 });
 
-// --- 2. 鏁版嵁缁戝畾 ---
+// 2) Data binding
 const runtime = store.config.runtime;
 if (!runtime.siteList) runtime.siteList = {groups: {}, widgets: {}};
 if (!runtime.siteList.widgets[widgetId.value]) {
@@ -43,20 +43,20 @@ const defaultSite = computed(() => {
   return activeGroup.value.items.find(i => i.id === sid) || null;
 });
 
-// 鏄剧ず閰嶇疆
+// Display config
 const view = computed(() => activeGroup.value?.viewConfig || {showIcon: true, showTitle: true, showDesc: true});
 
-// --- 3. 瑙嗚椋庢牸寮曟搸 (鍏ㄩ€忔槑 & 鎮诞鏂囧瓧) ---
+// 3) Visual style engine
 const styleEngine = computed(() => {
   const style = activeGroup.value?.style || 'glass';
 
   const map: Record<string, any> = {
     glass: {
-      // 榛樿鍏ㄩ€忔槑锛孒over 鏃舵樉绀烘瀬娣＄殑鐧借壊
+      // Fully transparent by default; light background on hover.
       wrapper: 'hover:bg-white/10 transition-colors duration-300',
-      // 鍥炬爣鑷甫闃村奖鍜屽井寮辫竟妗嗭紝澧炲姞绔嬩綋鎰?
+      // Icon box with shadow and subtle border.
       iconBox: 'shadow-2xl shadow-black/20 ring-1 ring-white/10 bg-white/5 backdrop-blur-sm',
-      // 鏂囧瓧甯﹀己闃村奖锛屼繚璇佸湪浠讳綍澹佺焊涓婂彲瑙?
+      // Strong text shadow to keep readability on wallpapers.
       textMain: 'text-white font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]',
       textSub: 'text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]',
       folderBg: 'bg-black/20 border border-white/10 backdrop-blur-md',
@@ -106,7 +106,7 @@ const styleEngine = computed(() => {
   return map[style] || map.glass;
 });
 
-// --- 鍥炬爣鍔犺浇 ---
+// Icon loading
 const iconUrl = ref('');
 const blobCache = ref<Record<string, string>>({});
 const ownedObjectUrls = new Set<string>();
@@ -146,7 +146,7 @@ watch(() => defaultSite.value, async (site) => {
   else iconUrl.value = '';
 }, {immediate: true, deep: true});
 
-// 鏂囦欢澶归瑙?
+// Folder preview
 const folderIcons = ref<{ type: 'img' | 'text', val: string }[]>([]);
 watch(() => activeGroup.value?.items, async (items) => {
   if (!items) {
@@ -196,7 +196,7 @@ onUnmounted(() => {
            :class="[
              iconUrl ? 'bg-transparent border-0 ring-0 shadow-none backdrop-blur-0 p-0' : styleEngine.iconBox,
              activeGroup?.style === 'cyber' ? 'rounded-md' : 'rounded-[20px]',
-             // 灏哄閫傞厤閫昏緫
+             // size adaptation
              layout.isMini ? 'w-[85%] h-[85%] text-2xl' :
              layout.isSlim ? 'w-[70%] aspect-square text-3xl mb-6' :
              layout.isWide ? 'h-[75%] aspect-square text-4xl mr-auto ml-4' :
@@ -269,7 +269,7 @@ onUnmounted(() => {
 
     <button @click.stop="showModal = true"
             class="absolute top-2 right-2 p-2 rounded-full opacity-0 group-hover:opacity-100 bg-black/40 text-white hover:bg-black/70 hover:scale-110 transition-all duration-200 z-50 backdrop-blur-md shadow-lg border border-white/10"
-            title="璁剧疆">
+            title="设置">
       <PhGear weight="fill" size="16"/>
     </button>
 
