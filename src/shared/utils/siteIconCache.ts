@@ -9,7 +9,7 @@ import {
 } from './icon';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 2;
+export const SITE_ICON_CACHE_VERSION = 3;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 24 * 60 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 15 * 60 * 1000;
@@ -53,11 +53,11 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
 
     const currentVersion = Number(runtime.siteIcons.version || 0);
     if (currentVersion < SITE_ICON_CACHE_VERSION) {
-        // Self-heal: old builds may have marked many domains as miss on empty-image errors.
+        // Self-heal: older builds may have poisoned many domains with stale miss records.
         for (const [domain, value] of Object.entries(runtime.siteIcons.records)) {
             const rec = value as SiteIconCacheRecord | undefined;
             if (!rec || typeof rec !== 'object') continue;
-            if (rec.cacheMode === 'miss' && rec.lastError === 'img_error') {
+            if (rec.cacheMode === 'miss' && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed')) {
                 delete runtime.siteIcons.records[domain];
             }
         }

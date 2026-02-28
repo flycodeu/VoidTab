@@ -35,6 +35,24 @@ export type IconProbeResult = {
     qualityScore: number;
 };
 
+const MULTI_LEVEL_PUBLIC_SUFFIXES = new Set([
+    'ac.uk',
+    'co.jp',
+    'co.kr',
+    'co.nz',
+    'co.uk',
+    'com.au',
+    'com.br',
+    'com.cn',
+    'com.hk',
+    'com.sg',
+    'com.tw',
+    'edu.cn',
+    'gov.cn',
+    'net.cn',
+    'org.cn',
+]);
+
 function safeParseUrl(rawUrl: string): URL | null {
     if (!rawUrl) return null;
     try {
@@ -42,6 +60,42 @@ function safeParseUrl(rawUrl: string): URL | null {
     } catch {
         return null;
     }
+}
+
+function normalizeHost(hostname: string): string {
+    return String(hostname || '').trim().toLowerCase().replace(/\.+$/, '');
+}
+
+function isIpHost(hostname: string): boolean {
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+    // URL#hostname returns IPv6 without brackets, e.g. "::1"
+    if (hostname.includes(':')) return true;
+    return false;
+}
+
+export function getRegistrableDomain(hostname: string): string {
+    const host = normalizeHost(hostname);
+    if (!host) return '';
+    if (isPrivateOrLocalHost(host) || isIpHost(host)) return host;
+
+    const labels = host.split('.').filter(Boolean);
+    if (labels.length <= 2) return host;
+
+    const publicSuffix2 = `${labels[labels.length - 2]}.${labels[labels.length - 1]}`;
+    if (MULTI_LEVEL_PUBLIC_SUFFIXES.has(publicSuffix2) && labels.length >= 3) {
+        return labels.slice(-3).join('.');
+    }
+
+    return labels.slice(-2).join('.');
+}
+
+function getThirdPartyQueryDomains(hostname: string): string[] {
+    const host = normalizeHost(hostname);
+    if (!host) return [];
+
+    const registrable = getRegistrableDomain(host);
+    if (!registrable || registrable === host) return [host];
+    return [registrable, host];
 }
 
 function dedupe(candidates: IconCandidate[]): IconCandidate[] {
@@ -110,8 +164,9 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     const parsed = safeParseUrl(rawUrl);
     if (!parsed) return [];
 
-    const host = parsed.hostname.toLowerCase();
-    const rootDomain = host.replace(/^www\./i, '');
+    const host = normalizeHost(parsed.hostname);
+    const rootDomain = getRegistrableDomain(host);
+    const thirdPartyDomains = getThirdPartyQueryDomains(host);
     const origin = parsed.origin;
     const privateOrLocal = isPrivateOrLocalHost(host);
     const candidates: IconCandidate[] = [];
@@ -120,9 +175,9 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         candidates.push(...buildExtensionCandidates(parsed.href));
     }
 
-    if (PRESET_ICONS[host]) {
+    if (host && PRESET_ICONS[host]) {
         candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
-    } else if (PRESET_ICONS[rootDomain]) {
+    } else if (rootDomain && PRESET_ICONS[rootDomain]) {
         candidates.push({url: PRESET_ICONS[rootDomain], provider: 'preset'});
     }
 
@@ -145,16 +200,22 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         return dedupe(candidates);
     }
 
-    candidates.push(
-        {
-            url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(rootDomain)}.ico`,
-            provider: 'duckduckgo',
-        },
-        {
-            url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(rootDomain)}&sz=256`,
-            provider: 'google_s2',
-        },
-    );
+    for (const domain of thirdPartyDomains) {
+        candidates.push(
+            {
+                url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
+                provider: 'google_s2',
+            },
+            {
+                url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`,
+                provider: 'google_s2',
+            },
+            {
+                url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
+                provider: 'duckduckgo',
+            },
+        );
+    }
 
     return dedupe(candidates);
 }
