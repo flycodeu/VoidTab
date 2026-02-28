@@ -109,14 +109,13 @@ function recalcGrid() {
   }
 
   const MAX_COLS_DESKTOP = 14;
-  const mode = store.config.theme.siteLayoutMode || "icon";
-  const minCellWidth = mode === "card" ? 220 : (cellBaseSize.value + 24);
   const minDesktopCols = width < 560 ? 3 : 4;
+  const siteMinCellWidth = cellBaseSize.value + 24;
 
-  let cols = Math.floor((width + gap) / (minCellWidth + gap));
-  cols = Math.max(minDesktopCols, Math.min(cols, MAX_COLS_DESKTOP));
+  let siteCols = Math.floor((width + gap) / (siteMinCellWidth + gap));
+  siteCols = Math.max(minDesktopCols, Math.min(siteCols, MAX_COLS_DESKTOP));
 
-  gridCols.value = cols;
+  gridCols.value = siteCols;
 }
 
 const onMqChange = () => {
@@ -182,11 +181,10 @@ const MAX_H = 4;
 
 const getItemStyle = (item: any) => {
   const isWidget = item.kind === "widget";
+  const mode = store.config.theme.siteLayoutMode || 'icon';
 
   // Site：根据主题选择占格（widget 不动）
   if (!isWidget) {
-    const mode = store.config.theme.siteLayoutMode || 'icon';
-
     if (mode === 'card') {
       const w = clamp(Number(props.siteCardW || store.config.theme.siteCard?.w || 3), 1, MAX_W);
       const h = clamp(Number(props.siteCardH || store.config.theme.siteCard?.h || 1), 1, MAX_H);
@@ -401,6 +399,8 @@ const confirmDelete = () => {
                       :item="item"
                       :isEditMode="isEditMode"
                       :density="store.config.theme.density"
+                      :cardSpanW="Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
+                      :cardSpanH="Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
                       @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
                   />
                 </div>

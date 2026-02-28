@@ -13,6 +13,8 @@ const props = defineProps<{
   item: SiteItem;
   isEditMode?: boolean;
   density?: BookmarkDensity;
+  cardSpanW?: number;
+  cardSpanH?: number;
 }>();
 
 /** ---------------------------
@@ -145,27 +147,61 @@ const iconContainerStyle = computed(() => ({
 }));
 
 /** =========================
- * 自适应密度（解决 2×1 遮盖 & 3×1 小屏太挤）
+ * 自适应密度：按占位规格（1x1 / 2x1 / 3x1）和宽度双重计算
  * ========================= */
 type DensityMode = "wide" | "compact" | "tiny";
+type CardLayoutMode = "1x1" | "2x1" | "3x1" | "other";
 const densityMode = ref<DensityMode>("wide");
+
+const clampSpan = (v: unknown, fallback: number): number => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(4, Math.round(n)));
+};
+
+const cardSpanW = computed(() => clampSpan(props.cardSpanW ?? cardCfg.value.w, 2));
+const cardSpanH = computed(() => clampSpan(props.cardSpanH ?? cardCfg.value.h, 1));
+
+const cardLayoutMode = computed<CardLayoutMode>(() => {
+  const w = cardSpanW.value;
+  const h = cardSpanH.value;
+  if (w === 1 && h === 1) return "1x1";
+  if (w === 2 && h === 1) return "2x1";
+  if (w >= 3 && h === 1) return "3x1";
+  return "other";
+});
 
 const cardEl = ref<HTMLElement | null>(null);
 let ro: ResizeObserver | null = null;
 
 const updateDensity = (w: number) => {
-  // 阈值你可按实际 grid 调整
-  if (w <= 230) densityMode.value = "tiny";
-  else if (w <= 320) densityMode.value = "compact";
+  if (cardLayoutMode.value === "1x1") {
+    if (w <= 170) densityMode.value = "tiny";
+    else if (w <= 230) densityMode.value = "compact";
+    else densityMode.value = "wide";
+    return;
+  }
+  if (cardLayoutMode.value === "2x1") {
+    if (w <= 280) densityMode.value = "tiny";
+    else if (w <= 380) densityMode.value = "compact";
+    else densityMode.value = "wide";
+    return;
+  }
+  if (cardLayoutMode.value === "3x1") {
+    if (w <= 420) densityMode.value = "tiny";
+    else if (w <= 560) densityMode.value = "compact";
+    else densityMode.value = "wide";
+    return;
+  }
+  if (w <= 240) densityMode.value = "tiny";
+  else if (w <= 340) densityMode.value = "compact";
   else densityMode.value = "wide";
 };
 
-/**  切换 2×1 / 3×1 时强制 nextTick 后重新测量一次 */
 const ensureObserveAndMeasure = async () => {
   await nextTick();
   if (!cardEl.value) return;
 
-  // 确保 RO 挂上（有些情况下 onMounted 先于 ref）
   if (!ro) {
     ro = new ResizeObserver((entries) => {
       const box = entries[0]?.contentRect;
@@ -175,7 +211,6 @@ const ensureObserveAndMeasure = async () => {
     ro.observe(cardEl.value);
   }
 
-  // 强制测量一次，避免 “2×1 -> 3×1 备注不回来”
   const w = cardEl.value.getBoundingClientRect().width;
   if (w) updateDensity(w);
 };
@@ -192,23 +227,39 @@ onUnmounted(() => {
 
 /**  布局跨度变化 / 模式变化时，强制重新测量 */
 watch(
-    () => [mode.value, cardCfg.value.w, cardCfg.value.h],
+    () => [mode.value, cardCfg.value.w, cardCfg.value.h, cardSpanW.value, cardSpanH.value],
     () => {
       ensureObserveAndMeasure();
     }
 );
 
 /** ---------------------------
- * card icon size / spacing — 根据 densityMode 动态变化
+ * card icon size / spacing
  * -------------------------- */
 const cardIconSize = computed(() => {
+  if (cardLayoutMode.value === "1x1") {
+    if (densityMode.value === "tiny") return 34;
+    if (densityMode.value === "compact") return 38;
+    return 42;
+  }
+  if (cardLayoutMode.value === "2x1") {
+    if (densityMode.value === "tiny") return 38;
+    if (densityMode.value === "compact") return 44;
+    return 48;
+  }
+  if (cardLayoutMode.value === "3x1") {
+    if (densityMode.value === "tiny") return 42;
+    if (densityMode.value === "compact") return 50;
+    return 56;
+  }
   if (densityMode.value === "tiny") return 40;
   if (densityMode.value === "compact") return 46;
   return 52;
 });
 
 const cardIconRadius = computed(() => {
-  if (densityMode.value === "tiny") return 14;
+  if (cardLayoutMode.value === "1x1") return 12;
+  if (densityMode.value === "tiny") return 13;
   if (densityMode.value === "compact") return 15;
   return 16;
 });
@@ -222,10 +273,12 @@ const cardTextFontSize = computed(() => {
   return base * 0.48;
 });
 
-/**  修复：2×1 也必须有备注 —— 不再因为 tiny 被隐藏 */
+const showDot = computed(() => cardLayoutMode.value !== "1x1" && densityMode.value !== "tiny");
+
 const showRemarkRow = computed(() => {
-  if (!cardCfg.value.showRemark) return false;
-  return !!remarkText.value;
+  if (!cardCfg.value.showRemark || !remarkText.value) return false;
+  if (cardLayoutMode.value === "1x1") return false;
+  return true;
 });
 
 /**
@@ -234,7 +287,9 @@ const showRemarkRow = computed(() => {
  */
 const showDomainRow = computed(() => {
   if (!cardCfg.value.showDomain || !domain.value) return false;
+  if (cardLayoutMode.value === "1x1") return false;
   if (densityMode.value === "tiny") return false;
+  if (cardLayoutMode.value === "2x1" && densityMode.value === "compact") return false;
   return true;
 });
 </script>
@@ -250,6 +305,7 @@ const showDomainRow = computed(() => {
       class="site-card group block w-full h-full min-w-0 min-h-0 select-none"
       :class="[props.isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer']"
       :data-density="densityMode"
+      :data-layout="cardLayoutMode"
   >
     <div class="card-shell w-full h-full min-w-0 min-h-0" :style="{ borderRadius: cardRadius + 'px' }">
       <div class="card-inner w-full h-full min-w-0 min-h-0">
@@ -277,7 +333,7 @@ const showDomainRow = computed(() => {
             <div class="title truncate">
               {{ item.title || "未命名" }}
             </div>
-            <div class="dot" aria-hidden="true"></div>
+            <div v-if="showDot" class="dot" aria-hidden="true"></div>
           </div>
 
           <!-- Domain -->
@@ -403,6 +459,42 @@ const showDomainRow = computed(() => {
   align-items: stretch;
 }
 
+.site-card[data-layout="1x1"] .card-inner {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  padding: 10px;
+  justify-items: center;
+}
+
+.site-card[data-layout="1x1"] .card-right {
+  width: 100%;
+  gap: 4px;
+  align-content: start;
+}
+
+.site-card[data-layout="1x1"] .row1 {
+  justify-content: center;
+}
+
+.site-card[data-layout="1x1"] .title {
+  text-align: center;
+  font-size: 12px;
+}
+
+.site-card[data-layout="1x1"] .row3 {
+  display: none;
+}
+
+.site-card[data-layout="3x1"] .card-inner {
+  gap: 14px;
+  padding: 12px 16px;
+}
+
+.site-card[data-layout="3x1"] .title {
+  font-size: 15px;
+}
+
 .card-left {
   display: flex;
   align-items: center;
@@ -473,46 +565,64 @@ const showDomainRow = computed(() => {
 }
 
 /* 密度自适应：compact */
-.site-card[data-density="compact"] .card-inner {
+.site-card[data-layout="2x1"][data-density="compact"] .card-inner,
+.site-card[data-layout="3x1"][data-density="compact"] .card-inner,
+.site-card[data-layout="other"][data-density="compact"] .card-inner {
   gap: 10px;
   padding: 10px 12px;
 }
 
-.site-card[data-density="compact"] .title {
+.site-card[data-layout="2x1"][data-density="compact"] .title,
+.site-card[data-layout="3x1"][data-density="compact"] .title,
+.site-card[data-layout="other"][data-density="compact"] .title {
   font-size: 13px;
 }
 
-.site-card[data-density="compact"] .row2 {
+.site-card[data-layout="2x1"][data-density="compact"] .row2,
+.site-card[data-layout="3x1"][data-density="compact"] .row2,
+.site-card[data-layout="other"][data-density="compact"] .row2 {
   font-size: 11px;
   opacity: 0.74;
 }
 
-.site-card[data-density="compact"] .sub {
+.site-card[data-layout="2x1"][data-density="compact"] .sub,
+.site-card[data-layout="3x1"][data-density="compact"] .sub,
+.site-card[data-layout="other"][data-density="compact"] .sub {
   font-size: 11px;
   opacity: 0.70;
 }
 
-/* tiny：更紧凑，但  备注仍然显示 */
-.site-card[data-density="tiny"] .card-inner {
+/* tiny：更紧凑 */
+.site-card[data-layout="2x1"][data-density="tiny"] .card-inner,
+.site-card[data-layout="3x1"][data-density="tiny"] .card-inner,
+.site-card[data-layout="other"][data-density="tiny"] .card-inner {
   gap: 10px;
   padding: 10px 10px;
 }
 
-.site-card[data-density="tiny"] .title {
+.site-card[data-layout="2x1"][data-density="tiny"] .title,
+.site-card[data-layout="3x1"][data-density="tiny"] .title,
+.site-card[data-layout="other"][data-density="tiny"] .title {
   font-size: 12.5px;
 }
 
-.site-card[data-density="tiny"] .row2 {
+.site-card[data-layout="2x1"][data-density="tiny"] .row2,
+.site-card[data-layout="3x1"][data-density="tiny"] .row2,
+.site-card[data-layout="other"][data-density="tiny"] .row2 {
   font-size: 11px;
   opacity: 0.70;
 }
 
-.site-card[data-density="tiny"] .sub {
+.site-card[data-layout="2x1"][data-density="tiny"] .sub,
+.site-card[data-layout="3x1"][data-density="tiny"] .sub,
+.site-card[data-layout="other"][data-density="tiny"] .sub {
   font-size: 11px;
   opacity: 0.66;
 }
 
-.site-card[data-density="tiny"] .dot {
+.site-card[data-layout="2x1"][data-density="tiny"] .dot,
+.site-card[data-layout="3x1"][data-density="tiny"] .dot,
+.site-card[data-layout="other"][data-density="tiny"] .dot {
   display: none;
 }
 </style>
