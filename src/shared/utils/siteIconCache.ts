@@ -10,10 +10,12 @@ import {
 } from './icon';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 4;
+export const SITE_ICON_CACHE_VERSION = 5;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 24 * 60 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
+export const SITE_ICON_PROVIDER_BACKOFF_MS = 10 * 60 * 1000;
+export const SITE_ICON_EXTERNAL_PROVIDER_BACKOFF_MS = 30 * 60 * 1000;
 
 export type SiteIconResult = {
     url: string;
@@ -28,6 +30,84 @@ export type SiteIconResult = {
 
 function toRuntimeProvider(provider: IconProvider): SiteIconProvider {
     return provider;
+}
+
+function isExternalProvider(provider: SiteIconProvider | IconProvider | undefined): boolean {
+    return provider === 'google_s2' || provider === 'duckduckgo' || provider === 'yandex';
+}
+
+function isKnownProvider(provider: any): provider is SiteIconProvider {
+    return provider === 'browser_favicon'
+        || provider === 'google_s2'
+        || provider === 'yandex'
+        || provider === 'duckduckgo'
+        || provider === 'site_manifest'
+        || provider === 'site_favicon'
+        || provider === 'preset'
+        || provider === 'unknown';
+}
+
+function sanitizeProviderBackoffUntil(
+    value: any
+): Partial<Record<SiteIconProvider, number>> | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const out: Partial<Record<SiteIconProvider, number>> = {};
+    for (const [provider, rawUntil] of Object.entries(value)) {
+        const until = Number(rawUntil);
+        if (!Number.isFinite(until) || until <= 0) continue;
+        if (!isKnownProvider(provider)) continue;
+        out[provider as SiteIconProvider] = until;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+function getRecordProviderBackoffUntil(
+    record: SiteIconCacheRecord | undefined
+): Partial<Record<SiteIconProvider, number>> | undefined {
+    return sanitizeProviderBackoffUntil(record?.providerBackoffUntil);
+}
+
+function withoutProviderBackoff(
+    record: SiteIconCacheRecord | undefined,
+    provider: IconProvider
+): Partial<Record<SiteIconProvider, number>> | undefined {
+    const map = getRecordProviderBackoffUntil(record);
+    if (!map) return undefined;
+    const next = {...map};
+    delete next[provider];
+    return Object.keys(next).length ? next : undefined;
+}
+
+function withProviderBackoff(
+    record: SiteIconCacheRecord | undefined,
+    provider: IconProvider | undefined,
+    retryAfter: number
+): Partial<Record<SiteIconProvider, number>> | undefined {
+    const map = getRecordProviderBackoffUntil(record);
+    if (!provider) return map;
+    return {
+        ...(map || {}),
+        [provider]: retryAfter,
+    };
+}
+
+function getSkippedProviders(record: SiteIconCacheRecord | undefined, now = Date.now()): Set<IconProvider> {
+    const skipped = new Set<IconProvider>();
+    const map = getRecordProviderBackoffUntil(record);
+    if (!map) return skipped;
+
+    for (const [provider, until] of Object.entries(map)) {
+        if (Number(until) > now) skipped.add(provider as IconProvider);
+    }
+    return skipped;
+}
+
+function getProviderBackoffMs(provider: IconProvider | undefined, error: string, retryMs: number): number {
+    if (error !== 'img_error') return retryMs;
+    if (provider === 'browser_favicon' || isExternalProvider(provider)) {
+        return Math.max(SITE_ICON_EXTERNAL_PROVIDER_BACKOFF_MS, retryMs);
+    }
+    return Math.max(SITE_ICON_PROVIDER_BACKOFF_MS, retryMs);
 }
 
 export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
@@ -54,12 +134,35 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
 
     const currentVersion = Number(runtime.siteIcons.version || 0);
     if (currentVersion < SITE_ICON_CACHE_VERSION) {
-        // Self-heal: older builds may have poisoned many domains with stale miss records.
+        // Self-heal: clean poisoned records and normalize new runtime fields.
         for (const [domain, value] of Object.entries(runtime.siteIcons.records)) {
             const rec = value as SiteIconCacheRecord | undefined;
-            if (!rec || typeof rec !== 'object') continue;
-            if (rec.cacheMode === 'miss' && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed')) {
+            if (!rec || typeof rec !== 'object') {
                 delete runtime.siteIcons.records[domain];
+                continue;
+            }
+
+            const mode = getRecordCacheMode(rec);
+            const source = String(rec.source || '').toLowerCase();
+            const provider = (rec.provider || 'unknown') as SiteIconProvider;
+            const poisonedBrowserScheme = source.startsWith('chrome://') || source.startsWith('edge://');
+            const poisonedBrowserUrl = mode === 'url' && provider === 'browser_favicon';
+            const poisonedFailedExternal = mode === 'url'
+                && isExternalProvider(provider)
+                && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed');
+            const poisonedMiss = mode === 'miss' && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed');
+
+            if (poisonedBrowserScheme || poisonedBrowserUrl || poisonedFailedExternal || poisonedMiss) {
+                delete runtime.siteIcons.records[domain];
+                continue;
+            }
+
+            rec.providerBackoffUntil = sanitizeProviderBackoffUntil(rec.providerBackoffUntil);
+            if (rec.lastTriedProvider && !isKnownProvider(rec.lastTriedProvider)) {
+                rec.lastTriedProvider = undefined;
+            }
+            if (rec.lastSuccessProvider && !isKnownProvider(rec.lastSuccessProvider)) {
+                rec.lastSuccessProvider = undefined;
             }
         }
         runtime.siteIcons.version = SITE_ICON_CACHE_VERSION;
@@ -186,6 +289,7 @@ function writeBlobRecord(
         qualityScore: number;
         width: number;
         height: number;
+        providerBackoffUntil?: Partial<Record<SiteIconProvider, number>>;
     }
 ) {
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
@@ -199,6 +303,9 @@ function writeBlobRecord(
         qualityScore: payload.qualityScore,
         width: payload.width,
         height: payload.height,
+        providerBackoffUntil: payload.providerBackoffUntil,
+        lastTriedProvider: toRuntimeProvider(payload.provider),
+        lastSuccessProvider: toRuntimeProvider(payload.provider),
         retryAfter: undefined,
         fallbackUrl: undefined,
         lastError: undefined,
@@ -217,6 +324,7 @@ function writeUrlRecord(
         height: number;
         retryAfter: number;
         error?: string;
+        providerBackoffUntil?: Partial<Record<SiteIconProvider, number>>;
     }
 ) {
     runtime.siteIcons.records[domain] = {
@@ -231,15 +339,24 @@ function writeUrlRecord(
         retryAfter: payload.retryAfter,
         blobKey: undefined,
         lastError: payload.error,
+        providerBackoffUntil: payload.providerBackoffUntil,
+        lastTriedProvider: toRuntimeProvider(payload.provider),
+        lastSuccessProvider: toRuntimeProvider(payload.provider),
     };
 }
 
-function writeMissRecord(runtime: RuntimeConfig, domain: string, retryAfter: number, error = 'probe_failed') {
+function writeMissRecord(
+    runtime: RuntimeConfig,
+    domain: string,
+    retryAfter: number,
+    error = 'probe_failed',
+    provider?: IconProvider
+) {
     runtime.siteIcons.records[domain] = {
         cacheMode: 'miss',
         updatedAt: Date.now(),
         source: 'miss',
-        provider: 'unknown',
+        provider: provider ? toRuntimeProvider(provider) : 'unknown',
         retryAfter,
         blobKey: undefined,
         fallbackUrl: undefined,
@@ -247,12 +364,21 @@ function writeMissRecord(runtime: RuntimeConfig, domain: string, retryAfter: num
         width: 0,
         height: 0,
         lastError: error,
+        providerBackoffUntil: withProviderBackoff(runtime.siteIcons.records[domain], provider, retryAfter),
+        lastTriedProvider: provider ? toRuntimeProvider(provider) : undefined,
     };
 }
 
-function touchRecordRetryLock(record: SiteIconCacheRecord, retryAfter: number, error: string) {
+function touchRecordRetryLock(
+    record: SiteIconCacheRecord,
+    retryAfter: number,
+    error: string,
+    provider?: IconProvider
+) {
     record.retryAfter = retryAfter;
     record.lastError = error;
+    record.providerBackoffUntil = withProviderBackoff(record, provider, retryAfter);
+    record.lastTriedProvider = provider ? toRuntimeProvider(provider) : record.lastTriedProvider;
 }
 
 export function markSiteIconMiss(
@@ -264,17 +390,20 @@ export function markSiteIconMiss(
     const domain = extractSiteDomain(rawUrl);
     if (!domain) return false;
     const error = options?.error || 'img_error';
-    const retryMs = options?.retryMs ?? (error === 'img_error' ? SITE_ICON_IMG_ERROR_RETRY_MS : SITE_ICON_RETRY_MS);
-    const retryAfter = Date.now() + retryMs;
     const existing = runtime.siteIcons.records[domain];
+    const existingProvider = existing?.provider as IconProvider | undefined;
+    const baseRetryMs = options?.retryMs ?? (error === 'img_error' ? SITE_ICON_IMG_ERROR_RETRY_MS : SITE_ICON_RETRY_MS);
+    const retryMs = getProviderBackoffMs(existingProvider, error, baseRetryMs);
+    const retryAfter = Date.now() + retryMs;
     const preserveExisting = options?.preserveExisting ?? error === 'img_error';
     const existingMode = getRecordCacheMode(existing);
-    if (preserveExisting && existing && (existingMode === 'blob' || existingMode === 'url')) {
-        touchRecordRetryLock(existing, retryAfter, error);
+    if (preserveExisting && existing && existingMode === 'blob') {
+        touchRecordRetryLock(existing, retryAfter, error, existingProvider);
         return true;
     }
 
-    writeMissRecord(runtime, domain, retryAfter, error);
+    // URL fallback failed to render: downgrade to miss to avoid reusing poisoned URL.
+    writeMissRecord(runtime, domain, retryAfter, error, existingProvider);
     return true;
 }
 
@@ -322,6 +451,7 @@ export async function resolveAndCacheSiteIcon(
     const now = Date.now();
     const record = runtime.siteIcons.records[domain];
     const recordMode = getRecordCacheMode(record);
+    const skipProviders = getSkippedProviders(record, now);
     const cached = await readCachedSiteIcon(rawUrl, runtime, ttlMs);
     const forceRefresh = !!options?.forceRefresh;
 
@@ -333,6 +463,9 @@ export async function resolveAndCacheSiteIcon(
 
     if (!forceRefresh) {
         if (recordMode === 'miss' && isRetryLocked(record, now)) {
+            return null;
+        }
+        if (recordMode === 'url' && isRetryLocked(record, now) && record?.lastError === 'img_error') {
             return null;
         }
         if (cached) {
@@ -363,6 +496,7 @@ export async function resolveAndCacheSiteIcon(
                     qualityScore: probe.qualityScore,
                     width: probe.width,
                     height: probe.height,
+                    providerBackoffUntil: withoutProviderBackoff(runtime.siteIcons.records[domain], probe.provider),
                 });
 
                 return {
@@ -378,6 +512,7 @@ export async function resolveAndCacheSiteIcon(
             }
         }
 
+        const urlRetryAfter = now + Math.min(retryMs, 6 * 60 * 60 * 1000);
         writeUrlRecord(runtime, domain, {
             url: probe.url,
             source: probe.source,
@@ -385,8 +520,9 @@ export async function resolveAndCacheSiteIcon(
             qualityScore: probe.qualityScore,
             width: probe.width,
             height: probe.height,
-            retryAfter: now + retryMs,
+            retryAfter: urlRetryAfter,
             error: canPersist ? 'persist_blob_failed' : 'display_only',
+            providerBackoffUntil: withoutProviderBackoff(runtime.siteIcons.records[domain], probe.provider),
         });
 
         return {
@@ -411,6 +547,7 @@ export async function resolveAndCacheSiteIcon(
         const fastProbe = await probeFastIconCandidate(rawUrl, {
             timeoutMs: fastTimeoutMs,
             minEdgePx,
+            skipProviders,
         });
 
         if (fastProbe) {
@@ -441,11 +578,12 @@ export async function resolveAndCacheSiteIcon(
     const probe = await probeBestIconCandidate(rawUrl, {
         timeoutMs: slowTimeoutMs,
         minEdgePx,
+        skipProviders,
     });
 
     if (!probe) {
         if (cached) return cached;
-        writeMissRecord(runtime, domain, now + retryMs, 'probe_failed');
+        writeMissRecord(runtime, domain, now + retryMs, 'probe_failed', record?.provider as IconProvider | undefined);
         releaseCachedIfUnused();
         return null;
     }

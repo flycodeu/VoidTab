@@ -65,6 +65,8 @@ const listObjectUrls = new Set<string>();
 const previewSrc = ref('');
 const itemPreviewMap = ref<Record<string, string>>({});
 const previewObjectUrl = ref('');
+const previewLoadFailed = ref(false);
+const itemPreviewErrorMap = ref<Record<string, boolean>>({});
 
 const clearObjectUrls = () => {
   for (const u of ownedObjectUrls) {
@@ -108,10 +110,20 @@ const setPreviewSrc = (url: string, isObjectUrl = false) => {
   }
 
   previewSrc.value = url;
+  previewLoadFailed.value = false;
   if (isObjectUrl) {
     previewObjectUrl.value = url;
     rememberObjectUrl(url);
   }
+};
+
+const getFallbackText = (item: Partial<SiteListEntry>): string => {
+  const iconText = String(item.iconValue || '').trim();
+  if (item.iconType === 'text' && iconText) return iconText.substring(0, 4);
+  const title = String(item.title || item.url || '?').trim();
+  if (!title) return '?';
+  if (/[\u4e00-\u9fa5]/.test(title)) return title.substring(0, 2);
+  return title.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || title.substring(0, 2).toUpperCase();
 };
 
 const form = reactive<SiteListEntry>({
@@ -191,6 +203,7 @@ const resolveListPreview = async (item: SiteListEntry): Promise<string> => {
 watch(() => activeGroup.value?.items, async (items) => {
   clearListObjectUrls();
   itemPreviewMap.value = {};
+  itemPreviewErrorMap.value = {};
   if (!items?.length) return;
 
   const pairs = await Promise.all(items.map(async (item: SiteListEntry) => {
@@ -204,6 +217,17 @@ watch(() => activeGroup.value?.items, async (items) => {
   }
   itemPreviewMap.value = map;
 }, {immediate: true, deep: true});
+
+const handlePreviewError = () => {
+  previewLoadFailed.value = true;
+};
+
+const handleItemPreviewError = (id: string) => {
+  itemPreviewErrorMap.value = {
+    ...itemPreviewErrorMap.value,
+    [id]: true,
+  };
+};
 
 // Auto fetch icon
 async function autoFetchIcon() {
@@ -417,11 +441,16 @@ onUnmounted(() => {
                  @click="editItem(item)">
               <div
                   class="w-9 h-9 rounded-lg flex items-center justify-center text-xs text-gray-400 overflow-hidden shrink-0"
-                  :class="itemPreviewMap[item.id] ? 'bg-transparent border-0 shadow-none' : 'bg-black/30 border border-white/5'">
+                  :class="(itemPreviewMap[item.id] && !itemPreviewErrorMap[item.id]) ? 'bg-transparent border-0 shadow-none' : 'bg-black/30 border border-white/5'">
                 <span v-if="item.iconType === 'text'">{{ item.iconValue }}</span>
                 <PhCheck v-else-if="item.iconType === 'upload'" class="text-green-500"/>
-                <img v-else-if="itemPreviewMap[item.id]" :src="itemPreviewMap[item.id]" class="w-full h-full object-cover"/>
-                <span v-else class="text-[10px] opacity-60">AUTO</span>
+                <img
+                  v-else-if="itemPreviewMap[item.id] && !itemPreviewErrorMap[item.id]"
+                  :src="itemPreviewMap[item.id]"
+                  class="w-full h-full object-cover"
+                  @error="handleItemPreviewError(item.id)"
+                />
+                <span v-else class="text-[10px] opacity-60">{{ getFallbackText(item) }}</span>
               </div>
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium text-gray-200 truncate">{{ item.title }}</div>
@@ -488,10 +517,10 @@ onUnmounted(() => {
                 <div class="bg-[#18181b] p-6 rounded-2xl border border-white/5 flex items-center gap-6">
                   <div
                       class="w-20 h-20 rounded-2xl flex items-center justify-center text-white overflow-hidden shrink-0"
-                      :class="previewSrc ? 'bg-transparent border-0 shadow-none' : 'bg-black/40 border border-white/10'">
+                      :class="(previewSrc && !previewLoadFailed) ? 'bg-transparent border-0 shadow-none' : 'bg-black/40 border border-white/10'">
                     <span v-if="form.iconType === 'text'" class="text-2xl font-bold">{{ form.iconValue }}</span>
-                    <img v-else-if="previewSrc" :src="previewSrc" class="w-full h-full object-cover"/>
-                    <div v-else class="text-[10px] text-gray-600 text-center px-1">预览为空</div>
+                    <img v-else-if="previewSrc && !previewLoadFailed" :src="previewSrc" class="w-full h-full object-cover" @error="handlePreviewError"/>
+                    <div v-else class="text-[10px] text-gray-600 text-center px-1">{{ getFallbackText(form) }}</div>
                   </div>
 
                   <div class="flex-1">

@@ -13,6 +13,13 @@ type IconCandidate = {
     provider: IconProvider;
 };
 
+type ProbeOptions = {
+    timeoutMs?: number;
+    minEdgePx?: number;
+    skipProviders?: Iterable<IconProvider>;
+    declaredTimeoutMs?: number;
+};
+
 export function isDirectIconSource(value: string | null | undefined): boolean {
     if (!value) return false;
     const normalized = String(value).trim();
@@ -116,6 +123,10 @@ function dedupe(candidates: IconCandidate[]): IconCandidate[] {
     return out;
 }
 
+function isExternalProvider(provider: IconProvider): boolean {
+    return provider === 'google_s2' || provider === 'duckduckgo' || provider === 'yandex';
+}
+
 function pushPresetCandidate(candidates: IconCandidate[], host: string, rootDomain: string) {
     if (host && PRESET_ICONS[host]) {
         candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
@@ -182,41 +193,26 @@ export function isPrivateOrLocalUrl(rawUrl: string): boolean {
 
 function buildExtensionCandidates(pageUrl: string): IconCandidate[] {
     const encoded = encodeURIComponent(pageUrl);
+    const runtimeBase = (typeof chrome !== 'undefined' && chrome.runtime?.getURL)
+        ? chrome.runtime.getURL('').replace(/\/$/, '')
+        : '';
+
+    const primary = runtimeBase
+        ? `${runtimeBase}/_favicon/?pageUrl=${encoded}&size=128`
+        : `/_favicon/?pageUrl=${encoded}&size=128`;
+    const fallback = runtimeBase
+        ? `${runtimeBase}/_favicon/?pageUrl=${encoded}&size=64`
+        : `/_favicon/?pageUrl=${encoded}&size=64`;
+
     return [
-        {
-            url: `chrome://favicon2/?size=128&pageUrl=${encoded}`,
-            provider: 'browser_favicon',
-        },
-        {
-            url: `/_favicon/?pageUrl=${encoded}&size=64`,
-            provider: 'browser_favicon',
-        },
+        {url: primary, provider: 'browser_favicon'},
+        {url: fallback, provider: 'browser_favicon'},
     ];
 }
 
-export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] {
-    const parsed = safeParseUrl(rawUrl);
-    if (!parsed) return [];
-
-    const host = normalizeHost(parsed.hostname);
-    const rootDomain = getRegistrableDomain(host);
-    const thirdPartyDomains = getThirdPartyQueryDomains(host);
-    const origin = parsed.origin;
-    const privateOrLocal = isPrivateOrLocalHost(host);
+function buildExternalCandidates(domains: string[]): IconCandidate[] {
     const candidates: IconCandidate[] = [];
-
-    if (isExtensionContext()) {
-        candidates.push(...buildExtensionCandidates(parsed.href));
-    }
-
-    pushPresetCandidate(candidates, host, rootDomain);
-    candidates.push(...buildSiteOriginCandidates(origin));
-
-    if (privateOrLocal) {
-        return dedupe(candidates);
-    }
-
-    for (const domain of thirdPartyDomains) {
+    for (const domain of domains) {
         candidates.push(
             {
                 url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
@@ -232,6 +228,33 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
             },
         );
     }
+    return candidates;
+}
+
+export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] {
+    const parsed = safeParseUrl(rawUrl);
+    if (!parsed) return [];
+
+    const host = normalizeHost(parsed.hostname);
+    const rootDomain = getRegistrableDomain(host);
+    const thirdPartyDomains = getThirdPartyQueryDomains(host);
+    const origin = parsed.origin;
+    const privateOrLocal = isPrivateOrLocalHost(host);
+    const candidates: IconCandidate[] = [];
+
+    candidates.push(...buildSiteOriginCandidates(origin));
+
+    if (isExtensionContext()) {
+        candidates.push(...buildExtensionCandidates(parsed.href));
+    }
+
+    pushPresetCandidate(candidates, host, rootDomain);
+
+    if (privateOrLocal) {
+        return dedupe(candidates);
+    }
+
+    candidates.push(...buildExternalCandidates(thirdPartyDomains));
 
     return dedupe(candidates);
 }
@@ -245,13 +268,13 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
     const origin = parsed.origin;
     const candidates: IconCandidate[] = [];
 
-    // Fast path: own origin first, then preset, then extension API.
+    // Fast path: own origin first, then extension API, then preset.
     candidates.push(...buildSiteOriginCandidates(origin));
-    pushPresetCandidate(candidates, host, rootDomain);
 
     if (isExtensionContext()) {
         candidates.push(...buildExtensionCandidates(parsed.href));
     }
+    pushPresetCandidate(candidates, host, rootDomain);
 
     return dedupe(candidates);
 }
@@ -293,39 +316,181 @@ async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: numbe
     });
 }
 
+function getLargestDeclaredEdge(sizeValue: string | null | undefined): number {
+    if (!sizeValue) return 0;
+    const tokens = sizeValue
+        .split(/\s+/)
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean);
+    let max = 0;
+    for (const token of tokens) {
+        if (token === 'any') {
+            max = Math.max(max, 1024);
+            continue;
+        }
+        const m = token.match(/^(\d+)[xX](\d+)$/);
+        if (!m) continue;
+        const w = Number(m[1] || 0);
+        const h = Number(m[2] || 0);
+        if (Number.isFinite(w) && Number.isFinite(h)) {
+            max = Math.max(max, Math.min(w, h));
+        }
+    }
+    return max;
+}
+
+function scoreDeclaredCandidate(url: string, declaredEdge: number, rel: string, type: string): number {
+    let score = declaredEdge || 0;
+    const normalizedUrl = url.toLowerCase();
+    const normalizedType = String(type || '').toLowerCase();
+    const normalizedRel = String(rel || '').toLowerCase();
+
+    if (normalizedType.includes('svg') || normalizedUrl.endsWith('.svg')) score += 1000;
+    if (normalizedType.includes('png') || normalizedUrl.endsWith('.png') || normalizedUrl.endsWith('.webp')) score += 200;
+    if (normalizedRel.includes('apple-touch-icon')) score += 120;
+    if (normalizedRel.includes('mask-icon')) score += 80;
+    if (normalizedRel.includes('shortcut icon')) score += 20;
+    return score;
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<string | null> {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), Math.max(300, timeoutMs));
+    try {
+        const resp = await fetch(url, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'omit',
+            signal: controller.signal,
+        });
+        if (!resp.ok) return null;
+        return await resp.text();
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function normalizeResolvedUrl(raw: string, base: string): string {
+    if (!raw) return '';
+    try {
+        const next = new URL(raw, base);
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') return '';
+        return next.toString();
+    } catch {
+        return '';
+    }
+}
+
+async function getDeclaredIconCandidates(rawUrl: string, timeoutMs = 1800): Promise<IconCandidate[]> {
+    if (!isExtensionContext()) return [];
+
+    const parsed = safeParseUrl(rawUrl);
+    if (!parsed) return [];
+
+    const html = await fetchTextWithTimeout(parsed.href, timeoutMs);
+    if (!html) return [];
+
+    let doc: Document | null = null;
+    try {
+        doc = new DOMParser().parseFromString(html, 'text/html');
+    } catch {
+        doc = null;
+    }
+    if (!doc) return [];
+
+    const scored: Array<{ candidate: IconCandidate; score: number }> = [];
+    const pushScored = (href: string, edge: number, rel: string, type: string) => {
+        const resolved = normalizeResolvedUrl(href, parsed.href);
+        if (!resolved) return;
+        scored.push({
+            candidate: {url: resolved, provider: 'site_manifest'},
+            score: scoreDeclaredCandidate(resolved, edge, rel, type),
+        });
+    };
+
+    const links = Array.from(doc.querySelectorAll('link[href]'));
+    for (const link of links) {
+        const rel = String(link.getAttribute('rel') || '').trim().toLowerCase();
+        if (!rel.includes('icon') && !rel.includes('apple-touch-icon') && !rel.includes('mask-icon')) continue;
+        const href = String(link.getAttribute('href') || '').trim();
+        if (!href) continue;
+        const type = String(link.getAttribute('type') || '').trim().toLowerCase();
+        const declaredEdge = getLargestDeclaredEdge(link.getAttribute('sizes'));
+        pushScored(href, declaredEdge, rel, type);
+    }
+
+    const manifestLink = links.find((link) => String(link.getAttribute('rel') || '').toLowerCase().includes('manifest'));
+    if (manifestLink) {
+        const manifestHref = String(manifestLink.getAttribute('href') || '').trim();
+        const manifestUrl = normalizeResolvedUrl(manifestHref, parsed.href);
+        if (manifestUrl) {
+            const manifestText = await fetchTextWithTimeout(manifestUrl, timeoutMs);
+            if (manifestText) {
+                try {
+                    const manifestJson = JSON.parse(manifestText);
+                    const icons = Array.isArray(manifestJson?.icons) ? manifestJson.icons : [];
+                    for (const icon of icons) {
+                        if (!icon || typeof icon !== 'object') continue;
+                        const src = String(icon.src || '').trim();
+                        if (!src) continue;
+                        const type = String(icon.type || '').trim().toLowerCase();
+                        const declaredEdge = getLargestDeclaredEdge(String(icon.sizes || ''));
+                        pushScored(src, declaredEdge, 'manifest', type);
+                    }
+                } catch {
+                    // noop
+                }
+            }
+        }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return dedupe(scored.map((x) => x.candidate));
+}
+
 export async function probeBestIconCandidate(
     rawUrl: string,
-    options?: { timeoutMs?: number; minEdgePx?: number }
+    options?: ProbeOptions
 ): Promise<IconProbeResult | null> {
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
-    const candidates = getIconCandidatesWithProviders(rawUrl);
+    const baseCandidates = getIconCandidatesWithProviders(rawUrl);
+    const directCandidates = baseCandidates.filter((x) => !isExternalProvider(x.provider));
+    const externalCandidates = baseCandidates.filter((x) => isExternalProvider(x.provider));
+    const declaredCandidates = await getDeclaredIconCandidates(rawUrl, options?.declaredTimeoutMs ?? 1800);
+    const candidates = dedupe([...directCandidates, ...declaredCandidates, ...externalCandidates]);
     return probeBestIconCandidateFromCandidates(candidates, {
         timeoutMs: options?.timeoutMs,
         minEdgePx: minEdge,
+        skipProviders: options?.skipProviders,
     });
 }
 
 export async function probeFastIconCandidate(
     rawUrl: string,
-    options?: { timeoutMs?: number; minEdgePx?: number }
+    options?: ProbeOptions
 ): Promise<IconProbeResult | null> {
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const candidates = getFastIconCandidatesWithProviders(rawUrl);
     return probeBestIconCandidateFromCandidates(candidates, {
         timeoutMs: options?.timeoutMs,
         minEdgePx: minEdge,
+        skipProviders: options?.skipProviders,
     });
 }
 
 async function probeBestIconCandidateFromCandidates(
     candidates: IconCandidate[],
-    options?: { timeoutMs?: number; minEdgePx?: number }
+    options?: ProbeOptions
 ): Promise<IconProbeResult | null> {
     if (!candidates.length) return null;
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
+    const skipped = new Set<IconProvider>(options?.skipProviders ? Array.from(options.skipProviders) : []);
 
     let firstLoaded: IconProbeResult | null = null;
     for (const candidate of candidates) {
+        if (skipped.has(candidate.provider)) continue;
         const size = await probeImage(candidate.url, options?.timeoutMs ?? 2500);
         if (!size) continue;
 

@@ -1,0 +1,1 @@
+const c="voidtab-temp-config";function n(){try{const t=localStorage.getItem(c);return t?JSON.parse(t):{}}catch{return{}}}function r(t){try{localStorage.setItem(c,JSON.stringify(t))}catch{}}const a={get(t){return n()[t]},set(t,e){const o=n();o[t]=e,r(o)},remove(t){const e=n();delete e[t],r(e)},isValid(t,e){return t?Date.now()-t<e:!1}};export{a as t};

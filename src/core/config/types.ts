@@ -178,6 +178,9 @@ export type SiteIconCacheRecord = {
     fallbackUrl?: string;
     retryAfter?: number;
     lastError?: string;
+    providerBackoffUntil?: Partial<Record<SiteIconProvider, number>>;
+    lastTriedProvider?: SiteIconProvider;
+    lastSuccessProvider?: SiteIconProvider;
     updatedAt: number;
     source: string;
     provider?: SiteIconProvider;

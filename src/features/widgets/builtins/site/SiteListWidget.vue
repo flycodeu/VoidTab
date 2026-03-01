@@ -110,10 +110,23 @@ const styleEngine = computed(() => {
 const iconUrl = ref('');
 const blobCache = ref<Record<string, string>>({});
 const ownedObjectUrls = new Set<string>();
+const mainIconLoadFailed = ref(false);
+const folderImgErrorMap = ref<Record<number, boolean>>({});
 
 const rememberObjectUrl = (url: string) => {
   if (url.startsWith('blob:')) ownedObjectUrls.add(url);
 };
+
+const getFallbackText = (item: any): string => {
+  const text = String(item?.iconValue || '').trim();
+  if (text) return text.substring(0, 4);
+  const title = String(item?.title || item?.url || '?').trim();
+  if (!title) return '?';
+  if (/[\u4e00-\u9fa5]/.test(title)) return title.substring(0, 2);
+  return title.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || title.substring(0, 2).toUpperCase();
+};
+
+const defaultFallbackText = computed(() => defaultSite.value ? getFallbackText(defaultSite.value) : '?');
 
 const getIconSrc = async (item: any) => {
   if (item.iconType === 'text') return null;
@@ -142,25 +155,39 @@ const getIconSrc = async (item: any) => {
 };
 
 watch(() => defaultSite.value, async (site) => {
+  mainIconLoadFailed.value = false;
   if (site) iconUrl.value = await getIconSrc(site) || '';
   else iconUrl.value = '';
 }, {immediate: true, deep: true});
 
 // Folder preview
-const folderIcons = ref<{ type: 'img' | 'text', val: string }[]>([]);
+const folderIcons = ref<Array<{ type: 'img' | 'text'; val: string; fallback: string }>>([]);
 watch(() => activeGroup.value?.items, async (items) => {
+  folderImgErrorMap.value = {};
   if (!items) {
     folderIcons.value = [];
     return;
   }
   const limited = items.slice(0, 9);
   const promises = limited.map(async i => {
-    if (i.iconType === 'text') return {type: 'text', val: i.iconValue};
+    const fallback = getFallbackText(i);
+    if (i.iconType === 'text') return {type: 'text' as const, val: fallback, fallback};
     const src = await getIconSrc(i);
-    return src ? {type: 'img', val: src} : {type: 'text', val: '?'};
+    return src ? {type: 'img' as const, val: src, fallback} : {type: 'text' as const, val: fallback, fallback};
   });
-  folderIcons.value = (await Promise.all(promises)) as any;
+  folderIcons.value = await Promise.all(promises);
 }, {immediate: true, deep: true});
+
+const handleMainIconError = () => {
+  mainIconLoadFailed.value = true;
+};
+
+const handleFolderIconError = (idx: number) => {
+  folderImgErrorMap.value = {
+    ...folderImgErrorMap.value,
+    [idx]: true,
+  };
+};
 
 const handleClick = (e: MouseEvent) => {
   if (props.isEditMode || e.shiftKey) {
@@ -194,7 +221,7 @@ onUnmounted(() => {
       <div v-if="view.showIcon"
            class="flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105 z-10"
            :class="[
-             iconUrl ? 'bg-transparent border-0 ring-0 shadow-none backdrop-blur-0 p-0' : styleEngine.iconBox,
+             (iconUrl && !mainIconLoadFailed) ? 'bg-transparent border-0 ring-0 shadow-none backdrop-blur-0 p-0' : styleEngine.iconBox,
              activeGroup?.style === 'cyber' ? 'rounded-md' : 'rounded-[20px]',
              // size adaptation
              layout.isMini ? 'w-[85%] h-[85%] text-2xl' :
@@ -204,9 +231,14 @@ onUnmounted(() => {
              layout.isLarge ? 'h-[60%] aspect-square text-6xl mb-8' : ''
            ]">
 
-        <img v-if="iconUrl" :src="iconUrl" class="w-full h-full object-cover"/>
+        <img
+          v-if="iconUrl && !mainIconLoadFailed"
+          :src="iconUrl"
+          class="w-full h-full object-cover"
+          @error="handleMainIconError"
+        />
         <span v-else class="font-bold uppercase tracking-wider flex items-center justify-center h-full w-full">
-          {{ defaultSite.iconValue }}
+          {{ defaultFallbackText }}
         </span>
 
         <div v-if="defaultSite.enableFx"
@@ -243,11 +275,16 @@ onUnmounted(() => {
         <div v-for="(icon, idx) in folderIcons" :key="idx"
              class="aspect-square flex items-center justify-center overflow-hidden transition-transform hover:scale-105"
              :class="[
-                 icon.type === 'img' ? 'bg-transparent border-0 ring-0 shadow-none p-0' : styleEngine.folderItem,
+                 (icon.type === 'img' && !folderImgErrorMap[idx]) ? 'bg-transparent border-0 ring-0 shadow-none p-0' : styleEngine.folderItem,
                  activeGroup?.style === 'cyber' ? 'rounded-sm' : 'rounded-xl'
                ]">
-          <img v-if="icon.type === 'img'" :src="icon.val" class="w-full h-full object-cover"/>
-          <span v-else class="text-[10px] font-bold scale-90 opacity-80">{{ icon.val }}</span>
+          <img
+            v-if="icon.type === 'img' && !folderImgErrorMap[idx]"
+            :src="icon.val"
+            class="w-full h-full object-cover"
+            @error="handleFolderIconError(idx)"
+          />
+          <span v-else class="text-[10px] font-bold scale-90 opacity-80">{{ icon.fallback }}</span>
         </div>
 
         <div v-if="folderIcons.length === 0"
