@@ -3,7 +3,6 @@ import {computed, onUnmounted, ref, watch} from 'vue';
 import * as PhIcons from '@phosphor-icons/vue';
 import {useConfigStore} from '../../stores/useConfigStore.ts';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../utils/siteIconCache.ts';
-import {isDirectIconSource} from '../utils/icon.ts';
 
 const props = defineProps<{
   item: {
@@ -24,7 +23,7 @@ const iconSource = ref('');
 const iconSourceIsObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
-const sourceMode = ref<'auto' | 'direct' | 'none'>('none');
+const sourceMode = ref<'auto' | 'none'>('none');
 const normalizedType = computed<'auto' | 'text' | 'icon'>(() => {
   const type = props.item.iconType;
   if (type === 'text' || type === 'icon') return type;
@@ -44,20 +43,6 @@ const setIconSource = (value: string, isObjectUrl = false) => {
   iconSourceIsObjectUrl.value = isObjectUrl;
 };
 
-const getDirectIconUrl = () => {
-  const raw = typeof props.item.icon === 'string' ? props.item.icon.trim() : '';
-  return isDirectIconSource(raw) ? raw : '';
-};
-
-const applyDirectIconFallback = (): boolean => {
-  const direct = getDirectIconUrl();
-  if (!direct) return false;
-  sourceMode.value = 'direct';
-  imgError.value = false;
-  setIconSource(direct, false);
-  return true;
-};
-
 const loadAutoIcon = async (forceRefresh = false) => {
   const type = normalizedType.value;
   if (type !== 'auto') {
@@ -66,15 +51,7 @@ const loadAutoIcon = async (forceRefresh = false) => {
     return;
   }
 
-  const directIconUrl = getDirectIconUrl();
-  if (directIconUrl && !forceRefresh) {
-    sourceMode.value = 'direct';
-    imgError.value = false;
-    setIconSource(directIconUrl, false);
-  }
-
   if (!props.item.url) {
-    if (applyDirectIconFallback()) return;
     sourceMode.value = 'none';
     setIconSource('', false);
     return;
@@ -92,7 +69,6 @@ const loadAutoIcon = async (forceRefresh = false) => {
   }
 
   if (!result?.url) {
-    if (applyDirectIconFallback()) return;
     sourceMode.value = 'none';
     setIconSource('', false);
     return;
@@ -103,7 +79,7 @@ const loadAutoIcon = async (forceRefresh = false) => {
 };
 
 watch(
-    () => [props.item.url, props.item.iconType, props.item.icon],
+    () => [props.item.url, props.item.iconType],
     () => {
       imgError.value = false;
       hasTriedForceRefresh.value = false;
@@ -152,10 +128,6 @@ const handleImgError = () => {
       void loadAutoIcon(true);
       return;
     }
-  }
-
-  if (sourceMode.value !== 'direct' && applyDirectIconFallback()) {
-    return;
   }
 
   imgError.value = true;

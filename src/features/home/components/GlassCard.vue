@@ -5,7 +5,6 @@ import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
-import {isDirectIconSource} from "../../../shared/utils/icon.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -32,7 +31,7 @@ const autoIconUrl = ref("");
 const isObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
-const iconSourceMode = ref<"auto" | "direct" | "none">("none");
+const iconSourceMode = ref<"auto" | "none">("none");
 
 const revokeObjectUrl = () => {
   if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
@@ -47,20 +46,6 @@ const setAutoIconUrl = (url: string, objectUrl: boolean) => {
   isObjectUrl.value = objectUrl;
 };
 
-const getDirectIconUrl = () => {
-  const raw = typeof props.item.icon === "string" ? props.item.icon.trim() : "";
-  return isDirectIconSource(raw) ? raw : "";
-};
-
-const applyDirectIconFallback = (): boolean => {
-  const direct = getDirectIconUrl();
-  if (!direct) return false;
-  hasLoadError.value = false;
-  iconSourceMode.value = "direct";
-  setAutoIconUrl(direct, false);
-  return true;
-};
-
 const resolveAutoIcon = async (forceRefresh = false) => {
   if (!isAuto.value) {
     setAutoIconUrl("", false);
@@ -68,15 +53,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
     return;
   }
 
-  const directIconUrl = getDirectIconUrl();
-  if (directIconUrl && !forceRefresh) {
-    hasLoadError.value = false;
-    iconSourceMode.value = "direct";
-    setAutoIconUrl(directIconUrl, false);
-  }
-
   if (!props.item.url) {
-    if (applyDirectIconFallback()) return;
     setAutoIconUrl("", false);
     iconSourceMode.value = "none";
     hasLoadError.value = true;
@@ -96,7 +73,6 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   }
 
   if (!result?.url) {
-    if (applyDirectIconFallback()) return;
     iconSourceMode.value = "none";
     setAutoIconUrl("", false);
     hasLoadError.value = true;
@@ -109,7 +85,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 };
 
 watch(
-    () => [props.item.url, props.item.iconType, props.item.icon],
+    () => [props.item.url, props.item.iconType],
     () => {
       hasLoadError.value = false;
       hasTriedForceRefresh.value = false;
@@ -142,10 +118,6 @@ const handleFallback = () => {
       void resolveAutoIcon(true);
       return;
     }
-  }
-
-  if (iconSourceMode.value !== "direct" && applyDirectIconFallback()) {
-    return;
   }
 
   hasLoadError.value = true;

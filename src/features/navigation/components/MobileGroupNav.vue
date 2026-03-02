@@ -95,36 +95,6 @@ function onWheel(e: WheelEvent) {
   el.scrollLeft += dx;
 }
 
-let dragging = false;
-let dragStartX = 0;
-let dragStartScrollLeft = 0;
-
-function onPointerDown(e: PointerEvent) {
-  const el = scrollerRef.value;
-  if (!el) return;
-  if (shouldFit.value) return;
-  if (el.scrollWidth <= el.clientWidth) return;
-
-  dragging = true;
-  dragStartX = e.clientX;
-  dragStartScrollLeft = el.scrollLeft;
-  (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
-  if (e.cancelable) e.preventDefault();
-}
-
-function onPointerMove(e: PointerEvent) {
-  if (!dragging) return;
-  const el = scrollerRef.value;
-  if (!el) return;
-
-  const dx = e.clientX - dragStartX;
-  el.scrollLeft = dragStartScrollLeft - dx;
-  if (e.cancelable) e.preventDefault();
-}
-
-function onPointerUp() {
-  dragging = false;
-}
 
 onMounted(() => {
   // ✅ 1) 监听底栏宽度变化
@@ -149,10 +119,6 @@ onMounted(() => {
 
   el.addEventListener('wheel', onWheel, {passive: false});
 
-  el.addEventListener('pointerdown', onPointerDown, {passive: false});
-  el.addEventListener('pointermove', onPointerMove, {passive: false});
-  el.addEventListener('pointerup', onPointerUp, {passive: true});
-  el.addEventListener('pointercancel', onPointerUp, {passive: true});
 });
 
 // 如果 show 切换时宽度可能变化，补发一次
@@ -172,10 +138,6 @@ onUnmounted(() => {
 
   el.removeEventListener('wheel', onWheel as any);
 
-  el.removeEventListener('pointerdown', onPointerDown as any);
-  el.removeEventListener('pointermove', onPointerMove as any);
-  el.removeEventListener('pointerup', onPointerUp as any);
-  el.removeEventListener('pointercancel', onPointerUp as any);
 });
 </script>
 
@@ -183,7 +145,7 @@ onUnmounted(() => {
   <div
       v-if="show"
       ref="barRef"
-      class="fixed bottom-0 left-0 right-0 z-50 md:hidden flex items-center justify-between px-3 border-t border-white/10"
+      class="fixed bottom-0 left-0 right-0 z-50 lg:hidden flex items-center justify-between px-3 border-t border-white/10"
       style="
       background: var(--modal-bg);
       backdrop-filter: blur(25px);
@@ -200,7 +162,6 @@ onUnmounted(() => {
         overscroll-behavior-x: contain;
         touch-action: pan-x;
       "
-        :data-dragging="dragging ? '1' : '0'"
     >
       <div class="flex items-center gap-2" :class="shouldFit ? 'w-full' : 'flex-nowrap w-max'">
         <button
@@ -251,13 +212,5 @@ onUnmounted(() => {
 
 .no-scrollbar {
   scrollbar-width: none;
-}
-
-[data-dragging="0"].no-scrollbar {
-  cursor: grab;
-}
-
-[data-dragging="1"].no-scrollbar {
-  cursor: grabbing;
 }
 </style>

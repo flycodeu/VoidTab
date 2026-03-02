@@ -162,6 +162,7 @@ export type SiteStateMap = Record<string, { lastVisited: number; count: number }
 
 export type SiteIconProvider =
     | 'browser_favicon'
+    | 'cn_favicon'
     | 'google_s2'
     | 'yandex'
     | 'duckduckgo'
@@ -188,6 +189,18 @@ export type SiteIconCacheRecord = {
     qualityScore?: number;
     width?: number;
     height?: number;
+};
+
+export type SiteIconPathMissRecord = {
+    retryAfter: number;
+    failCount: number;
+    lastStatus?: number;
+};
+
+export type SiteIconProviderStatRecord = {
+    failCount: number;
+    lastFailAt: number;
+    lastStatus?: number;
 };
 
 export type PhotoRef =
@@ -221,6 +234,8 @@ export type RuntimeConfig = {
     siteIcons: {
         version: number;
         records: Record<string, SiteIconCacheRecord>;
+        pathMisses?: Record<string, SiteIconPathMissRecord>;
+        providerStats?: Partial<Record<SiteIconProvider, SiteIconProviderStatRecord>>;
         lastBatchRefreshAt?: number;
     };
 

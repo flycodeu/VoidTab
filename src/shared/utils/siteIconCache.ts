@@ -10,12 +10,13 @@ import {
 } from './icon';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 5;
+export const SITE_ICON_CACHE_VERSION = 6;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const SITE_ICON_RETRY_MS = 24 * 60 * 60 * 1000;
+export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
 export const SITE_ICON_PROVIDER_BACKOFF_MS = 10 * 60 * 1000;
 export const SITE_ICON_EXTERNAL_PROVIDER_BACKOFF_MS = 30 * 60 * 1000;
+const SITE_ICON_MIGRATION_MAX_RETRY_LOCK_MS = 2 * 60 * 60 * 1000;
 
 export type SiteIconResult = {
     url: string;
@@ -38,6 +39,7 @@ function isExternalProvider(provider: SiteIconProvider | IconProvider | undefine
 
 function isKnownProvider(provider: any): provider is SiteIconProvider {
     return provider === 'browser_favicon'
+        || provider === 'cn_favicon'
         || provider === 'google_s2'
         || provider === 'yandex'
         || provider === 'duckduckgo'
@@ -45,6 +47,12 @@ function isKnownProvider(provider: any): provider is SiteIconProvider {
         || provider === 'site_favicon'
         || provider === 'preset'
         || provider === 'unknown';
+}
+
+function isThirdPartyFaviconSource(source: string): boolean {
+    return source.includes('api.iowen.cn/favicon/')
+        || source.includes('google.com/s2/favicons')
+        || source.includes('duckduckgo.com/ip3/');
 }
 
 function sanitizeProviderBackoffUntil(
@@ -135,6 +143,7 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
     const currentVersion = Number(runtime.siteIcons.version || 0);
     if (currentVersion < SITE_ICON_CACHE_VERSION) {
         // Self-heal: clean poisoned records and normalize new runtime fields.
+        const now = Date.now();
         for (const [domain, value] of Object.entries(runtime.siteIcons.records)) {
             const rec = value as SiteIconCacheRecord | undefined;
             if (!rec || typeof rec !== 'object') {
@@ -144,15 +153,25 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
 
             const mode = getRecordCacheMode(rec);
             const source = String(rec.source || '').toLowerCase();
-            const provider = (rec.provider || 'unknown') as SiteIconProvider;
+            let provider = (rec.provider || 'unknown') as SiteIconProvider;
+            if (provider === 'unknown' && source.includes('api.iowen.cn/favicon/')) {
+                provider = 'cn_favicon';
+                rec.provider = provider;
+            }
             const poisonedBrowserScheme = source.startsWith('chrome://') || source.startsWith('edge://');
             const poisonedBrowserUrl = mode === 'url' && provider === 'browser_favicon';
             const poisonedFailedExternal = mode === 'url'
                 && isExternalProvider(provider)
                 && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed');
-            const poisonedMiss = mode === 'miss' && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed');
+            const retryAfter = Number(rec.retryAfter || 0);
+            const longRetryLock = Number.isFinite(retryAfter) && retryAfter > now + SITE_ICON_MIGRATION_MAX_RETRY_LOCK_MS;
+            const poisonedMiss = mode === 'miss'
+                && ((rec.lastError === 'img_error' || rec.lastError === 'probe_failed') || longRetryLock);
+            const poisonedUnknownThirdParty = mode === 'url'
+                && provider === 'unknown'
+                && isThirdPartyFaviconSource(source);
 
-            if (poisonedBrowserScheme || poisonedBrowserUrl || poisonedFailedExternal || poisonedMiss) {
+            if (poisonedBrowserScheme || poisonedBrowserUrl || poisonedFailedExternal || poisonedMiss || poisonedUnknownThirdParty) {
                 delete runtime.siteIcons.records[domain];
                 continue;
             }

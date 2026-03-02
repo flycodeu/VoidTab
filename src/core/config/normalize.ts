@@ -1,5 +1,15 @@
 // src/core/config/normalize.ts
-import type {Config, Group, SiteItem, WidgetType, RuntimeConfig, SiteIconCacheRecord} from './types';
+import type {
+    Config,
+    Group,
+    SiteItem,
+    WidgetType,
+    RuntimeConfig,
+    SiteIconCacheRecord,
+    SiteIconProvider,
+    SiteIconPathMissRecord,
+    SiteIconProviderStatRecord,
+} from './types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 
@@ -55,6 +65,82 @@ function getSmartInitials(str: string) {
 
 function isInternalUrl(url: any) {
     return !!url && /^(https?:\/\/)?(192\.168|10\.|172\.(1[6-9]|2\d|3[0-1])|localhost|127\.)/.test(url);
+}
+
+const SITE_ICON_PROVIDER_SET = new Set<SiteIconProvider>([
+    'browser_favicon',
+    'cn_favicon',
+    'google_s2',
+    'yandex',
+    'duckduckgo',
+    'site_manifest',
+    'site_favicon',
+    'preset',
+    'unknown',
+]);
+
+function normalizeSiteIconProvider(provider: any, source: string): SiteIconProvider {
+    if (typeof provider === 'string' && SITE_ICON_PROVIDER_SET.has(provider as SiteIconProvider)) {
+        return provider as SiteIconProvider;
+    }
+    if (source.includes('api.iowen.cn/favicon/')) return 'cn_favicon';
+    return 'unknown';
+}
+
+function normalizeOptionalSiteIconProvider(provider: any, source: string): SiteIconProvider | undefined {
+    if (typeof provider !== 'string') return undefined;
+    return normalizeSiteIconProvider(provider, source);
+}
+
+function normalizeProviderBackoffUntil(value: any): Partial<Record<SiteIconProvider, number>> | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const out: Partial<Record<SiteIconProvider, number>> = {};
+    for (const [provider, untilRaw] of Object.entries(value)) {
+        if (!SITE_ICON_PROVIDER_SET.has(provider as SiteIconProvider)) continue;
+        const until = Number(untilRaw);
+        if (!Number.isFinite(until) || until <= 0) continue;
+        out[provider as SiteIconProvider] = until;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+function normalizePathMisses(value: any): Record<string, SiteIconPathMissRecord> | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const out: Record<string, SiteIconPathMissRecord> = {};
+    for (const [key, raw] of Object.entries(value)) {
+        if (!raw || typeof raw !== 'object') continue;
+        const retryAfter = Number((raw as any).retryAfter);
+        const failCount = Number((raw as any).failCount);
+        const lastStatusRaw = Number((raw as any).lastStatus);
+        if (!Number.isFinite(retryAfter) || retryAfter <= 0) continue;
+        if (!Number.isFinite(failCount) || failCount <= 0) continue;
+        out[String(key)] = {
+            retryAfter,
+            failCount,
+            lastStatus: Number.isFinite(lastStatusRaw) ? lastStatusRaw : undefined,
+        };
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeProviderStats(value: any): Partial<Record<SiteIconProvider, SiteIconProviderStatRecord>> | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const out: Partial<Record<SiteIconProvider, SiteIconProviderStatRecord>> = {};
+    for (const [provider, raw] of Object.entries(value)) {
+        if (!SITE_ICON_PROVIDER_SET.has(provider as SiteIconProvider)) continue;
+        if (!raw || typeof raw !== 'object') continue;
+        const failCount = Number((raw as any).failCount);
+        const lastFailAt = Number((raw as any).lastFailAt);
+        const lastStatusRaw = Number((raw as any).lastStatus);
+        if (!Number.isFinite(failCount) || failCount <= 0) continue;
+        if (!Number.isFinite(lastFailAt) || lastFailAt <= 0) continue;
+        out[provider as SiteIconProvider] = {
+            failCount,
+            lastFailAt,
+            lastStatus: Number.isFinite(lastStatusRaw) ? lastStatusRaw : undefined,
+        };
+    }
+    return Object.keys(out).length ? out : undefined;
 }
 
 // 核心修改：同时处理 Site 和 Widget 的清洗逻辑
@@ -152,12 +238,14 @@ function normalizeRuntime(input: any): RuntimeConfig {
         const cacheMode = (rec.cacheMode === 'blob' || rec.cacheMode === 'url' || rec.cacheMode === 'miss')
             ? rec.cacheMode
             : ((typeof rec.blobKey === 'string' && rec.blobKey) ? 'blob' : 'miss');
+        const source = typeof rec.source === 'string' ? rec.source : 'unknown';
+        const provider = normalizeSiteIconProvider(rec.provider, source.toLowerCase());
 
         const normalized: SiteIconCacheRecord = {
             cacheMode,
             updatedAt: Number.isFinite(Number(rec.updatedAt)) ? Number(rec.updatedAt) : 0,
-            source: typeof rec.source === 'string' ? rec.source : 'unknown',
-            provider: typeof rec.provider === 'string' ? rec.provider : 'unknown',
+            source,
+            provider,
             dprAtFetch: Number.isFinite(Number(rec.dprAtFetch)) ? Number(rec.dprAtFetch) : undefined,
             qualityScore: Number.isFinite(Number(rec.qualityScore)) ? Number(rec.qualityScore) : undefined,
             width: Number.isFinite(Number(rec.width)) ? Number(rec.width) : undefined,
@@ -166,6 +254,9 @@ function normalizeRuntime(input: any): RuntimeConfig {
             fallbackUrl: typeof rec.fallbackUrl === 'string' ? rec.fallbackUrl : undefined,
             retryAfter: Number.isFinite(Number(rec.retryAfter)) ? Number(rec.retryAfter) : undefined,
             lastError: typeof rec.lastError === 'string' ? rec.lastError : undefined,
+            providerBackoffUntil: normalizeProviderBackoffUntil(rec.providerBackoffUntil),
+            lastTriedProvider: normalizeOptionalSiteIconProvider(rec.lastTriedProvider, source.toLowerCase()),
+            lastSuccessProvider: normalizeOptionalSiteIconProvider(rec.lastSuccessProvider, source.toLowerCase()),
         };
 
         if (normalized.cacheMode === 'blob' && !normalized.blobKey) {
@@ -180,6 +271,8 @@ function normalizeRuntime(input: any): RuntimeConfig {
     const siteIcons = {
         version: Number.isFinite(Number(rawSiteIcons.version)) ? Number(rawSiteIcons.version) : 1,
         records: siteIconRecords,
+        pathMisses: normalizePathMisses(rawSiteIcons.pathMisses),
+        providerStats: normalizeProviderStats(rawSiteIcons.providerStats),
         lastBatchRefreshAt: Number.isFinite(Number(rawSiteIcons.lastBatchRefreshAt))
             ? Number(rawSiteIcons.lastBatchRefreshAt)
             : 0,

@@ -476,7 +476,7 @@ const tryOpenDevTools = () => {
         </div>
 
         <SideBar
-            class="hidden md:flex z-40"
+            class="hidden lg:flex z-40"
             :activeGroupId="activeGroupId"
             :isFocusMode="isFocusMode"
             @update:activeGroupId="setActiveGroupId"

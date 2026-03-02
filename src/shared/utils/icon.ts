@@ -1,5 +1,6 @@
 export type IconProvider =
     | 'browser_favicon'
+    | 'cn_favicon'
     | 'google_s2'
     | 'yandex'
     | 'duckduckgo'
@@ -13,12 +14,194 @@ type IconCandidate = {
     provider: IconProvider;
 };
 
+type CandidateHealthCacheEntry = {
+    ok: boolean;
+    retryAfter: number;
+    status?: number;
+};
+
+type PersistentFailEntry = {
+    retryAfter: number;
+    failCount: number;
+    lastStatus?: number;
+    lastFailAt: number;
+};
+
+type PathFailureStat = {
+    failCount: number;
+    lastFailAt: number;
+    lastStatus?: number;
+};
+
+type ProviderFailureStat = {
+    count: number;
+    lastAt: number;
+    lastStatus?: number;
+};
+
 type ProbeOptions = {
     timeoutMs?: number;
     minEdgePx?: number;
     skipProviders?: Iterable<IconProvider>;
     declaredTimeoutMs?: number;
 };
+
+const CANDIDATE_FAIL_RETRY_MS = 30 * 60 * 1000;
+const CANDIDATE_OK_TTL_MS = 10 * 60 * 1000;
+const PERSISTENT_FAIL_TTL_MS = 24 * 60 * 60 * 1000;
+const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v1';
+const PERSISTENT_FAIL_MAX_ENTRIES = 1200;
+const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v1';
+const FAILURE_STATS_MAX_PATH_ENTRIES = 1200;
+const candidateHealthCache = new Map<string, CandidateHealthCacheEntry>();
+const persistentFailCache = new Map<string, PersistentFailEntry>();
+const providerFailureStats = new Map<IconProvider, ProviderFailureStat>();
+const pathFailureStats = new Map<string, PathFailureStat>();
+let persistentFailLoaded = false;
+let persistentFailPersistTimer: number | null = null;
+let failureStatsPersistTimer: number | null = null;
+
+function canUseStorage(): boolean {
+    return typeof window !== 'undefined' && !!window.localStorage;
+}
+
+function loadPersistentFailCache(): void {
+    if (persistentFailLoaded) return;
+    persistentFailLoaded = true;
+    if (!canUseStorage()) return;
+
+    try {
+        const raw = window.localStorage.getItem(PERSISTENT_FAIL_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Record<string, any>;
+        const now = Date.now();
+        for (const [url, value] of Object.entries(parsed || {})) {
+            if (!value || typeof value !== 'object') continue;
+            const retryAfter = Number((value as any).retryAfter);
+            const failCount = Number((value as any).failCount);
+            const lastFailAt = Number((value as any).lastFailAt);
+            const lastStatusRaw = Number((value as any).lastStatus);
+            if (!Number.isFinite(retryAfter) || retryAfter <= now) continue;
+            if (!Number.isFinite(failCount) || failCount <= 0) continue;
+            if (!Number.isFinite(lastFailAt) || lastFailAt <= 0) continue;
+            persistentFailCache.set(url, {
+                retryAfter,
+                failCount,
+                lastFailAt,
+                lastStatus: Number.isFinite(lastStatusRaw) ? lastStatusRaw : undefined,
+            });
+        }
+    } catch {
+        // ignore broken storage payload
+    }
+}
+
+function schedulePersistPersistentFailCache(): void {
+    if (!canUseStorage()) return;
+    if (persistentFailPersistTimer != null) return;
+    persistentFailPersistTimer = window.setTimeout(() => {
+        persistentFailPersistTimer = null;
+        const now = Date.now();
+        const alive = Array.from(persistentFailCache.entries())
+            .filter(([, value]) => Number(value.retryAfter) > now)
+            .sort((a, b) => Number(b[1].lastFailAt || 0) - Number(a[1].lastFailAt || 0))
+            .slice(0, PERSISTENT_FAIL_MAX_ENTRIES);
+        const payload: Record<string, PersistentFailEntry> = {};
+        for (const [url, value] of alive) payload[url] = value;
+        try {
+            window.localStorage.setItem(PERSISTENT_FAIL_STORAGE_KEY, JSON.stringify(payload));
+        } catch {
+            // ignore quota/storage failures
+        }
+    }, 200);
+}
+
+function schedulePersistFailureStats(): void {
+    if (!canUseStorage()) return;
+    if (failureStatsPersistTimer != null) return;
+    failureStatsPersistTimer = window.setTimeout(() => {
+        failureStatsPersistTimer = null;
+        const providerStats: Record<string, ProviderFailureStat> = {};
+        for (const [provider, stat] of providerFailureStats.entries()) {
+            providerStats[provider] = stat;
+        }
+        const pathMisses: Record<string, PathFailureStat> = {};
+        const pathEntries = Array.from(pathFailureStats.entries())
+            .sort((a, b) => Number(b[1].lastFailAt || 0) - Number(a[1].lastFailAt || 0))
+            .slice(0, FAILURE_STATS_MAX_PATH_ENTRIES);
+        for (const [path, stat] of pathEntries) {
+            pathMisses[path] = stat;
+        }
+        try {
+            window.localStorage.setItem(
+                FAILURE_STATS_STORAGE_KEY,
+                JSON.stringify({
+                    totalFailures: Array.from(providerFailureStats.values()).reduce((acc, x) => acc + Number(x.count || 0), 0),
+                    providerStats,
+                    pathMisses,
+                    updatedAt: Date.now(),
+                })
+            );
+        } catch {
+            // ignore quota/storage failures
+        }
+    }, 300);
+}
+
+function buildPathFailureKey(url: string): string {
+    try {
+        const parsed = new URL(url);
+        return `${parsed.hostname.toLowerCase()}${parsed.pathname.toLowerCase()}`;
+    } catch {
+        return url.toLowerCase();
+    }
+}
+
+function rememberPersistentFailure(url: string, status?: number): void {
+    loadPersistentFailCache();
+    const now = Date.now();
+    const prev = persistentFailCache.get(url);
+    persistentFailCache.set(url, {
+        retryAfter: now + PERSISTENT_FAIL_TTL_MS,
+        failCount: Number(prev?.failCount || 0) + 1,
+        lastStatus: status,
+        lastFailAt: now,
+    });
+    schedulePersistPersistentFailCache();
+}
+
+function clearPersistentFailure(url: string): void {
+    loadPersistentFailCache();
+    if (!persistentFailCache.delete(url)) return;
+    schedulePersistPersistentFailCache();
+}
+
+function rememberProviderAndPathFailure(url: string, provider: IconProvider, status?: number): void {
+    const providerPrev = providerFailureStats.get(provider);
+    providerFailureStats.set(provider, {
+        count: Number(providerPrev?.count || 0) + 1,
+        lastAt: Date.now(),
+        lastStatus: status,
+    });
+
+    const pathKey = buildPathFailureKey(url);
+    const pathPrev = pathFailureStats.get(pathKey);
+    pathFailureStats.set(pathKey, {
+        failCount: Number(pathPrev?.failCount || 0) + 1,
+        lastFailAt: Date.now(),
+        lastStatus: status,
+    });
+    if (pathFailureStats.size > FAILURE_STATS_MAX_PATH_ENTRIES * 2) {
+        const pruned = Array.from(pathFailureStats.entries())
+            .sort((a, b) => Number(b[1].lastFailAt || 0) - Number(a[1].lastFailAt || 0))
+            .slice(0, FAILURE_STATS_MAX_PATH_ENTRIES);
+        pathFailureStats.clear();
+        for (const [key, value] of pruned) {
+            pathFailureStats.set(key, value);
+        }
+    }
+    schedulePersistFailureStats();
+}
 
 export function isDirectIconSource(value: string | null | undefined): boolean {
     if (!value) return false;
@@ -34,10 +217,12 @@ const PRESET_ICONS: Record<string, string> = {
     'taobao.com': 'https://img.alicdn.com/tfs/TB1_uT8a5ZX8KJjSgoSXXa.sXXa-128-128.png',
     'zhihu.com': 'https://static.zhihu.com/heifetz/assets/apple-touch-icon-152.a53ae37b.png',
     'csdn.net': 'https://g.csdnimg.cn/static/logo/favicon32.ico',
+    'chat.deepseek.com': 'https://cdn.deepseek.com/chat/icon.png',
+    'deepseek.com': 'https://cdn.deepseek.com/chat/icon.png',
 };
 
-export const ICON_MIN_EDGE_PX = 48;
-export const RETINA_ICON_MIN_EDGE_PX = 64;
+export const ICON_MIN_EDGE_PX = 96;
+export const RETINA_ICON_MIN_EDGE_PX = 96;
 
 export type IconProbeResult = {
     url: string;
@@ -144,11 +329,19 @@ function buildSiteOriginCandidates(origin: string): IconCandidate[] {
             provider: 'site_favicon',
         },
         {
-            url: `${origin}/favicon-32x32.png`,
+            url: `${origin}/favicon.svg`,
+            provider: 'site_manifest',
+        },
+        {
+            url: `${origin}/favicon.png`,
             provider: 'site_manifest',
         },
         {
             url: `${origin}/apple-touch-icon.png`,
+            provider: 'site_manifest',
+        },
+        {
+            url: `${origin}/favicon-32x32.png`,
             provider: 'site_manifest',
         },
     ];
@@ -215,6 +408,10 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
     for (const domain of domains) {
         candidates.push(
             {
+                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
+                provider: 'cn_favicon',
+            },
+            {
                 url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
                 provider: 'google_s2',
             },
@@ -251,6 +448,11 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     pushPresetCandidate(candidates, host, rootDomain);
 
     if (privateOrLocal) {
+        return dedupe(candidates);
+    }
+
+    // In non-extension context, third-party sources are noisy and often blocked by CORS/network policy.
+    if (!isExtensionContext()) {
         return dedupe(candidates);
     }
 
@@ -372,6 +574,117 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<str
     }
 }
 
+function shouldPrevalidateCandidate(candidate: IconCandidate): boolean {
+    // Browser favicon is extension internal and preset is curated; skip extra precheck.
+    if (candidate.provider === 'browser_favicon' || candidate.provider === 'preset') return false;
+    return true;
+}
+
+function canPrevalidateUrl(url: string): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+        // In extension context cross-origin fetch is allowed by host permissions.
+        if (isExtensionContext()) return true;
+
+        // In web/dev mode only prevalidate same-origin to avoid CORS false negatives.
+        return parsed.origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
+function getCachedHealth(url: string, now = Date.now()): CandidateHealthCacheEntry | null {
+    const cached = candidateHealthCache.get(url);
+    if (cached) {
+        if (cached.retryAfter <= now) {
+            candidateHealthCache.delete(url);
+        } else {
+            return cached;
+        }
+    }
+
+    loadPersistentFailCache();
+    const persistent = persistentFailCache.get(url);
+    if (!persistent) return null;
+    if (persistent.retryAfter <= now) {
+        persistentFailCache.delete(url);
+        schedulePersistPersistentFailCache();
+        return null;
+    }
+    return {
+        ok: false,
+        retryAfter: persistent.retryAfter,
+        status: persistent.lastStatus,
+    };
+}
+
+function rememberCandidateSuccess(candidate: IconCandidate, status?: number): void {
+    candidateHealthCache.set(candidate.url, {
+        ok: true,
+        retryAfter: Date.now() + CANDIDATE_OK_TTL_MS,
+        status,
+    });
+    clearPersistentFailure(candidate.url);
+}
+
+function rememberCandidateFailure(candidate: IconCandidate, status?: number): void {
+    candidateHealthCache.set(candidate.url, {
+        ok: false,
+        retryAfter: Date.now() + CANDIDATE_FAIL_RETRY_MS,
+        status,
+    });
+    rememberPersistentFailure(candidate.url, status);
+    rememberProviderAndPathFailure(candidate.url, candidate.provider, status);
+}
+
+async function prevalidateCandidateUrl(candidate: IconCandidate, timeoutMs = 1200): Promise<boolean> {
+    const now = Date.now();
+    const cached = getCachedHealth(candidate.url, now);
+    if (cached) return cached.ok;
+    if (!canPrevalidateUrl(candidate.url)) return true;
+
+    const tryFetch = async (method: 'HEAD' | 'GET'): Promise<Response> => {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), Math.max(300, timeoutMs));
+        try {
+            return await fetch(candidate.url, {
+                method,
+                cache: 'no-store',
+                credentials: 'omit',
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timer);
+        }
+    };
+
+    try {
+        let resp: Response;
+        try {
+            resp = await tryFetch('HEAD');
+            if (resp.status === 405 || resp.status === 501) {
+                resp = await tryFetch('GET');
+            }
+        } catch {
+            resp = await tryFetch('GET');
+        }
+
+        if (resp.ok) {
+            rememberCandidateSuccess(candidate, resp.status);
+            return true;
+        }
+
+        rememberCandidateFailure(candidate, resp.status);
+        return false;
+    } catch {
+        rememberCandidateFailure(candidate);
+        return false;
+    }
+}
+
 function normalizeResolvedUrl(raw: string, base: string): string {
     if (!raw) return '';
     try {
@@ -456,10 +769,30 @@ export async function probeBestIconCandidate(
 ): Promise<IconProbeResult | null> {
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const baseCandidates = getIconCandidatesWithProviders(rawUrl);
-    const directCandidates = baseCandidates.filter((x) => !isExternalProvider(x.provider));
+    const siteOriginCandidates = baseCandidates.filter((x) => x.provider === 'site_favicon' || x.provider === 'site_manifest');
+    const browserCandidates = baseCandidates.filter((x) => x.provider === 'browser_favicon');
+    const presetCandidates = baseCandidates.filter((x) => x.provider === 'preset');
+    const cnFallbackCandidates = baseCandidates.filter((x) => x.provider === 'cn_favicon');
     const externalCandidates = baseCandidates.filter((x) => isExternalProvider(x.provider));
+    const unknownCandidates = baseCandidates.filter(
+        (x) =>
+            x.provider !== 'site_favicon'
+            && x.provider !== 'site_manifest'
+            && x.provider !== 'browser_favicon'
+            && x.provider !== 'preset'
+            && x.provider !== 'cn_favicon'
+            && !isExternalProvider(x.provider)
+    );
     const declaredCandidates = await getDeclaredIconCandidates(rawUrl, options?.declaredTimeoutMs ?? 1800);
-    const candidates = dedupe([...directCandidates, ...declaredCandidates, ...externalCandidates]);
+    const candidates = dedupe([
+        ...declaredCandidates,
+        ...presetCandidates,
+        ...browserCandidates,
+        ...siteOriginCandidates,
+        ...cnFallbackCandidates,
+        ...externalCandidates,
+        ...unknownCandidates,
+    ]);
     return probeBestIconCandidateFromCandidates(candidates, {
         timeoutMs: options?.timeoutMs,
         minEdgePx: minEdge,
@@ -488,11 +821,23 @@ async function probeBestIconCandidateFromCandidates(
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const skipped = new Set<IconProvider>(options?.skipProviders ? Array.from(options.skipProviders) : []);
 
-    let firstLoaded: IconProbeResult | null = null;
     for (const candidate of candidates) {
         if (skipped.has(candidate.provider)) continue;
+        const cached = getCachedHealth(candidate.url);
+        if (cached && !cached.ok) continue;
+
+        if (shouldPrevalidateCandidate(candidate) && !cached?.ok) {
+            const prevalidated = await prevalidateCandidateUrl(candidate, Math.min(1500, options?.timeoutMs ?? 2500));
+            if (!prevalidated) continue;
+        }
+
         const size = await probeImage(candidate.url, options?.timeoutMs ?? 2500);
-        if (!size) continue;
+        if (!size) {
+            rememberCandidateFailure(candidate);
+            continue;
+        }
+
+        rememberCandidateSuccess(candidate);
 
         const edge = Math.min(size.width, size.height);
         const lowQuality = edge < minEdge;
@@ -506,11 +851,33 @@ async function probeBestIconCandidateFromCandidates(
             qualityScore: edge,
         };
 
-        if (!firstLoaded) firstLoaded = result;
         if (!lowQuality) return result;
     }
 
-    return firstLoaded;
+    return null;
+}
+
+export function getIconFailureStatsSnapshot(): {
+    totalFailures: number;
+    providerStats: Record<string, ProviderFailureStat>;
+    pathMisses: Record<string, PathFailureStat>;
+    updatedAt: number;
+} {
+    const providerStats: Record<string, ProviderFailureStat> = {};
+    for (const [provider, stat] of providerFailureStats.entries()) {
+        providerStats[provider] = {...stat};
+    }
+    const pathMisses: Record<string, PathFailureStat> = {};
+    for (const [path, stat] of pathFailureStats.entries()) {
+        pathMisses[path] = {...stat};
+    }
+    const totalFailures = Object.values(providerStats).reduce((acc, x) => acc + Number(x.count || 0), 0);
+    return {
+        totalFailures,
+        providerStats,
+        pathMisses,
+        updatedAt: Date.now(),
+    };
 }
 
 export const getHighResIconUrl = (url: string): string => {

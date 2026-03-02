@@ -141,6 +141,8 @@ onBeforeUnmount(() => {
   mq?.removeEventListener?.("change", onMqChange);
   ro?.disconnect();
   if (onWindowResize) window.removeEventListener("resize", onWindowResize);
+  resetLongPressState();
+  suppressNextSiteClick = null;
   ro = null;
   onWindowResize = null;
 });
@@ -295,10 +297,89 @@ const onDragEnd = () => {
   });
 };
 
+const TOUCH_LONG_PRESS_MS = 450;
+const TOUCH_MOVE_TOLERANCE = 10;
+let longPressTimer: number | null = null;
+let longPressState: { pointerId: number; startX: number; startY: number; item: any; groupId: string } | null = null;
+let longPressTriggered = false;
+let suppressNativeContextMenuUntil = 0;
+let suppressNextSiteClick: { siteId: string; until: number } | null = null;
+
+const resetLongPressState = () => {
+  if (longPressTimer != null) {
+    window.clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressState = null;
+  longPressTriggered = false;
+};
+
+const shouldEnableLongPress = (e: PointerEvent) => {
+  if (props.isEditMode || ui.dragState.isDragging) return false;
+  if (e.pointerType === "touch" || e.pointerType === "pen") return true;
+  return !!window.matchMedia?.("(pointer: coarse)")?.matches;
+};
+
+const handleSitePointerDown = (e: PointerEvent, item: any, groupId: string) => {
+  if (!item || item.kind === "widget") return;
+  if (!shouldEnableLongPress(e)) return;
+
+  resetLongPressState();
+  longPressState = {
+    pointerId: e.pointerId,
+    startX: e.clientX,
+    startY: e.clientY,
+    item,
+    groupId,
+  };
+
+  longPressTimer = window.setTimeout(() => {
+    if (!longPressState) return;
+    longPressTriggered = true;
+    suppressNativeContextMenuUntil = Date.now() + 700;
+    suppressNextSiteClick = {siteId: String(item.id || ""), until: Date.now() + 900};
+    ui.openContextMenuAt(longPressState.startX, longPressState.startY, item, "site", groupId);
+  }, TOUCH_LONG_PRESS_MS);
+};
+
+const handleSitePointerMove = (e: PointerEvent) => {
+  if (!longPressState || longPressTriggered) return;
+  if (e.pointerId !== longPressState.pointerId) return;
+
+  const dx = Math.abs(e.clientX - longPressState.startX);
+  const dy = Math.abs(e.clientY - longPressState.startY);
+  if (dx > TOUCH_MOVE_TOLERANCE || dy > TOUCH_MOVE_TOLERANCE) {
+    resetLongPressState();
+  }
+};
+
+const handleSitePointerEnd = (e: PointerEvent) => {
+  if (!longPressState || e.pointerId !== longPressState.pointerId) return;
+  const fired = longPressTriggered;
+  resetLongPressState();
+  if (fired) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+};
+
+const handleSiteClickCapture = (e: MouseEvent, item: any) => {
+  if (!suppressNextSiteClick) return;
+  if (Date.now() > suppressNextSiteClick.until) {
+    suppressNextSiteClick = null;
+    return;
+  }
+  if (suppressNextSiteClick.siteId !== String(item?.id || "")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  suppressNextSiteClick = null;
+};
+
 const handleBlankContextMenu = (e: MouseEvent, groupId: string) => {
   ui.openContextMenu(e, null, "blank", groupId);
 };
 const handleItemContextMenu = (e: MouseEvent, item: any, groupId: string) => {
+  if (Date.now() < suppressNativeContextMenuUntil) return;
   const type = item.kind === "widget" ? "widget" : "site";
   ui.openContextMenu(e, item, type, groupId);
 };
@@ -394,7 +475,16 @@ const confirmDelete = () => {
                   </div>
                 </div>
 
-                <div v-else class="w-full h-full flex flex-col items-center justify-start">
+                <div
+                    v-else
+                    class="w-full h-full flex flex-col items-center justify-start"
+                    @pointerdown="(e:any) => handleSitePointerDown(e, item, group.id)"
+                    @pointermove="(e:any) => handleSitePointerMove(e)"
+                    @pointerup="(e:any) => handleSitePointerEnd(e)"
+                    @pointercancel="(e:any) => handleSitePointerEnd(e)"
+                    @pointerleave="(e:any) => handleSitePointerEnd(e)"
+                    @click.capture="(e:any) => handleSiteClickCapture(e, item)"
+                >
                   <GlassCard
                       :item="item"
                       :isEditMode="isEditMode"

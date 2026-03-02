@@ -252,13 +252,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize);
-  window.addEventListener('mousedown', handleClickOutside, true);
+  window.addEventListener('pointerdown', handleClickOutside, true);
   window.addEventListener('keydown', handleKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
-  window.removeEventListener('mousedown', handleClickOutside, true);
+  window.removeEventListener('pointerdown', handleClickOutside, true);
   window.removeEventListener('keydown', handleKeydown);
 });
 </script>

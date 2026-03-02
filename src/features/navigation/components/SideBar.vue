@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
   >
     <transition :name="transitionName">
       <aside
-          class="hidden md:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail"
+          class="hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail"
           :class="[
             railClass,
             { 'is-breathing': !!store.config.theme.breathingLight },
