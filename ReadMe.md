@@ -180,6 +180,12 @@ VoidTab 采用了模块化架构，逻辑层与视图层分离，方便扩展。
     └── stores                  # Pinia 状态库
 ```
 
+## 许可证
+
+本项目基于 MIT License 开源。如果您遇到任何问题或有功能建议，请通过以下方式联系我们：
+
+- 提交 Issue
+
 ## 致谢 (Credits)
 - 感谢 Google Gemini 、ChatGPT 提供强大的代码生成与重构支持。
 - 感谢 Open-Meteo 提供免费且无需 Key 的天气 API 服务。
