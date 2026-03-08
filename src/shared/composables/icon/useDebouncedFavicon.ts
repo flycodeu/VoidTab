@@ -34,6 +34,7 @@ export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
         // 创建一个隐形的图片对象来探测是否能加载
         const img = new Image();
         currentImg = img;
+        img.referrerPolicy = 'no-referrer';
 
         img.onload = () => {
             // 只有当这个 img 还是"当前正在请求"的 img 时才赋值

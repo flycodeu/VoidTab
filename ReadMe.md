@@ -1,12 +1,17 @@
 # VoidTab
 
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org) [![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev) [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![Deploy](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white)](https://vercel.com) [![Demo](https://img.shields.io/badge/Demo-flycode.icu-0ea5e9)](https://www.flycode.icu)
+
 VoidTab 是一个基于 Vue 3 + TypeScript 构建的极简、赛博朋克风格浏览器起始页（New Tab Extension）。
 
-目前已经上架Edge插件：
+目前已上架 Edge 商店，支持搜索“VoidTab”或直接安装：
+[VoidTab - Edge 商店](https://microsoftedge.microsoft.com/addons/detail/voidtab-cyberpunk-dashb/apddbplmmpiiocfilhceiopjcjpkcbdj?hl=zh-CN)
+
+也支持从 Releases 直接下载最新版本进行手动安装。
+
 ![img.png](img/img_0.png)
 
-它摒弃了传统导航页的臃肿与广告，专注于极致的视觉体验与纯粹的效率。拥有高度定制化的毛玻璃 UI、沉浸式的数据控制台（HUD）、**
-双模切换（GUI/CLI）**以及支持多端同步的数据存储。
+它摒弃了传统导航页的臃肿与广告，专注于极致的视觉体验与纯粹的效率。拥有高度定制化的毛玻璃 UI、沉浸式的数据控制台（HUD）、双模切换（GUI/CLI），以及支持多端同步的数据存储。
 ![img.png](img/img.png)
 > Fun Fact: 本项目 99% 的代码由 AI (Google Gemini, ChatGPT) 辅助编写，是一个探索 AI 辅助独立开发的实验性项目。
 
@@ -59,13 +64,36 @@ VoidTab 是一个基于 Vue 3 + TypeScript 构建的极简、赛博朋克风格�
 - ![img_6.png](img/img_6.png)
 ## 安装与使用
 
-本项目支持两种运行模式：浏览器插件模式（推荐）和 网页开发模式。
+本项目支持两种安装方式（Edge 商店 / 手动安装），并提供本地网页开发模式。
 
-### 方式一：作为浏览器插件安装 (推荐)
+### 方式一：Edge 商店安装（推荐）
 
-想要获得最佳体验（包括新标签页接管、跨设备同步），请按此步骤安装：
+在 Edge 商店搜索“VoidTab”或直接安装：
+[VoidTab - Edge 商店](https://microsoftedge.microsoft.com/addons/detail/voidtab-cyberpunk-dashb/apddbplmmpiiocfilhceiopjcjpkcbdj?hl=zh-CN)
 
-- 克隆并构建
+优点：
+- 安装方便
+- 自动更新
+- 无需手动管理
+
+缺点：
+- 更新可能不够及时
+- 需要等待商店审核
+
+### 方式二：手动安装（获取最新版本）
+
+从 Releases 下载最新版本：
+[Releases](https://github.com/flycodeu/VoidTab/releases)
+
+下载并解压后，按下方“加载到 Chrome / Edge”步骤安装。
+
+优点：
+- 可以第一时间获取最新功能和修复
+
+缺点：
+- 需要手动下载和更新
+
+可选：从源码构建（适合需要自定义或开发）
 
 ```Bash
 git clone https://github.com/flycodeu/VoidTab.git
@@ -81,10 +109,10 @@ npm run build
 - 在地址栏输入 chrome://extensions/ (Chrome) 或 edge://extensions/ (Edge)。
 - 打开右上角的 开发者模式 (Developer mode)。
 - 点击加载已解压的扩展程序 (Load unpacked)。
-- 选择项目根目录下的 dist 文件夹。
+- 选择解压后的 dist 文件夹（或构建生成的 dist）。
 - 打开一个新的标签页，即可体验 VoidTab。
 
-### 方式二：本地网页开发如果你想贡献代码或调试
+### 本地网页开发（贡献或调试）
 
 - UI：启动开发服务器
 

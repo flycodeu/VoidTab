@@ -437,26 +437,27 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     const thirdPartyDomains = getThirdPartyQueryDomains(host);
     const origin = parsed.origin;
     const privateOrLocal = isPrivateOrLocalHost(host);
+    const inExtension = isExtensionContext();
     const candidates: IconCandidate[] = [];
 
-    candidates.push(...buildSiteOriginCandidates(origin));
-
-    if (isExtensionContext()) {
+    if (inExtension) {
+        // Extension: prefer browser favicon first, then presets, then third-party, then site origin.
         candidates.push(...buildExtensionCandidates(parsed.href));
+        pushPresetCandidate(candidates, host, rootDomain);
+        if (!privateOrLocal) {
+            candidates.push(...buildExternalCandidates(thirdPartyDomains));
+        }
+        candidates.push(...buildSiteOriginCandidates(origin));
+
+        return dedupe(candidates);
     }
 
+    // Web/dev: prefer third-party sources to avoid CORP-blocked site icons.
+    if (!privateOrLocal) {
+        candidates.push(...buildExternalCandidates(thirdPartyDomains));
+    }
     pushPresetCandidate(candidates, host, rootDomain);
-
-    if (privateOrLocal) {
-        return dedupe(candidates);
-    }
-
-    // In non-extension context, third-party sources are noisy and often blocked by CORS/network policy.
-    if (!isExtensionContext()) {
-        return dedupe(candidates);
-    }
-
-    candidates.push(...buildExternalCandidates(thirdPartyDomains));
+    candidates.push(...buildSiteOriginCandidates(origin));
 
     return dedupe(candidates);
 }
@@ -468,15 +469,29 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
     const host = normalizeHost(parsed.hostname);
     const rootDomain = getRegistrableDomain(host);
     const origin = parsed.origin;
+    const privateOrLocal = isPrivateOrLocalHost(host);
+    const thirdPartyDomains = getThirdPartyQueryDomains(host);
+    const inExtension = isExtensionContext();
     const candidates: IconCandidate[] = [];
 
-    // Fast path: own origin first, then extension API, then preset.
-    candidates.push(...buildSiteOriginCandidates(origin));
-
-    if (isExtensionContext()) {
+    if (inExtension) {
+        // Fast path (Extension): browser favicon first, then preset, then third-party, then site origin.
         candidates.push(...buildExtensionCandidates(parsed.href));
+        pushPresetCandidate(candidates, host, rootDomain);
+        if (!privateOrLocal) {
+            candidates.push(...buildExternalCandidates(thirdPartyDomains));
+        }
+        candidates.push(...buildSiteOriginCandidates(origin));
+
+        return dedupe(candidates);
+    }
+
+    // Fast path (Web): third-party first, then preset, then site origin.
+    if (!privateOrLocal) {
+        candidates.push(...buildExternalCandidates(thirdPartyDomains));
     }
     pushPresetCandidate(candidates, host, rootDomain);
+    candidates.push(...buildSiteOriginCandidates(origin));
 
     return dedupe(candidates);
 }
@@ -784,13 +799,20 @@ export async function probeBestIconCandidate(
             && !isExternalProvider(x.provider)
     );
     const declaredCandidates = await getDeclaredIconCandidates(rawUrl, options?.declaredTimeoutMs ?? 1800);
-    const candidates = dedupe([
-        ...declaredCandidates,
-        ...presetCandidates,
+    const inExtension = isExtensionContext();
+    const candidates = dedupe(inExtension ? [
         ...browserCandidates,
-        ...siteOriginCandidates,
+        ...presetCandidates,
         ...cnFallbackCandidates,
         ...externalCandidates,
+        ...declaredCandidates,
+        ...siteOriginCandidates,
+        ...unknownCandidates,
+    ] : [
+        ...cnFallbackCandidates,
+        ...externalCandidates,
+        ...presetCandidates,
+        ...siteOriginCandidates,
         ...unknownCandidates,
     ]);
     return probeBestIconCandidateFromCandidates(candidates, {
