@@ -59,6 +59,10 @@ test('config storage encrypts sensitive local fields and strips sync payload', a
   assert.match(sensitive, /ENCRYPTED_VALUE_PREFIX\s*=\s*'enc:v1:'/);
   assert.match(repository, /sealSensitiveConfigForStorage/);
   assert.match(repository, /openSensitiveConfigFromStorage/);
+  assert.match(repository, /loadForBoot/);
+  assert.match(repository, /completeBootLoad/);
+  assert.match(repository, /restoreWallpaper:\s*false/);
+  assert.match(repository, /saveLegacyMigration:\s*false/);
   assert.match(syncActions, /stripSensitiveConfigForSync/);
   assert.match(syncActions, /mergeLocalSensitiveFields/);
   assert.match(syncActions, /buildSyncPayload/);
@@ -131,6 +135,39 @@ test('app exposes semantic landmarks and skip navigation', async () => {
   assert.match(sidebar, /aria-label="分组导航"/);
   assert.match(styles, /\.skip-link:focus/);
   assert.match(styles, /\.sr-only/);
+});
+
+test('boot loading is fast-path with post-boot recovery', async () => {
+  const lifecycle = await read('src/stores/config/lifecycleActions.ts');
+  const repository = await read('src/core/config/repository.ts');
+
+  assert.match(lifecycle, /BOOT_SOFT_TIMEOUT_MS/);
+  assert.match(lifecycle, /config\.load\.boot/);
+  assert.match(lifecycle, /fallback-timeout/);
+  assert.match(lifecycle, /config\.postBoot/);
+  assert.match(lifecycle, /localRevision\.value !== fallbackRevision/);
+  assert.match(repository, /ConfigBootDeferredWork/);
+  assert.match(repository, /deferred\.wallpaper/);
+  assert.match(repository, /deferred\.legacySave/);
+});
+
+test('main wheel navigation switches groups only at scroll boundaries', async () => {
+  const app = await read('src/App.vue');
+  const home = await read('src/features/home/components/HomeMain.vue');
+  const wheel = await read('src/shared/composables/useBoundaryGroupWheel.ts');
+
+  assert.match(app, /useBoundaryGroupWheel/);
+  assert.match(app, /groupWheel\.mount\(\)/);
+  assert.match(app, /groupWheel\.unmount\(\)/);
+  assert.match(app, /resetMainScroll/);
+  assert.match(app, /scheduleBackgroundIconRefresh/);
+  assert.match(app, /refreshAutoSiteIconsBatch\(\{maxDomains:\s*48\}\)/);
+  assert.match(home, /data-wheel-boundary-switch/);
+  assert.match(home, /data-wheel-lock/);
+  assert.match(wheel, /canScrollInDirection/);
+  assert.match(wheel, /scrollable && scrollable !== boundaryHost/);
+  assert.match(wheel, /data-wheel-boundary-switch="true"/);
+  assert.match(wheel, /data-wheel-lock="true"/);
 });
 
 test('normalizeConfig preserves and repairs core config shape', async () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onMounted, onUnmounted, ref} from 'vue';
+import {computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useTheme} from './shared/composables/theme/useTheme.ts';
 import {useConfigStore} from './stores/useConfigStore';
 import {useUiStore} from './stores/ui/useUiStore.ts';
@@ -28,6 +28,7 @@ import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
 import Toast from './shared/ui/Toast.vue';
 import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
 import {useToast} from './shared/composables/useToast';
+import {useBoundaryGroupWheel} from './shared/composables/useBoundaryGroupWheel';
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -61,61 +62,42 @@ const getGroupTitle = (id: string) => {
   return store.config.layout.find((group) => group.id === id)?.title || '';
 };
 
+const resetMainScroll = () => {
+  requestAnimationFrame(() => {
+    const el = document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
+    if (!el) return;
+    el.scrollTo({top: 0, behavior: 'auto'});
+  });
+};
+
 const setActiveGroupId = (id: string) => {
+  if (!id || activeGroupId.value === id) return;
   activeGroupId.value = id;
+  resetMainScroll();
   const title = getGroupTitle(id);
   if (title) ui.announce(`已切换到「${title}」分组`);
 };
 
+watch(
+    () => (store.config.layout || []).map((group) => group.id).join('|'),
+    () => {
+      const groups = store.config.layout || [];
+      if (!groups.length) {
+        activeGroupId.value = '';
+        return;
+      }
+      if (!groups.some((group) => group.id === activeGroupId.value)) {
+        setActiveGroupId(groups[0].id);
+      }
+    },
+    {flush: 'post'}
+);
+
 const dialogLogic = useDialogs(store, ui);
 
 // ======================================================
-// 滚轮切换分组逻辑：只在“没有可滚容器还能滚”时才切组
+// 滚轮切换分组：主内容能滚时滚内容，到顶/到底后切组
 // ======================================================
-const WHEEL_THRESHOLD = 80;
-const WHEEL_COOLDOWN = 360;
-let wheelAcc = 0;
-let lastWheelTs = 0;
-let wheelLocked = false;
-let wheelHandler: ((e: WheelEvent) => void) | null = null;
-
-function isPointerInsideSidebarList(e: WheelEvent) {
-  const el = document.querySelector('[data-sidebar-list="1"]') as HTMLElement | null;
-  if (!el) return false;
-  const r = el.getBoundingClientRect();
-  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-}
-
-function isInsideAnyModalByTarget(target: HTMLElement | null) {
-  return !!target?.closest?.('[data-modal="1"]');
-}
-
-function getPointerElementFromWheel(e: WheelEvent) {
-  return (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) || (e.target as HTMLElement | null);
-}
-
-function findScrollableAncestor(start: HTMLElement | null) {
-  let el: HTMLElement | null = start;
-  while (el) {
-    const style = window.getComputedStyle(el);
-    const oy = style.overflowY;
-    const isScrollableY = oy === 'auto' || oy === 'scroll' || oy === 'overlay';
-    const hasScroll = el.scrollHeight > el.clientHeight + 1;
-    if (isScrollableY && hasScroll) return el;
-    el = el.parentElement;
-  }
-  return null;
-}
-
-function canScrollInDirection(el: HTMLElement, deltaY: number) {
-  // 如果没有滚动内容，返回 false 允许切换分组
-  if (el.scrollHeight <= el.clientHeight + 1) return false;
-
-  if (deltaY < 0) return el.scrollTop > 0;
-  if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-  return false;
-}
-
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
@@ -127,69 +109,38 @@ function canWheelSwitchGroup() {
   return true;
 }
 
-function isTypingTarget(target: EventTarget | null) {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName?.toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-  if ((el as any).isContentEditable) return true;
-  return false;
-}
+const groupWheel = useBoundaryGroupWheel({
+  getGroups: () => store.config.layout || [],
+  getActiveGroupId: () => activeGroupId.value,
+  setActiveGroupId,
+  isDisabled: () => !canWheelSwitchGroup(),
+});
 
-function switchGroup(dir: 1 | -1) {
-  const groups = store.config.layout || [];
-  if (groups.length <= 1) return;
-  const current = activeGroupId.value;
-  const idx = groups.findIndex((g) => g.id === current);
-  const base = idx >= 0 ? idx : 0;
-  const nextIdx = (base + dir + groups.length) % groups.length;
-  const nextId = groups[nextIdx]?.id;
-  if (nextId) setActiveGroupId(nextId);
-}
+let iconRefreshIdleId: number | null = null;
+let iconRefreshTimer: number | null = null;
 
-function onWheelCapture(e: WheelEvent) {
-  if (!e.cancelable) return;
+const scheduleBackgroundIconRefresh = () => {
+  const run = () => {
+    iconRefreshIdleId = null;
+    iconRefreshTimer = null;
+    void store.refreshAutoSiteIconsBatch({maxDomains: 48});
+  };
 
-  const pointerEl = getPointerElementFromWheel(e);
+  const requestIdle = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: { timeout: number }) => number);
+  if (requestIdle) {
+    iconRefreshIdleId = requestIdle(run, {timeout: 5000});
+  } else {
+    iconRefreshTimer = window.setTimeout(run, 3000);
+  }
+};
 
-  // 任意 modal 内直接放行（不要抢滚动）
-  if (isInsideAnyModalByTarget(pointerEl)) return;
-
-  // 侧栏列表区域放行
-  if (isPointerInsideSidebarList(e)) return;
-
-  // 分组排序放行
-  if (ui.isGroupSorting) return;
-
-  // 指针下存在可滚容器且还能滚 -> 放行
-  const scrollable = findScrollableAncestor(pointerEl);
-  if (scrollable && canScrollInDirection(scrollable, e.deltaY)) return;
-
-  // 显式允许区域放行
-  if (pointerEl?.closest?.('[data-wheel-allow="true"]')) return;
-
-  if (!canWheelSwitchGroup()) return;
-  if (isTypingTarget(pointerEl)) return;
-
-  // 只有无处可滚时才切组
-  e.preventDefault();
-
-  if (wheelLocked) return;
-  const now = performance.now();
-  if (now - lastWheelTs > 180) wheelAcc = 0;
-  lastWheelTs = now;
-  wheelAcc += e.deltaY;
-
-  if (Math.abs(wheelAcc) < WHEEL_THRESHOLD) return;
-
-  const dir = wheelAcc > 0 ? 1 : -1;
-  wheelAcc = 0;
-  wheelLocked = true;
-  switchGroup(dir as 1 | -1);
-  window.setTimeout(() => {
-    wheelLocked = false;
-  }, WHEEL_COOLDOWN);
-}
+const cancelBackgroundIconRefresh = () => {
+  const cancelIdle = (window as any).cancelIdleCallback as undefined | ((id: number) => void);
+  if (iconRefreshIdleId != null && cancelIdle) cancelIdle(iconRefreshIdleId);
+  if (iconRefreshTimer != null) window.clearTimeout(iconRefreshTimer);
+  iconRefreshIdleId = null;
+  iconRefreshTimer = null;
+};
 
 // ======================================================
 // 修复：整理模式拖拽靠边自动滚动（使用 dragover 而不是 pointermove）
@@ -367,13 +318,12 @@ const closeTerminal = () => {
 onMounted(async () => {
   if (!store.isLoaded) await store.loadConfig();
   if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
-  void store.refreshAutoSiteIconsBatch();
+  scheduleBackgroundIconRefresh();
 
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
   document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
 
-  wheelHandler = (e: WheelEvent) => onWheelCapture(e);
-  window.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
+  groupWheel.mount();
 
   // 核心：dragover 驱动自动滚动（最关键）
   window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: false});
@@ -387,7 +337,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  if (wheelHandler) window.removeEventListener('wheel', wheelHandler, true);
+  groupWheel.unmount();
 
   window.removeEventListener('dragover', onDragOverForAutoScroll, true);
   window.removeEventListener('dragend', onDragEndForAutoScroll, true);
@@ -396,6 +346,7 @@ onUnmounted(() => {
   window.removeEventListener('blur', onDragEndForAutoScroll);
 
   stopAutoScroll();
+  cancelBackgroundIconRefresh();
 });
 
 // 处理事件：切换编辑模式

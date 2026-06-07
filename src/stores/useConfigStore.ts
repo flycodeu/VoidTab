@@ -50,6 +50,7 @@ export const useConfigStore = defineStore('config', () => {
         normalizeLayoutItems: layoutActions.normalizeLayoutItems,
         saveConfig: persistence.saveConfig,
         startScheduler: syncActions.startScheduler,
+        onLoadWarning: (message) => toast.warning(message),
     });
 
     const destroy = () => {

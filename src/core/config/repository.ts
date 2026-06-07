@@ -10,6 +10,60 @@ import {openSensitiveConfigFromStorage, sealSensitiveConfigForStorage} from './s
 
 const isBase64Image = (s: string) => typeof s === 'string' && s.startsWith('data:image');
 
+export type ConfigBootDeferredWork = {
+    wallpaper: boolean;
+    legacySave: boolean;
+};
+
+export type ConfigBootLoadResult = {
+    config: Config;
+    deferred: ConfigBootDeferredWork;
+};
+
+type ConfigLoadOptions = {
+    restoreWallpaper: boolean;
+    saveLegacyMigration: boolean;
+};
+
+const defaultLoadOptions: ConfigLoadOptions = {
+    restoreWallpaper: true,
+    saveLegacyMigration: true,
+};
+
+async function loadConfigInternal(options: ConfigLoadOptions): Promise<ConfigBootLoadResult> {
+    const local = await storage.get<any>(CONFIG_KEY, null, 'local');
+    const sync = local ? null : await storage.get<any>(CONFIG_KEY, null, 'sync');
+
+    const raw = await openSensitiveConfigFromStorage(local ?? sync ?? defaultConfig);
+    const next = normalizeConfig(migrateConfig(raw));
+    const deferred: ConfigBootDeferredWork = {
+        wallpaper: false,
+        legacySave: false,
+    };
+
+    // wallpaper marker 还原可能读取大体积数据；首屏加载时允许延后。
+    if (next.theme.wallpaper === LOCAL_WALLPAPER_MARKER) {
+        if (options.restoreWallpaper) {
+            const w = await storage.get<string>(WALLPAPER_KEY, '', 'local');
+            if (w) next.theme.wallpaper = w;
+        } else {
+            next.theme.wallpaper = '';
+            deferred.wallpaper = true;
+        }
+    }
+
+    const res = applyLegacyLocalStorageIntoConfig(next);
+    if (res.changed) {
+        if (options.saveLegacyMigration) {
+            await configRepository.save(next);
+        } else {
+            deferred.legacySave = true;
+        }
+    }
+
+    return {config: next, deferred};
+}
+
 export const configRepository = {
     /**
      * 统一加载：
@@ -20,24 +74,36 @@ export const configRepository = {
      * 5) wallpaper marker 还原
      */
     async load(): Promise<Config> {
-        const local = await storage.get<any>(CONFIG_KEY, null, 'local');
-        const sync = local ? null : await storage.get<any>(CONFIG_KEY, null, 'sync');
+        return (await loadConfigInternal(defaultLoadOptions)).config;
+    },
 
-        const raw = await openSensitiveConfigFromStorage(local ?? sync ?? defaultConfig);
-        const next = normalizeConfig(migrateConfig(raw));
+    async loadForBoot(): Promise<ConfigBootLoadResult> {
+        return await loadConfigInternal({
+            restoreWallpaper: false,
+            saveLegacyMigration: false,
+        });
+    },
 
-        // wallpaper marker 还原（始终从 local 读大体积）
-        if (next.theme.wallpaper === LOCAL_WALLPAPER_MARKER) {
+    async completeBootLoad(cfg: Config, deferred: ConfigBootDeferredWork) {
+        const result = {
+            wallpaperRestored: false,
+            legacySaved: false,
+        };
+
+        if (deferred.wallpaper && !cfg.theme.wallpaper) {
             const w = await storage.get<string>(WALLPAPER_KEY, '', 'local');
-            if (w) next.theme.wallpaper = w;
-        }
-        const res = applyLegacyLocalStorageIntoConfig(next);
-        if (res.changed) {
-            // 写回一份新 config（这一步很重要，否则迁移只发生在内存）
-            await this.save(next);
+            if (w && !cfg.theme.wallpaper) {
+                cfg.theme.wallpaper = w;
+                result.wallpaperRestored = true;
+            }
         }
 
-        return next;
+        if (deferred.legacySave) {
+            await this.save(cfg);
+            result.legacySaved = true;
+        }
+
+        return result;
     },
 
     /**
