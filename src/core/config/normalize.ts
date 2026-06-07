@@ -9,6 +9,7 @@ import type {
     SiteIconProvider,
     SiteIconPathMissRecord,
     SiteIconProviderStatRecord,
+    SidebarPosition,
 } from './types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
@@ -39,6 +40,12 @@ function normalizeReadability(inputRb: any, defRb: any) {
         desaturate: clamp(rb.desaturate, 0, 100, defRb.desaturate),
         tint: typeof rb.tint === 'string' ? rb.tint : defRb.tint,
     };
+}
+
+const SIDEBAR_POSITIONS = new Set<SidebarPosition>(['left', 'right', 'top', 'bottom']);
+
+function normalizeSidebarPosition(value: any, fallback: SidebarPosition = 'left'): SidebarPosition {
+    return SIDEBAR_POSITIONS.has(value as SidebarPosition) ? value as SidebarPosition : fallback;
 }
 
 // 🎨 颜色生成器
@@ -321,6 +328,7 @@ export function normalizeConfig(raw: any): Config {
         ...base.theme,
         ...(input.theme || {}),
         showWidgetName: base.theme.showWidgetName ?? true,
+        sidebarPos: normalizeSidebarPosition(input.theme?.sidebarPos, base.theme.sidebarPos),
 
         siteLayoutMode: (input.theme?.siteLayoutMode === 'card' ? 'card' : 'icon'),
         showAllGroupsInMain: typeof input.theme?.showAllGroupsInMain === 'boolean'

@@ -856,14 +856,18 @@ const confirmDelete = () => {
  * 网格 item hover
  * --------------------------------- */
 .site-tile {
-  transition: transform 120ms ease;
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
   isolation: isolate;
 }
 
 .site-tile:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px) scale(1.035);
   z-index: 10;
+}
+
+.site-tile.arrange-mode:hover {
+  transform: translateY(-2px) scale(1.01);
 }
 
 /* ---------------------------------

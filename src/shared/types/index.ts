@@ -23,6 +23,8 @@ export interface LinkGroup {
     items: LinkItem[];
 }
 
+export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
+
 export interface ThemeConfig {
     wallpaper: string;
     mode: 'dark' | 'light';
@@ -43,7 +45,7 @@ export interface ThemeConfig {
 
     // 整体布局
     gridMaxWidth: number;
-    sidebarPos: 'left' | 'right';
+    sidebarPos: SidebarPosition;
     showTime: boolean;
 
     techFont: boolean;       // 是否使用等宽数字字体 (时间)

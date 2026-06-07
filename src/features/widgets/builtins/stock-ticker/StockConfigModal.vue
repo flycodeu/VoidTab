@@ -14,7 +14,7 @@ const newSymbol = ref('');
 
 const addSymbol = () => {
   if (newSymbol.value) {
-    localConfig.value.symbols.push(newSymbol.value.toLowerCase().trim());
+    localConfig.value.symbols.push(newSymbol.value.toUpperCase().trim());
     newSymbol.value = '';
   }
 };
@@ -67,14 +67,14 @@ const save = () => {
           </div>
 
           <div class="space-y-2">
-            <label class="text-xs text-white/50 font-bold uppercase">关注列表 (CoinGecko ID)</label>
+            <label class="text-xs text-white/50 font-bold uppercase">关注列表 (Yahoo Finance Symbol)</label>
 
             <div class="flex gap-2">
               <input
                   v-model="newSymbol"
                   @keyup.enter="addSymbol"
                   type="text"
-                  placeholder="例如: bitcoin, dogecoin"
+                  placeholder="例如: AAPL, MSFT, 0700.HK"
                   class="flex-1 bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[var(--accent-color)]"
               >
               <button @click="addSymbol" class="p-2 bg-white/10 hover:bg-white/20 rounded-lg">

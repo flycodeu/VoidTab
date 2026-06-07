@@ -11,9 +11,10 @@ import {
 } from '@phosphor-icons/vue';
 
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
+import type {SidebarPosition} from '../../../core/config/types.ts';
 
-defineProps<{
-  sidebarPos: 'left' | 'right';
+const props = defineProps<{
+  sidebarPos: SidebarPosition;
   isFocusMode: boolean;
   isEditMode: boolean;
 }>();
@@ -38,6 +39,22 @@ const breathSeconds = computed<number>(() => {
 const isBreathing = computed(() => !!store.config.theme.breathingLight);
 const isNeon = computed(() => !!store.config.theme.neonGlow);
 
+const toolbarClass = computed(() => {
+  if (props.sidebarPos === 'right') return 'top-6 left-6';
+  if (props.sidebarPos === 'top') return 'top-[106px] right-6';
+  return 'top-6 right-6';
+});
+
+const nextSidebarLabel = computed(() => {
+  const labels: Record<SidebarPosition, string> = {
+    left: '切换到右侧布局',
+    right: '切换到顶部布局',
+    top: '切换到底部布局',
+    bottom: '切换到左侧布局',
+  };
+  return labels[props.sidebarPos] || '切换分组栏位置';
+});
+
 /** 用 style 绑定 animationDuration（避免 TS 对 CSS var 的类型问题） */
 const breathAnimStyle = computed(() => {
   if (!isBreathing.value) return undefined;
@@ -47,8 +64,8 @@ const breathAnimStyle = computed(() => {
 
 <template>
   <div
-      class="fixed top-6 z-50 flex items-center gap-3 transition-all duration-500"
-      :class="sidebarPos === 'right' ? 'left-6' : 'right-6'"
+      class="fixed z-50 flex items-center gap-3 transition-all duration-500"
+      :class="toolbarClass"
       role="toolbar"
       aria-label="快捷操作"
   >
@@ -60,8 +77,8 @@ const breathAnimStyle = computed(() => {
           class="fab-btn group"
           :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
           :style="breathAnimStyle"
-          :aria-label="sidebarPos === 'left' ? '切换到右侧布局' : '切换到左侧布局'"
-          :title="sidebarPos === 'left' ? '切换到右侧布局' : '切换到左侧布局'"
+          :aria-label="nextSidebarLabel"
+          :title="nextSidebarLabel"
       >
         <PhArrowsLeftRight
             size="20"

@@ -11,6 +11,7 @@ import {
 import AiChatPanel from "../../../ai/components/AiChatPanel.vue";
 import HistoryModal from './HistoryModal.vue';
 import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
+import HomeIcon from '../../../../shared/icons/HomeIcon.vue';
 
 const store = useConfigStore();
 const historyStore = useHistoryStore();
@@ -36,10 +37,36 @@ onClickOutside(searchContainer, () => {
 });
 
 // --- 1. 引擎图标逻辑 ---
-const currentEngineIcon = computed(() => {
-  const engine = store.config.searchEngines.find((e: any) => e.id === store.config.currentEngineId);
-  return engine ? resolvePhosphorIcon(engine.icon, 'MagnifyingGlass') : PhMagnifyingGlass;
+const engineIconErrors = ref<Record<string, boolean>>({});
+
+const isDirectIconSource = (value?: string) => {
+  const raw = String(value || '').trim();
+  return /^(https?:|data:|blob:|chrome-extension:|moz-extension:)/i.test(raw) || raw.startsWith('/');
+};
+
+const engineIconErrorKey = (engine: any) => `${engine?.id || 'engine'}::${engine?.icon || ''}`;
+
+const currentEngine = computed(() => {
+  return store.config.searchEngines.find((e: any) => e.id === store.config.currentEngineId);
 });
+
+const getEngineIconUrl = (engine: any) => {
+  const raw = String(engine?.icon || '').trim();
+  if (!raw || !isDirectIconSource(raw)) return '';
+  return engineIconErrors.value[engineIconErrorKey(engine)] ? '' : raw;
+};
+
+const getEngineIconComponent = (engine: any, fallback = 'Globe') => {
+  return engine ? resolvePhosphorIcon(engine.icon, fallback) : PhMagnifyingGlass;
+};
+
+const markEngineIconFailed = (engine: any) => {
+  if (!engine) return;
+  engineIconErrors.value = {
+    ...engineIconErrors.value,
+    [engineIconErrorKey(engine)]: true,
+  };
+};
 
 // --- 2. 智能建议 (AI / 跳转) ---
 const smartAction = computed(() => {
@@ -194,7 +221,15 @@ const handleSearch = () => {
       <div class="relative shrink-0">
         <button @click.stop="showEngineMenu = !showEngineMenu"
                 class="p-3 rounded-full hover:bg-white/20 transition-colors text-[var(--accent-color)] flex items-center justify-center">
-          <component :is="currentEngineIcon" size="24" weight="bold"/>
+          <img
+              v-if="getEngineIconUrl(currentEngine)"
+              :src="getEngineIconUrl(currentEngine)"
+              class="w-6 h-6 object-contain"
+              alt=""
+              referrerpolicy="no-referrer"
+              @error="markEngineIconFailed(currentEngine)"
+          />
+          <component v-else :is="getEngineIconComponent(currentEngine, 'MagnifyingGlass')" size="24" weight="bold"/>
         </button>
 
         <transition name="scale">
@@ -204,7 +239,15 @@ const handleSearch = () => {
                  class="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 cursor-pointer group/item transition-colors"
                  @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
               <div class="flex items-center gap-3">
-                <component :is="resolvePhosphorIcon(eng.icon, 'Globe')" size="18"/>
+                <img
+                    v-if="getEngineIconUrl(eng)"
+                    :src="getEngineIconUrl(eng)"
+                    class="w-[18px] h-[18px] object-contain rounded-sm"
+                    alt=""
+                    referrerpolicy="no-referrer"
+                    @error="markEngineIconFailed(eng)"
+                />
+                <component v-else :is="getEngineIconComponent(eng, 'Globe')" size="18"/>
                 <span class="text-sm font-bold">{{ eng.name }}</span>
               </div>
               <button v-if="store.config.searchEngines.length > 1" @click.stop="store.removeEngine(eng.id)"
@@ -290,8 +333,11 @@ const handleSearch = () => {
 
               <div
                   class="w-6 h-6 rounded bg-black/10 dark:bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
-                <img v-if="item.icon && item.icon.startsWith('http')" :src="item.icon"
-                     class="w-full h-full object-cover"/>
+                <HomeIcon
+                    v-if="item.url"
+                    :item="item"
+                    class="w-full h-full"
+                />
                 <PhAppWindow v-else size="14" class="opacity-70"/>
               </div>
 

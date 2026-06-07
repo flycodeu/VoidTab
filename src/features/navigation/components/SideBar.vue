@@ -4,6 +4,7 @@ import {VueDraggable} from 'vue-draggable-plus';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {PhPlus, PhGear} from '@phosphor-icons/vue';
+import type {SidebarPosition} from '../../../core/config/types.ts';
 
 import SidebarGroupButton from './sidebar/SidebarGroupButton.vue';
 import {useSidebarDragHandlers} from '../composables/useSidebarDragHandlers.ts';
@@ -40,6 +41,14 @@ const shouldShowDropHint = (groupId: string) => {
   return !!(ui.dragState?.isDragging && props.activeGroupId !== groupId);
 };
 
+const sidebarPos = computed<SidebarPosition>(() => {
+  const value = store.config.theme.sidebarPos;
+  return value === 'right' || value === 'top' || value === 'bottom' ? value : 'left';
+});
+
+const isHorizontal = computed(() => sidebarPos.value === 'top' || sidebarPos.value === 'bottom');
+const sidebarOrientation = computed(() => isHorizontal.value ? 'horizontal' : 'vertical');
+
 /** 滚动定位 */
 const listRef = ref<HTMLElement | null>(null);
 watch(
@@ -49,19 +58,77 @@ watch(
       const host = listRef.value;
       if (!host) return;
       const el = host.querySelector(`[data-group-id="${id}"]`) as HTMLElement | null;
-      el?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+      el?.scrollIntoView({
+        block: isHorizontal.value ? 'nearest' : 'nearest',
+        inline: isHorizontal.value ? 'center' : 'nearest',
+        behavior: 'smooth',
+      });
     },
     {immediate: true}
 );
 
 /** 贴边样式 */
+const containerClass = computed(() => {
+  if (sidebarPos.value === 'top') {
+    return 'fixed top-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pt-4';
+  }
+  if (sidebarPos.value === 'bottom') {
+    return 'fixed bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pb-4';
+  }
+  return `fixed inset-y-0 z-40 pointer-events-none flex flex-col justify-center py-4 ${sidebarPos.value === 'right' ? 'right-0' : 'left-0'}`;
+});
+
 const railClass = computed(() => {
-  const isRight = store.config.theme.sidebarPos === 'right';
-  return isRight ? 'right-0 rounded-l-[24px]' : 'left-0 rounded-r-[24px]';
+  if (sidebarPos.value === 'top' || sidebarPos.value === 'bottom') return 'rounded-[24px]';
+  return sidebarPos.value === 'right' ? 'right-0 rounded-l-[24px]' : 'left-0 rounded-r-[24px]';
+});
+
+const railLayoutClass = computed(() => {
+  return isHorizontal.value
+      ? 'hidden lg:flex pointer-events-auto h-[82px] flex-row items-center transition-all duration-300 overflow-visible sidebar-rail sidebar-rail--horizontal'
+      : 'hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail';
+});
+
+const brandBlockClass = computed(() => {
+  return isHorizontal.value
+      ? 'flex-shrink-0 h-full px-4 flex flex-row items-center border-r gap-2 sidebar-divider'
+      : 'flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider';
+});
+
+const listShellClass = computed(() => {
+  return isHorizontal.value
+      ? 'flex-1 min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center'
+      : 'flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2';
+});
+
+const listShellStyle = computed(() => {
+  return isHorizontal.value ? undefined : {
+    maxHeight: 'calc(100vh - 280px)',
+    minHeight: '200px',
+  };
+});
+
+const draggableClass = computed(() => {
+  return isHorizontal.value ? 'flex flex-row items-center gap-2 py-2' : 'flex flex-col gap-2';
+});
+
+const addButtonClass = computed(() => {
+  return isHorizontal.value
+      ? 'w-12 h-12 shrink-0 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn'
+      : 'w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn';
+});
+
+const footerClass = computed(() => {
+  return isHorizontal.value
+      ? 'flex-shrink-0 h-full px-4 flex items-center justify-center sidebar-footer sidebar-footer--horizontal'
+      : 'flex-shrink-0 w-full p-4 flex justify-center sidebar-footer';
 });
 
 const transitionName = computed(() => {
-  return store.config.theme.sidebarPos === 'right' ? 'slide-fade-right' : 'slide-fade';
+  if (sidebarPos.value === 'right') return 'slide-fade-right';
+  if (sidebarPos.value === 'top') return 'slide-fade-top';
+  if (sidebarPos.value === 'bottom') return 'slide-fade-bottom';
+  return 'slide-fade';
 });
 
 /** 呼吸灯频率（秒） */
@@ -90,7 +157,11 @@ const onWheelWhileSorting = (e: WheelEvent) => {
     e.preventDefault();
     e.stopPropagation();
   }
-  host.scrollTop += e.deltaY * WHEEL_SPEED;
+  if (isHorizontal.value) {
+    host.scrollLeft += e.deltaY * WHEEL_SPEED;
+  } else {
+    host.scrollTop += e.deltaY * WHEEL_SPEED;
+  }
 };
 
 const bindSortingWheel = () => {
@@ -123,23 +194,22 @@ onBeforeUnmount(() => {
 <template>
   <div
       v-if="!isFocusMode"
-      class="fixed inset-y-0 z-40 pointer-events-none flex flex-col justify-center py-4"
-      :class="store.config.theme.sidebarPos === 'right' ? 'right-0' : 'left-0'"
+      :class="containerClass"
   >
     <transition :name="transitionName">
       <aside
-          class="hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail"
           :class="[
+            railLayoutClass,
             railClass,
             { 'is-breathing': !!store.config.theme.breathingLight },
             { 'effect-neon': !!store.config.theme.neonGlow }
           ]"
-          :data-side="store.config.theme.sidebarPos"
+          :data-side="sidebarPos"
           :style="railStyle"
           role="navigation"
           aria-label="分组导航"
       >
-        <div class="flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider">
+        <div :class="brandBlockClass">
           <div
               class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand">
             <BrandLogo aria-hidden="true"/>
@@ -155,8 +225,8 @@ onBeforeUnmount(() => {
           </transition>
         </div>
 
-        <div class="flex-1 w-full flex flex-col overflow-hidden">
-          <div class="px-0 py-3 text-center">
+        <div :class="isHorizontal ? 'flex-1 h-full min-w-0 flex items-center overflow-visible' : 'flex-1 w-full flex flex-col overflow-hidden'">
+          <div v-if="!isHorizontal" class="px-0 py-3 text-center">
             <span class="text-[10px] font-bold uppercase tracking-widest sidebar-muted">分组</span>
           </div>
 
@@ -164,8 +234,8 @@ onBeforeUnmount(() => {
               ref="listRef"
               data-wheel-allow="true"
               data-sidebar-list="1"
-              class="flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2"
-              style="max-height: calc(100vh - 280px); min-height: 200px;"
+              :class="listShellClass"
+              :style="listShellStyle"
               aria-label="分组列表"
           >
             <VueDraggable
@@ -175,7 +245,7 @@ onBeforeUnmount(() => {
                 ghost-class="group-ghost"
                 chosen-class="group-chosen"
                 drag-class="group-drag"
-                class="flex flex-col gap-2"
+                :class="draggableClass"
                 :disabled="!!ui.dragState?.isDragging"
                 @start="onGroupSortStart"
                 @end="onGroupSortEnd"
@@ -193,6 +263,7 @@ onBeforeUnmount(() => {
                   :isDragging="!!ui.dragState?.isDragging"
                   :showDropHint="shouldShowDropHint(group.id)"
                   :breathingLight="!!store.config.theme.breathingLight"
+                  :orientation="sidebarOrientation"
                   :onSelect="(id) => emit('update:activeGroupId', id)"
                   :onContextMenu="handleGroupContextMenu"
                   :onDragEnter="handleDragEnter"
@@ -204,7 +275,7 @@ onBeforeUnmount(() => {
             <button
                 type="button"
                 @click="emit('openGroupDialog')"
-                class="w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn"
+                :class="addButtonClass"
                 aria-label="新建分组"
                 title="新建分组"
             >
@@ -213,7 +284,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="flex-shrink-0 w-full p-4 flex justify-center sidebar-footer">
+        <div :class="footerClass">
           <button
               type="button"
               @click="emit('openSettings')"
@@ -270,6 +341,11 @@ onBeforeUnmount(() => {
   transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
+.sidebar-rail--horizontal {
+  width: min(920px, calc(100vw - 32px));
+  transform-origin: center;
+}
+
 /* ===================================================================== */
 /* 修改点 2: 新增 Neon Glow 效果 (对应 SearchBar.vue 的 effect-neon)      */
 /* 优先级设为最高 (!important)，覆盖原有的柔和阴影                        */
@@ -297,6 +373,11 @@ onBeforeUnmount(() => {
 
 .sidebar-rail.effect-neon[data-side='right'] {
   border-right: none !important;
+}
+
+.sidebar-rail.effect-neon[data-side='top'],
+.sidebar-rail.effect-neon[data-side='bottom'] {
+  border-color: var(--accent-color) !important;
 }
 
 
@@ -354,6 +435,12 @@ html.light .sidebar-brand:hover {
   border-top: 1px solid var(--sidebar-divider);
 }
 
+.sidebar-footer--horizontal {
+  border-top: none;
+  border-left: 1px solid var(--sidebar-divider);
+  background: transparent;
+}
+
 /* 底部 icon btn：中性 hover */
 .sidebar-icon-btn {
   background: rgba(255, 255, 255, 0.08);
@@ -400,6 +487,14 @@ html.light .sidebar-icon-btn:hover {
   animation: rail-border-breath-right var(--sidebar-breath-duration, 3s) ease-in-out infinite;
 }
 
+.sidebar-rail.is-breathing[data-side='top'] {
+  animation: rail-border-breath-top var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+}
+
+.sidebar-rail.is-breathing[data-side='bottom'] {
+  animation: rail-border-breath-bottom var(--sidebar-breath-duration, 3s) ease-in-out infinite;
+}
+
 .sidebar-rail.is-breathing::after {
   opacity: 1;
   animation: rail-innerline-breath var(--sidebar-breath-duration, 3s) ease-in-out infinite;
@@ -420,6 +515,24 @@ html.light .sidebar-icon-btn:hover {
   }
   50% {
     border-left-color: rgba(var(--accent-color-rgb), 0.85);
+  }
+}
+
+@keyframes rail-border-breath-top {
+  0%, 100% {
+    border-bottom-color: rgba(var(--accent-color-rgb), 0.30);
+  }
+  50% {
+    border-bottom-color: rgba(var(--accent-color-rgb), 0.85);
+  }
+}
+
+@keyframes rail-border-breath-bottom {
+  0%, 100% {
+    border-top-color: rgba(var(--accent-color-rgb), 0.30);
+  }
+  50% {
+    border-top-color: rgba(var(--accent-color-rgb), 0.85);
   }
 }
 
@@ -461,6 +574,14 @@ html.light .sidebar-icon-btn:hover {
   transform: translateY(-1px);
 }
 
+.sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn:hover) {
+  transform: translateY(6px) scale(1.16) !important;
+}
+
+.sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn:hover) {
+  transform: translateY(-6px) scale(1.16) !important;
+}
+
 html.light :deep(.sidebar-group-btn:hover) {
   background: rgba(0, 0, 0, 0.04) !important;
 }
@@ -472,6 +593,22 @@ html.light :deep(.sidebar-group-btn:hover) {
   transform: translateY(-1px) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14),
   0 0 0 1px rgba(0, 0, 0, 0.06) inset !important;
+}
+
+.sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn.is-active) {
+  transform: translateY(3px) scale(1.08) !important;
+}
+
+.sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn.is-active) {
+  transform: translateY(-3px) scale(1.08) !important;
+}
+
+.sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn.is-active:hover) {
+  transform: translateY(6px) scale(1.16) !important;
+}
+
+.sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn.is-active:hover) {
+  transform: translateY(-6px) scale(1.16) !important;
 }
 
 html.light :deep(.sidebar-group-btn.is-active) {
@@ -537,6 +674,28 @@ html.light .sidebar-add-btn:hover {
 .slide-fade-right-enter-from,
 .slide-fade-right-leave-to {
   transform: translateX(20px);
+  opacity: 0;
+}
+
+.slide-fade-top-enter-active,
+.slide-fade-top-leave-active {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.slide-fade-top-enter-from,
+.slide-fade-top-leave-to {
+  transform: translateY(-18px);
+  opacity: 0;
+}
+
+.slide-fade-bottom-enter-active,
+.slide-fade-bottom-leave-active {
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.slide-fade-bottom-enter-from,
+.slide-fade-bottom-leave-to {
+  transform: translateY(18px);
   opacity: 0;
 }
 

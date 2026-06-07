@@ -2,6 +2,7 @@
 import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
+import type {SidebarPosition} from '../../../core/config/types.ts';
 
 import TimeWidget from '../../widgets/builtins/clock/TimeWidget.vue';
 import SearchBar from '../../widgets/builtins/search/SearchBar.vue';
@@ -11,7 +12,7 @@ const props = defineProps<{
   isFocusMode: boolean;
   activeGroupId: string;
   isEditMode: boolean;
-  sidebarPos: 'left' | 'right';
+  sidebarPos: SidebarPosition;
 
   // 来自 App.vue（由 MobileGroupNav emit）
   mobileNarrow?: boolean; // true 表示屏幕很窄，需要保证至少一行 2 个
@@ -57,17 +58,20 @@ const mainContainerClass = computed(() => {
   const base =
       'flex flex-col w-full h-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
-  // 侧边栏留白 (仅普通模式)
-  let paddingX = '';
+  // 分组栏留白 (仅普通模式)
+  let sidebarOffset = '';
   if (!props.isFocusMode) {
-    paddingX = props.sidebarPos === 'left' ? 'md:pl-28' : 'md:pr-28';
+    if (props.sidebarPos === 'left') sidebarOffset = 'md:pl-28';
+    else if (props.sidebarPos === 'right') sidebarOffset = 'md:pr-28';
+    else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-32';
   }
 
   if (props.isFocusMode) {
     const topSpacing = store.config.theme.showTime ? 'pt-[20vh]' : 'pt-[25vh]';
-    return `${base} justify-start ${topSpacing} items-center ${paddingX}`;
+    return `${base} justify-start ${topSpacing} items-center ${sidebarOffset}`;
   } else {
-    return `${base} justify-start pt-24 md:pt-14 ${paddingX}`;
+    const topSpacing = props.sidebarPos === 'top' ? 'pt-28 md:pt-28' : 'pt-24 md:pt-14';
+    return `${base} justify-start ${topSpacing} ${sidebarOffset}`;
   }
 });
 

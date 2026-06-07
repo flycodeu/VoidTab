@@ -2,7 +2,8 @@ import {defineAsyncComponent} from 'vue';
 import {
     PhClock, PhCalendarBlank, PhCloudSun, PhCpu, PhGithubLogo,
     PhPiggyBank, PhConfetti, PhHandFist, PhTerminalWindow,
-    PhShieldCheck, PhTimer, PhImages, PhGlobe, PhCornersOut
+    PhShieldCheck, PhTimer, PhImages, PhGlobe, PhCornersOut,
+    PhCode, PhChartLineUp
 } from '@phosphor-icons/vue';
 
 /**
@@ -135,6 +136,28 @@ export const widgetRegistry: WidgetMeta[] = [
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/jwt-sentry/JWTSentryWidget.vue')),
         icon: PhShieldCheck,
         color: 'from-violet-600 to-indigo-600',
+    },
+    {
+        type: 'base64_codec',
+        label: 'Base64 编解码',
+        description: '本地完成 Base64 编码与解码，适合临时处理文本片段。',
+        defaultW: 2,
+        defaultH: 2,
+        category: 'tool',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/base64-codec/Base64CodecWidget.vue')),
+        icon: PhCode,
+        color: 'from-sky-500 to-cyan-600',
+    },
+    {
+        type: 'stock_ticker',
+        label: '行情看板',
+        description: '查看常用股票、ETF 与指数的价格和涨跌，可自定义关注列表。',
+        defaultW: 2,
+        defaultH: 2,
+        category: 'tool',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/stock-ticker/StockTickerWidget.vue')),
+        icon: PhChartLineUp,
+        color: 'from-red-500 to-emerald-500',
     },
     {
         type: 'cron',

@@ -3,6 +3,7 @@ import type {SyncProfile} from '../sync/types';
 
 export const CURRENT_CONFIG_VERSION = 4 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
+export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
 // 新增排序类型定义
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
 export type WidgetType = 'todo' | 'clock' | 'calendar' | 'weather' | 'system_monitor' | string;
@@ -56,7 +57,7 @@ export type SiteLayoutMode = 'icon' | 'card';
 export interface ThemeConfig {
     mode: 'light' | 'dark' | 'system';
     accent: string;
-    sidebarPos: 'left' | 'right';
+    sidebarPos: SidebarPosition;
     showTime: boolean;
     gridMaxWidth: number;
 

@@ -2,7 +2,7 @@
 import {ref, computed, onMounted, defineAsyncComponent} from 'vue';
 import {useIntervalFn, useLocalStorage} from '@vueuse/core';
 import type {SiteItem} from '../../../../core/config/types';
-import {PhTrendUp, PhTrendDown, PhChartLineUp, PhCurrencyBtc} from '@phosphor-icons/vue';
+import {PhTrendUp, PhTrendDown, PhChartLineUp} from '@phosphor-icons/vue';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {tempStorage} from '../../../../core/storage/tempStorage';
 import {useToast} from '../../../../shared/composables/useToast';
@@ -18,7 +18,7 @@ const CACHE_TIME = 15 * 60 * 1000;
 // === 配置状态 ===
 const CACHE_KEY = `widget_stock_${props.item.id}`;
 const config = useLocalStorage(CACHE_KEY, {
-  symbols: ['bitcoin', 'ethereum', 'solana'], // 默认币种ID (CoinGecko)
+  symbols: ['AAPL', 'MSFT', 'NVDA'],
   colorMode: 'cn', // 'cn' (红涨绿跌) | 'global' (绿涨红跌)
   refreshRate: 60, // 刷新间隔(秒)
 });
@@ -29,10 +29,62 @@ const historyData = ref<number[]>([]); // 仅用于 2x2 走势图
 const loading = ref(true);
 const activeIndex = ref(0); // 2x1 轮播索引
 
-// === 核心：获取数据 (CoinGecko 示例) ===
+type YahooQuoteItem = {
+  symbol?: string;
+  shortName?: string;
+  longName?: string;
+  regularMarketPrice?: number;
+  regularMarketChangePercent?: number;
+};
+
+type YahooQuoteResponse = {
+  quoteResponse?: {
+    result?: YahooQuoteItem[];
+  };
+};
+
+type YahooChartResponse = {
+  chart?: {
+    result?: Array<{
+      indicators?: {
+        quote?: Array<{ close?: Array<number | null> }>;
+      };
+    }>;
+  };
+};
+
+const normalizeSymbols = () => {
+  return config.value.symbols
+      .map((symbol: string) => symbol.trim().toUpperCase())
+      .filter(Boolean);
+};
+
+const mapQuoteItem = (item: YahooQuoteItem) => {
+  const symbol = String(item.symbol || '').toUpperCase();
+  return {
+    id: symbol,
+    name: item.shortName || item.longName || symbol,
+    symbol,
+    current_price: Number(item.regularMarketPrice ?? 0),
+    price_change_percentage_24h: Number(item.regularMarketChangePercent ?? 0),
+    image: '',
+  };
+};
+
+const cacheToYahooQuotes = (items: any[] = []): YahooQuoteItem[] => {
+  return items.map((item) => ({
+    symbol: item.symbol,
+    shortName: item.name,
+    regularMarketPrice: item.current_price,
+    regularMarketChangePercent: item.price_change_percentage_24h,
+  }));
+};
+
+// === 核心：获取股票/ETF/指数数据 ===
 const fetchData = async () => {
-  const ids = config.value.symbols.join(',');
-  if (!ids) {
+  const symbols = normalizeSymbols();
+  const symbolKey = symbols.join(',');
+  if (!symbolKey) {
     loading.value = false;
     return;
   }
@@ -40,7 +92,7 @@ const fetchData = async () => {
   const cache = tempStorage.get('stock');
   const hasMatchingCache = cache
       && tempStorage.isValid(cache.ts, CACHE_TIME)
-      && cache.symbols.join(',') === ids;
+      && cache.symbols.join(',') === symbolKey;
 
   if (hasMatchingCache) {
     marketData.value = cache.data;
@@ -51,8 +103,8 @@ const fetchData = async () => {
 
   try {
     // 1. 获取当前价格
-    const data = await fetchJsonWithRetry<any[]>(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=10&page=1&sparkline=false&price_change_percentage=24h`,
+    const data = await fetchJsonWithRetry<YahooQuoteResponse>(
+        `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbolKey)}`,
         {cache: 'no-store'},
         {
           timeoutMs: 10000,
@@ -61,15 +113,18 @@ const fetchData = async () => {
           maxRetryDelayMs: 5000,
           metricName: 'stock.market',
           fallbackName: 'stock.cache.market',
-          fallbackData: () => cache?.symbols.join(',') === ids ? cache.data : undefined,
+          fallbackData: () => cache?.symbols.join(',') === symbolKey
+              ? {quoteResponse: {result: cacheToYahooQuotes(cache.data)}}
+              : undefined,
         }
     );
-    marketData.value = data;
+    marketData.value = (data.quoteResponse?.result || []).map(mapQuoteItem).filter((item) => item.symbol);
+    if (!marketData.value.length) throw new Error('empty stock quote');
 
     // 2. 如果是 2x2 模式，额外获取走势数据 (仅第一只)
-    if (layout.value.isStandard && config.value.symbols[0]) {
-      const chartJson = await fetchJsonWithRetry<{prices?: any[]}>(
-          `https://api.coingecko.com/api/v3/coins/${config.value.symbols[0]}/market_chart?vs_currency=usd&days=1&interval=hourly`,
+    if (layout.value.isStandard && symbols[0]) {
+      const chartJson = await fetchJsonWithRetry<YahooChartResponse>(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbols[0])}?range=1d&interval=30m`,
           {cache: 'no-store'},
           {
             timeoutMs: 10000,
@@ -78,20 +133,23 @@ const fetchData = async () => {
             maxRetryDelayMs: 5000,
             metricName: 'stock.chart',
             fallbackName: 'stock.cache.chart',
-            fallbackData: () => cache?.symbols.join(',') === ids ? {prices: cache.history.map((price, index) => [index, price])} : undefined,
+            fallbackData: () => cache?.symbols.join(',') === symbolKey
+                ? {chart: {result: [{indicators: {quote: [{close: cache.history}]}}]}}
+                : undefined,
           }
       );
-      historyData.value = (chartJson.prices || []).map((p: any) => p[1]);
+      historyData.value = (chartJson.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [])
+          .filter((price): price is number => typeof price === 'number' && Number.isFinite(price));
     }
 
     tempStorage.set('stock', {
       data: marketData.value,
       history: historyData.value,
-      symbols: [...config.value.symbols],
+      symbols: [symbolKey],
       ts: Date.now(),
     });
   } catch {
-    if (cache?.symbols.join(',') === ids) {
+    if (cache?.symbols.join(',') === symbolKey) {
       marketData.value = cache.data;
       historyData.value = cache.history;
     } else {
@@ -153,6 +211,10 @@ const sparklinePath = computed(() => {
   const width = 100; // viewBox width
   const height = 40; // viewBox height
 
+  if (range <= 0) {
+    return `M0,20 L100,20`;
+  }
+
   const points = data.map((val, i) => {
     const x = (i / (data.length - 1)) * width;
     const y = height - ((val - min) / range) * height;
@@ -161,6 +223,12 @@ const sparklinePath = computed(() => {
 
   return `M${points.join(' L')}`;
 });
+
+const handleSaveConfig = (val: any) => {
+  config.value = val;
+  loading.value = true;
+  void fetchData();
+};
 </script>
 
 <template>
@@ -178,8 +246,8 @@ const sparklinePath = computed(() => {
            class="w-full h-full flex flex-col items-center justify-center p-2 relative overflow-hidden"
            :class="getColorClass(currentItem.price_change_percentage_24h).replace('text-', 'bg-').replace('/10', '/20')"
       >
-        <div class="absolute -right-2 -bottom-2 text-6xl opacity-20 grayscale pointer-events-none rotate-12">
-          {{ currentItem.price_change_percentage_24h >= 0 ? '🐮' : '🐻' }}
+        <div class="absolute -right-2 -bottom-2 text-5xl font-black opacity-15 pointer-events-none rotate-12">
+          {{ currentItem.symbol.slice(0, 3).toUpperCase() }}
         </div>
 
         <div class="relative z-10 text-center">
@@ -199,7 +267,10 @@ const sparklinePath = computed(() => {
 
       <div v-else-if="layout.isWide && currentItem" class="w-full h-full flex items-center justify-between px-5">
         <div class="flex items-center gap-3">
-          <img :src="currentItem.image" class="w-8 h-8 rounded-full bg-white/10 p-0.5" alt="icon">
+          <img v-if="currentItem.image" :src="currentItem.image" class="w-8 h-8 rounded-full bg-white/10 p-0.5" alt="icon">
+          <div v-else class="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-[11px] font-black text-white">
+            {{ currentItem.symbol.slice(0, 1) }}
+          </div>
           <div>
             <div class="text-sm font-bold text-white leading-none">{{ currentItem.name }}</div>
             <div class="text-[10px] text-white/40 mt-1 uppercase font-mono tracking-wide">
@@ -218,7 +289,10 @@ const sparklinePath = computed(() => {
       <div v-else-if="layout.isStandard && currentItem" class="w-full h-full p-4 flex flex-col relative">
         <div class="flex justify-between items-start z-10">
           <div class="flex items-center gap-2">
-            <img :src="currentItem.image" class="w-6 h-6 rounded-full" alt="icon">
+            <img v-if="currentItem.image" :src="currentItem.image" class="w-6 h-6 rounded-full" alt="icon">
+            <div v-else class="w-6 h-6 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-[10px] font-black text-white">
+              {{ currentItem.symbol.slice(0, 1) }}
+            </div>
             <span class="text-sm font-bold text-white">{{ currentItem.symbol.toUpperCase() }}</span>
           </div>
           <div class="text-xs font-bold" :class="getColorClass(currentItem.price_change_percentage_24h).split(' ')[0]">
@@ -249,15 +323,15 @@ const sparklinePath = computed(() => {
           </svg>
         </div>
 
-        <div class="absolute right-2 bottom-2 text-4xl opacity-10 grayscale select-none pointer-events-none">
-          {{ currentItem.price_change_percentage_24h >= 0 ? '🐮' : '🐻' }}
+        <div class="absolute right-2 bottom-2 text-3xl font-black opacity-10 select-none pointer-events-none">
+          {{ currentItem.symbol.slice(0, 3).toUpperCase() }}
         </div>
       </div>
 
       <div v-else class="w-full h-full p-4 flex flex-col">
         <div class="flex justify-between items-center mb-3 pb-2 border-b border-white/5">
           <div class="text-xs font-bold text-white/50 uppercase tracking-widest flex items-center gap-2">
-            <PhCurrencyBtc weight="fill"/>
+            <PhChartLineUp weight="fill"/>
             Market Watch
           </div>
           <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
@@ -286,7 +360,7 @@ const sparklinePath = computed(() => {
           :show="showModal"
           :config="config"
           @close="showModal = false"
-          @save="(val:any) => { config = val; fetchData(); }"
+          @save="handleSaveConfig"
       />
     </Teleport>
   </div>

@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import {computed} from "vue";
 import {useConfigStore} from "../../../../stores/useConfigStore.ts";
+import type {SidebarPosition} from "../../../../core/config/types.ts";
 
 const store = useConfigStore();
+
+const sidebarPositions: Array<{ value: SidebarPosition; label: string }> = [
+  {value: "left", label: "左侧"},
+  {value: "right", label: "右侧"},
+  {value: "top", label: "顶部"},
+  {value: "bottom", label: "底部"},
+];
 
 /** ---------------------------
  * Layout mode
@@ -274,26 +282,18 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
     <!-- 侧边栏 -->
     <div class="flex justify-between items-center">
       <label class="font-bold text-sm">侧边栏位置</label>
-      <div class="flex rounded-lg p-1 bg-[var(--modal-input-bg)]">
+      <div class="grid grid-cols-4 rounded-lg p-1 bg-[var(--modal-input-bg)]">
         <button
-            @click="store.config.theme.sidebarPos = 'left'"
+            v-for="pos in sidebarPositions"
+            :key="pos.value"
+            @click="store.config.theme.sidebarPos = pos.value"
             class="px-3 py-1 rounded-md text-xs font-bold transition-all"
-            :class="store.config.theme.sidebarPos === 'left'
+            :class="store.config.theme.sidebarPos === pos.value
             ? 'bg-[var(--accent-color)] text-white shadow'
             : 'opacity-50 hover:opacity-100'"
             type="button"
         >
-          左侧
-        </button>
-        <button
-            @click="store.config.theme.sidebarPos = 'right'"
-            class="px-3 py-1 rounded-md text-xs font-bold transition-all"
-            :class="store.config.theme.sidebarPos === 'right'
-            ? 'bg-[var(--accent-color)] text-white shadow'
-            : 'opacity-50 hover:opacity-100'"
-            type="button"
-        >
-          右侧
+          {{ pos.label }}
         </button>
       </div>
     </div>

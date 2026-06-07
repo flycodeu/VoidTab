@@ -18,6 +18,7 @@ const props = defineProps<{
   isDragging: boolean;
   showDropHint: boolean;
   breathingLight: boolean;
+  orientation?: 'vertical' | 'horizontal';
 
   onSelect: (groupId: string) => void;
   onContextMenu: (e: MouseEvent, group: any) => void;
@@ -57,6 +58,8 @@ const dynamicClasses = computed(() => {
   if (props.active) cls.push('is-active');
   else cls.push('is-idle');
 
+  cls.push(props.orientation === 'horizontal' ? 'is-horizontal' : 'is-vertical');
+
   if (props.showDropHint) cls.push('is-drop-hint');
   if (props.breathingLight && props.active) cls.push('animate-pulse');
 
@@ -86,6 +89,7 @@ const dynamicClasses = computed(() => {
     <div
         v-if="active"
         class="active-indicator"
+        :class="props.orientation === 'horizontal' ? 'active-indicator--horizontal' : ''"
         :style="{ backgroundColor: hasCustomColor ? safeColor : 'var(--accent-color)' }"
         aria-hidden="true"
     />
@@ -93,7 +97,7 @@ const dynamicClasses = computed(() => {
     <div class="relative">
       <component
           :is="IconComp"
-          size="26"
+          :size="props.orientation === 'horizontal' ? 28 : 26"
           :weight="active ? 'fill' : 'duotone'"
           class="icon"
           :class="[(!hasCustomColor && active) ? 'icon-glow' : '']"
@@ -147,6 +151,15 @@ const dynamicClasses = computed(() => {
   color: var(--sidebar-text);
 }
 
+.sg-btn.is-horizontal {
+  width: 56px;
+  min-width: 56px;
+  height: 64px;
+  padding: 8px 6px;
+  gap: 4px;
+  transform-origin: center bottom;
+}
+
 .is-idle {
   opacity: 0.78;
 }
@@ -196,12 +209,25 @@ const dynamicClasses = computed(() => {
   opacity: 0.95;
 }
 
+.active-indicator--horizontal {
+  left: 50%;
+  top: auto;
+  bottom: 3px;
+  width: 18px;
+  height: 3px;
+  transform: translateX(-50%);
+}
+
 .icon {
   transition: transform 0.16s ease;
 }
 
 .sg-btn:hover .icon {
-  transform: scale(1.03);
+  transform: scale(1.08);
+}
+
+.sg-btn.is-horizontal:hover .icon {
+  transform: scale(1.2);
 }
 
 .icon-glow {
@@ -254,6 +280,12 @@ const dynamicClasses = computed(() => {
 
   /*   弱文本跟随 sidebar muted */
   color: var(--sidebar-text);
+}
+
+.is-horizontal .title {
+  max-width: 52px;
+  font-size: 9px;
+  margin-top: 0;
 }
 
 @keyframes pulse-subtle {

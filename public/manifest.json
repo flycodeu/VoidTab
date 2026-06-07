@@ -14,6 +14,15 @@
   "host_permissions": [
     "https://geocoding-api.open-meteo.com/*",
     "https://api.open-meteo.com/*",
+    "https://air-quality-api.open-meteo.com/*",
+    "https://api.bigdatacloud.net/*",
+    "https://api.github.com/*",
+    "https://query1.finance.yahoo.com/*",
+    "https://timor.tech/*",
+    "https://api.deepseek.com/*",
+    "https://api.siliconflow.cn/*",
+    "https://api.openai.com/*",
+    "https://api.moonshot.cn/*",
     "https://*.jianguoyun.com/*"
   ],
   "background": {

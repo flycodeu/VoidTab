@@ -29,6 +29,7 @@ import Toast from './shared/ui/Toast.vue';
 import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
 import {useToast} from './shared/composables/useToast';
 import {useBoundaryGroupWheel} from './shared/composables/useBoundaryGroupWheel';
+import type {SidebarPosition} from './core/config/types.ts';
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -42,6 +43,7 @@ const showWidgetModal = ref(false);
 
 const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
+const sidebarPositionCycle: SidebarPosition[] = ['left', 'right', 'top', 'bottom'];
 
 // 核心状态：终端模式是否开启
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
@@ -55,7 +57,10 @@ const isFocusMode = computed({
 });
 
 const toggleSidebarPos = () => {
-  store.config.theme.sidebarPos = store.config.theme.sidebarPos === 'left' ? 'right' : 'left';
+  const current = store.config.theme.sidebarPos;
+  const index = sidebarPositionCycle.indexOf(current);
+  store.config.theme.sidebarPos = sidebarPositionCycle[(index + 1) % sidebarPositionCycle.length] || 'left';
+  store.saveConfig();
 };
 
 const getGroupTitle = (id: string) => {
