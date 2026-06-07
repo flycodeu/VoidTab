@@ -59,6 +59,7 @@ const {visibleGroups} = useVisibleGroups({
   groups: () => store.config.layout || [],
   isEditMode: () => props.isEditMode,
   activeGroupId: () => props.activeGroupId,
+  showAllGroups: () => !!store.config.theme.showAllGroupsInMain,
   dragState: ui.dragState,
 });
 
@@ -68,8 +69,6 @@ const hasVisibleGroups = computed(() => visibleLayoutGroups.value.length > 0);
 const activeGroupData = computed(() => {
   return (store.config.layout as any[]).find((g) => g.id === props.activeGroupId) as LayoutGroup | undefined;
 });
-
-const currentSortKey = computed<GroupSortKey>(() => (activeGroupData.value?.sortKey || "custom") as GroupSortKey);
 
 /** ----------------------------------------------------------------
  * 严格网格系统 (Strict Grid System)
@@ -622,15 +621,6 @@ const confirmDelete = () => {
         :style="gridShellStyle"
         ref="gridHostEl"
     >
-      <GroupHeaderBar
-          v-if="!isEditMode && activeGroupData"
-          :group-name="activeGroupData.title"
-          :count="activeGroupData.items?.length || 0"
-          :sort-key="currentSortKey"
-          @update:sortKey="(key) => store.updateGroupSort(activeGroupId, key)"
-          :key="activeGroupId"
-      />
-
       <EmptyState
           v-if="!hasVisibleGroups"
           :icon="PhSquaresFour"
@@ -645,10 +635,22 @@ const confirmDelete = () => {
 
       <template v-for="group in visibleLayoutGroups" :key="group.id">
         <div
-            class="transition-all duration-300 mb-8 animate-fade-in w-full"
+            class="group-section transition-all duration-300 mb-10 animate-fade-in w-full scroll-mt-24"
             role="region"
             :aria-label="`${group.title}分组`"
+            :aria-current="group.id === activeGroupId ? 'page' : undefined"
+            data-group-section="1"
+            :data-group-section-id="group.id"
         >
+          <GroupHeaderBar
+              v-if="!isEditMode"
+              :group-name="group.title"
+              :count="group.items?.length || 0"
+              :sort-key="getSortKey(group)"
+              @update:sortKey="(key) => store.updateGroupSort(group.id, key)"
+              :key="`header-${group.id}`"
+          />
+
           <!-- 编辑模式分组标题：主题色 + 主题面板变量 -->
           <div
               v-if="isEditMode"

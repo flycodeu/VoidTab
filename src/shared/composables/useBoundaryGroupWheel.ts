@@ -5,7 +5,7 @@ type WheelGroup = {
 type BoundaryGroupWheelOptions<TGroup extends WheelGroup> = {
     getGroups: () => TGroup[];
     getActiveGroupId: () => string;
-    setActiveGroupId: (id: string) => void;
+    setActiveGroupId: (id: string, meta?: { direction: 1 | -1 }) => void;
     isDisabled?: () => boolean;
     threshold?: number;
     cooldownMs?: number;
@@ -39,6 +39,12 @@ function canScrollInDirection(el: HTMLElement, deltaY: number) {
     if (deltaY < 0) return el.scrollTop > 0;
     if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight - 1;
     return false;
+}
+
+function normalizeWheelDelta(e: WheelEvent, value: number) {
+    if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return value * 40;
+    if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return value * window.innerHeight;
+    return value;
 }
 
 function findScrollableAncestor(start: HTMLElement | null, boundaryHost: HTMLElement) {
@@ -76,12 +82,14 @@ export function useBoundaryGroupWheel<TGroup extends WheelGroup>(options: Bounda
 
     const switchGroup = (dir: 1 | -1) => {
         const nextId = getNextGroupId(options.getGroups() || [], options.getActiveGroupId(), dir);
-        if (nextId) options.setActiveGroupId(nextId);
+        if (nextId) options.setActiveGroupId(nextId, {direction: dir});
     };
 
     const onWheelCapture = (e: WheelEvent) => {
         if (!e.cancelable) return;
-        if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+        const deltaY = normalizeWheelDelta(e, e.deltaY);
+        const deltaX = normalizeWheelDelta(e, e.deltaX);
+        if (Math.abs(deltaY) < Math.abs(deltaX)) return;
         if (options.isDisabled?.()) return;
         if (isTypingTarget(e.target)) return;
 
@@ -94,7 +102,7 @@ export function useBoundaryGroupWheel<TGroup extends WheelGroup>(options: Bounda
         if (!boundaryHost) return;
 
         const scrollable = findScrollableAncestor(pointerEl, boundaryHost);
-        if (scrollable && canScrollInDirection(scrollable, e.deltaY)) return;
+        if (scrollable && canScrollInDirection(scrollable, deltaY)) return;
 
         // Nested scroll containers keep ownership at their own boundaries. The main
         // boundary host is the only exhausted scroll area that can turn into group nav.
@@ -106,7 +114,7 @@ export function useBoundaryGroupWheel<TGroup extends WheelGroup>(options: Bounda
         const now = performance.now();
         if (now - lastWheelTs > RESET_WINDOW_MS) wheelAcc = 0;
         lastWheelTs = now;
-        wheelAcc += e.deltaY;
+        wheelAcc += deltaY;
 
         if (Math.abs(wheelAcc) < threshold) return;
 

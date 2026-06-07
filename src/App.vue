@@ -62,20 +62,85 @@ const getGroupTitle = (id: string) => {
   return store.config.layout.find((group) => group.id === id)?.title || '';
 };
 
-const resetMainScroll = () => {
+const findMainScrollEl = () => {
+  return document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
+};
+
+const findGroupSection = (id: string) => {
+  const host = findMainScrollEl();
+  if (!host) return null;
+  const sections = Array.from(host.querySelectorAll<HTMLElement>('[data-group-section="1"]'));
+  return sections.find((section) => section.dataset.groupSectionId === id) || null;
+};
+
+let groupScrollSyncLockedUntil = 0;
+let groupScrollUnlockTimer: number | null = null;
+type MainScrollPosition = 'top' | 'bottom';
+
+const lockGroupScrollSync = (durationMs = 760) => {
+  groupScrollSyncLockedUntil = performance.now() + durationMs;
+  if (groupScrollUnlockTimer != null) window.clearTimeout(groupScrollUnlockTimer);
+  groupScrollUnlockTimer = window.setTimeout(() => {
+    groupScrollUnlockTimer = null;
+    groupScrollSyncLockedUntil = 0;
+  }, durationMs);
+};
+
+const resetMainScroll = (position: MainScrollPosition = 'top', behavior: ScrollBehavior = 'auto') => {
+  lockGroupScrollSync(360);
   requestAnimationFrame(() => {
-    const el = document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
-    if (!el) return;
-    el.scrollTo({top: 0, behavior: 'auto'});
+    const host = findMainScrollEl();
+    if (!host) return;
+    const top = position === 'bottom'
+        ? Math.max(0, host.scrollHeight - host.clientHeight)
+        : 0;
+    host.scrollTo({top, behavior});
   });
 };
 
-const setActiveGroupId = (id: string) => {
-  if (!id || activeGroupId.value === id) return;
-  activeGroupId.value = id;
-  resetMainScroll();
-  const title = getGroupTitle(id);
-  if (title) ui.announce(`已切换到「${title}」分组`);
+const setActiveGroupId = (id: string, announce = false) => {
+  if (!id) return false;
+  const changed = activeGroupId.value !== id;
+  if (changed) activeGroupId.value = id;
+
+  if (announce && changed) {
+    const title = getGroupTitle(id);
+    if (title) ui.announce(`已切换到「${title}」分组`);
+  }
+
+  return changed;
+};
+
+const scrollToGroupSection = (id: string, behavior: ScrollBehavior = 'smooth') => {
+  lockGroupScrollSync(behavior === 'auto' ? 360 : 760);
+  requestAnimationFrame(() => {
+    const section = findGroupSection(id);
+    if (!section) return;
+
+    const host = findMainScrollEl();
+    if (!host) return;
+    const hostRect = host.getBoundingClientRect();
+    const sectionRect = section.getBoundingClientRect();
+    const scrollMarginTop = Number.parseFloat(window.getComputedStyle(section).scrollMarginTop || '0') || 0;
+    const top = Math.max(0, host.scrollTop + sectionRect.top - hostRect.top - scrollMarginTop);
+    host.scrollTo({top, behavior});
+  });
+};
+
+const selectGroupId = (id: string, meta?: { direction?: 1 | -1 }) => {
+  if (!id) return;
+  setActiveGroupId(id, true);
+  if (store.config.theme.showAllGroupsInMain) {
+    scrollToGroupSection(id, meta?.direction ? 'auto' : 'smooth');
+    return;
+  }
+
+  resetMainScroll(meta?.direction === -1 ? 'bottom' : 'top');
+};
+
+const syncActiveGroupIdFromScroll = (id: string) => {
+  if (!id || performance.now() < groupScrollSyncLockedUntil) return;
+  setActiveGroupId(id, false);
 };
 
 watch(
@@ -87,7 +152,7 @@ watch(
         return;
       }
       if (!groups.some((group) => group.id === activeGroupId.value)) {
-        setActiveGroupId(groups[0].id);
+        selectGroupId(groups[0].id);
       }
     },
     {flush: 'post'}
@@ -112,7 +177,7 @@ function canWheelSwitchGroup() {
 const groupWheel = useBoundaryGroupWheel({
   getGroups: () => store.config.layout || [],
   getActiveGroupId: () => activeGroupId.value,
-  setActiveGroupId,
+  setActiveGroupId: (id, meta) => selectGroupId(id, meta),
   isDisabled: () => !canWheelSwitchGroup(),
 });
 
@@ -347,6 +412,8 @@ onUnmounted(() => {
 
   stopAutoScroll();
   cancelBackgroundIconRefresh();
+  if (groupScrollUnlockTimer != null) window.clearTimeout(groupScrollUnlockTimer);
+  groupScrollUnlockTimer = null;
 });
 
 // 处理事件：切换编辑模式
@@ -458,7 +525,7 @@ const tryOpenDevTools = () => {
             class="hidden lg:flex z-40"
             :activeGroupId="activeGroupId"
             :isFocusMode="isFocusMode"
-            @update:activeGroupId="setActiveGroupId"
+            @update:activeGroupId="selectGroupId"
             @openSettings="showSettings = true"
             @openGroupDialog="dialogLogic.openAddGroupDialog"
         />
@@ -475,6 +542,7 @@ const tryOpenDevTools = () => {
             @openWidgets="showWidgetModal = true"
             :mobileNarrow="mobileViewport.isNarrow"
             :mobileWidth="mobileViewport.width"
+            @update:activeGroupId="syncActiveGroupIdFromScroll"
         />
 
         <ContextMenu
@@ -491,7 +559,7 @@ const tryOpenDevTools = () => {
           :show="!isFocusMode"
           :groups="store.config.layout"
           :activeGroupId="activeGroupId"
-          @update:activeGroupId="setActiveGroupId"
+          @update:activeGroupId="selectGroupId"
           @openSettings="showSettings = true"
           @viewport="handleMobileViewport"
       />

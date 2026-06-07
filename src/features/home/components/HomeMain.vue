@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 
@@ -23,6 +23,7 @@ const emit = defineEmits<{
   (e: 'openGroupDialog'): void;
   (e: 'openWidgets'): void;
   (e: 'update:isEditMode', val: boolean): void;
+  (e: 'update:activeGroupId', id: string): void;
 }>();
 
 const store = useConfigStore();
@@ -90,10 +91,82 @@ const handleGlobalContextMenu = (e: MouseEvent) => {
 const handleBackgroundClick = () => {
   if (props.isEditMode) emit('update:isEditMode', false);
 };
+
+const mainRef = ref<HTMLElement | null>(null);
+let groupSyncRaf: number | null = null;
+
+const getGroupSections = () => {
+  const host = mainRef.value;
+  if (!host) return [];
+  return Array.from(host.querySelectorAll<HTMLElement>('[data-group-section="1"]'));
+};
+
+const resolveActiveGroupFromScroll = () => {
+  const host = mainRef.value;
+  const sections = getGroupSections();
+  if (!host || !sections.length) return '';
+
+  if (host.scrollTop <= 1) return sections[0]?.dataset.groupSectionId || '';
+  if (host.scrollTop + host.clientHeight >= host.scrollHeight - 2) {
+    return sections[sections.length - 1]?.dataset.groupSectionId || '';
+  }
+
+  const hostRect = host.getBoundingClientRect();
+  const anchorY = hostRect.top + Math.min(hostRect.height * 0.36, 280);
+  let active = sections[0];
+
+  for (const section of sections) {
+    const rect = section.getBoundingClientRect();
+    if (rect.top <= anchorY) {
+      active = section;
+    } else {
+      break;
+    }
+  }
+
+  return active?.dataset.groupSectionId || '';
+};
+
+const syncActiveGroupFromScroll = () => {
+  groupSyncRaf = null;
+  if (props.isFocusMode) return;
+
+  const id = resolveActiveGroupFromScroll();
+  if (id && id !== props.activeGroupId) {
+    emit('update:activeGroupId', id);
+  }
+};
+
+const requestGroupScrollSync = () => {
+  if (groupSyncRaf != null) return;
+  groupSyncRaf = requestAnimationFrame(syncActiveGroupFromScroll);
+};
+
+const onMainScroll = () => {
+  requestGroupScrollSync();
+};
+
+onMounted(() => {
+  void nextTick(requestGroupScrollSync);
+  window.addEventListener('resize', requestGroupScrollSync, {passive: true});
+});
+
+onBeforeUnmount(() => {
+  if (groupSyncRaf != null) cancelAnimationFrame(groupSyncRaf);
+  groupSyncRaf = null;
+  window.removeEventListener('resize', requestGroupScrollSync);
+});
+
+watch(
+    () => [props.isFocusMode, props.isEditMode, store.config.layout.length],
+    () => void nextTick(requestGroupScrollSync),
+    {flush: 'post'}
+);
 </script>
 
 <template>
   <main
+      ref="mainRef"
       id="main-content"
       tabindex="-1"
       aria-label="主内容"
@@ -102,6 +175,7 @@ const handleBackgroundClick = () => {
       :data-wheel-lock="isEditMode ? 'true' : null"
       class="flex-1 relative overflow-x-hidden overflow-y-auto no-scrollbar"
       :class="mainContainerClass"
+      @scroll.passive="onMainScroll"
       @contextmenu="handleGlobalContextMenu"
       @click="handleBackgroundClick"
   >

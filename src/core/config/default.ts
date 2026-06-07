@@ -249,6 +249,7 @@ export const defaultConfig: Config = {
         techFontFamily: 'Fira Code',
         breathingDuration: 3,
         siteLayoutMode: "icon",
+        showAllGroupsInMain: false,
         siteCard: {
             w: 3,
             h: 1,

@@ -323,6 +323,9 @@ export function normalizeConfig(raw: any): Config {
         showWidgetName: base.theme.showWidgetName ?? true,
 
         siteLayoutMode: (input.theme?.siteLayoutMode === 'card' ? 'card' : 'icon'),
+        showAllGroupsInMain: typeof input.theme?.showAllGroupsInMain === 'boolean'
+            ? input.theme.showAllGroupsInMain
+            : base.theme.showAllGroupsInMain,
         siteCard: {
             ...base.theme.siteCard,
             ...(input.theme?.siteCard || {}),

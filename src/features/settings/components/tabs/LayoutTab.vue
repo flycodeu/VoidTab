@@ -298,6 +298,21 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
       </div>
     </div>
 
+    <!-- 分组浏览 -->
+    <div class="flex justify-between items-center gap-4">
+      <div class="min-w-0">
+        <label class="font-bold text-sm">显示全部分组</label>
+        <div class="text-[11px] opacity-60 mt-1" style="color: var(--text-secondary);">
+          关闭时只显示当前分组；开启后中间区域可连续浏览所有分组。
+        </div>
+      </div>
+      <input
+          type="checkbox"
+          v-model="store.config.theme.showAllGroupsInMain"
+          class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"
+      />
+    </div>
+
     <!-- 时间组件 -->
     <div class="flex justify-between items-center">
       <label class="font-bold text-sm">时间组件</label>

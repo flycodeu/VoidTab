@@ -95,6 +95,7 @@ export interface ThemeConfig {
     breathingDuration: number; // 秒，例如 3.0
 
     siteLayoutMode: SiteLayoutMode;
+    showAllGroupsInMain: boolean;
 
     siteCard: {
         w: number;              // 卡片占几列（建议 2 或 3）
