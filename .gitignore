@@ -3,3 +3,9 @@ node_modules/**
 dist/**
 .tmp-build/
 .tmp-vite-preview-*.log
+.playwright-mcp/
+playwright-report/
+test-results/
+*.log
+novel-layout-*.png
+VOIDTAB_FIX_OPTIMIZATION_PLAN.md

@@ -63,14 +63,14 @@ const mainContainerClass = computed(() => {
   if (!props.isFocusMode) {
     if (props.sidebarPos === 'left') sidebarOffset = 'md:pl-28';
     else if (props.sidebarPos === 'right') sidebarOffset = 'md:pr-28';
-    else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-32';
+    else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-36';
   }
 
   if (props.isFocusMode) {
     const topSpacing = store.config.theme.showTime ? 'pt-[20vh]' : 'pt-[25vh]';
     return `${base} justify-start ${topSpacing} items-center ${sidebarOffset}`;
   } else {
-    const topSpacing = props.sidebarPos === 'top' ? 'pt-28 md:pt-28' : 'pt-24 md:pt-14';
+    const topSpacing = props.sidebarPos === 'top' ? 'pt-32 md:pt-32' : 'pt-24 md:pt-14';
     return `${base} justify-start ${topSpacing} ${sidebarOffset}`;
   }
 });
@@ -83,7 +83,7 @@ const searchWrapperClass = computed(() => {
       'w-full flex justify-center px-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
   if (props.isFocusMode) return `${base} relative z-30 mb-8 scale-110`;
-  return `${base} sticky top-0 z-30 pb-2`;
+  return `${base} relative md:sticky md:top-0 z-30 pb-2`;
 });
 
 const handleGlobalContextMenu = (e: MouseEvent) => {

@@ -41,7 +41,7 @@ const isNeon = computed(() => !!store.config.theme.neonGlow);
 
 const toolbarClass = computed(() => {
   if (props.sidebarPos === 'right') return 'top-6 left-6';
-  if (props.sidebarPos === 'top') return 'top-[106px] right-6';
+  if (props.sidebarPos === 'top') return 'top-[116px] right-6';
   return 'top-6 right-6';
 });
 
@@ -64,7 +64,7 @@ const breathAnimStyle = computed(() => {
 
 <template>
   <div
-      class="fixed z-50 flex items-center gap-3 transition-all duration-500"
+      class="top-actions fixed z-50 flex items-center gap-3 transition-all duration-500"
       :class="toolbarClass"
       role="toolbar"
       aria-label="快捷操作"
@@ -249,6 +249,22 @@ const breathAnimStyle = computed(() => {
 @media (prefers-reduced-motion: reduce) {
   .is-breathing {
     animation: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .top-actions {
+    gap: 8px;
+    padding: 6px;
+    border-radius: 999px;
+    background: rgba(var(--overlay-rgb), 0.34);
+    border: 1px solid rgba(var(--overlay-rgb), 0.18);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  }
+
+  .fab-btn {
+    width: 38px;
+    height: 38px;
   }
 }
 </style>

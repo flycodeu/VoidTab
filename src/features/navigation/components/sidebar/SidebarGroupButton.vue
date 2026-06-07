@@ -152,8 +152,8 @@ const dynamicClasses = computed(() => {
 }
 
 .sg-btn.is-horizontal {
-  width: 56px;
-  min-width: 56px;
+  width: 68px;
+  min-width: 68px;
   height: 64px;
   padding: 8px 6px;
   gap: 4px;
@@ -283,7 +283,7 @@ const dynamicClasses = computed(() => {
 }
 
 .is-horizontal .title {
-  max-width: 52px;
+  max-width: 64px;
   font-size: 9px;
   margin-top: 0;
 }

@@ -77,7 +77,7 @@ const isMobile = ref(false);
 let mq: MediaQueryList | null = null;
 const MOBILE_COLS = 4;
 const MOBILE_COLS_NARROW = 3;
-const NARROW_MOBILE_WIDTH = 360;
+const NARROW_MOBILE_WIDTH = 430;
 const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
 const mobileCols = computed(() => viewportW.value < NARROW_MOBILE_WIDTH ? MOBILE_COLS_NARROW : MOBILE_COLS);
 
@@ -356,6 +356,8 @@ const getItemStyle = (item: any) => {
     gridRow: `span ${h}`,
     width: "100%",
     height: "100%",
+    minWidth: 0,
+    minHeight: 0,
   };
 };
 

@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import {fetchStockPayload, parseStockSymbols} from './api/stock-core.js'
 
 const getNodePackageName = (id: string) => {
     const normalizedId = id.replace(/\\/g, '/')
@@ -19,7 +20,7 @@ const getVendorChunkName = (id: string) => {
     const packageName = getNodePackageName(id)
     if (!packageName) return undefined
 
-    if (packageName === '@phosphor-icons/vue') return 'vendor-icons'
+    if (packageName === '@phosphor-icons/vue') return undefined
     if (
         packageName === 'vue' ||
         packageName === 'pinia' ||
@@ -56,12 +57,60 @@ const getVendorChunkName = (id: string) => {
     return 'vendor-core'
 }
 
+const createStockApiDevPlugin = () => ({
+    name: 'voidtab-stock-api-dev',
+    configureServer(server: any) {
+        server.middlewares.use('/api/stock', async (req: any, res: any) => {
+            const url = new URL(req.url || '/', 'http://localhost')
+
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+            if (req.method === 'OPTIONS') {
+                res.statusCode = 204
+                res.end()
+                return
+            }
+
+            if (req.method !== 'GET') {
+                res.statusCode = 405
+                res.end(JSON.stringify({error: 'Method not allowed'}))
+                return
+            }
+
+            const symbols = parseStockSymbols(url.searchParams.get('symbols'))
+            if (!symbols.length) {
+                res.statusCode = 400
+                res.end(JSON.stringify({error: 'Missing symbols'}))
+                return
+            }
+
+            try {
+                const payload = await fetchStockPayload(symbols, {
+                    range: url.searchParams.get('range') || '1d',
+                    interval: url.searchParams.get('interval') || '5m',
+                })
+                res.setHeader('Content-Type', 'application/json; charset=utf-8')
+                res.end(JSON.stringify(payload))
+            } catch (error: any) {
+                res.statusCode = error?.statusCode || 502
+                res.setHeader('Content-Type', 'application/json; charset=utf-8')
+                res.end(JSON.stringify({
+                    error: error instanceof Error ? error.message : 'Stock quote unavailable',
+                    errors: error?.errors || [],
+                }))
+            }
+        })
+    },
+})
+
 export default defineConfig(({ mode }) => {
     // mode === 'ext' 时才把 background 作为入口构建
     const isExt = mode === 'ext'
 
     return {
-        plugins: [vue()],
+        plugins: [vue(), createStockApiDevPlugin()],
         base: './',
 
         server: {

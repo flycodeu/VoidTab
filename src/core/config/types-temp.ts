@@ -24,6 +24,12 @@ export interface StockCache {
     ts: number;
 }
 
+export interface IpInfoCache {
+    data: any;
+    provider: string;
+    ts: number;
+}
+
 /** * 统一的临时数据结构
  * 键名对应业务模块，保持扁平化
  */
@@ -32,4 +38,5 @@ export interface VoidTabTempConfig {
     github?: GithubCache;
     weather?: WeatherCache;
     stock?: StockCache;
+    ipInfo?: IpInfoCache;
 }

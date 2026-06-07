@@ -282,7 +282,7 @@ export const defaultConfig: Config = {
         terminal_buffer: {buffer: '', theme: 'standard'},
         siteState: {},
         siteIcons: {
-            version: 1,
+            version: 8,
             records: {},
             lastBatchRefreshAt: 0,
         },

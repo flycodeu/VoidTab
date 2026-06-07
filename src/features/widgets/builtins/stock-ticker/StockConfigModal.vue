@@ -67,7 +67,7 @@ const save = () => {
           </div>
 
           <div class="space-y-2">
-            <label class="text-xs text-white/50 font-bold uppercase">关注列表 (Yahoo Finance Symbol)</label>
+            <label class="text-xs text-white/50 font-bold uppercase">关注列表 (公开 Chart Symbol)</label>
 
             <div class="flex gap-2">
               <input

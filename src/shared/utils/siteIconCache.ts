@@ -11,7 +11,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 7;
+export const SITE_ICON_CACHE_VERSION = 8;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -88,7 +88,12 @@ function isKnownProvider(provider: any): provider is SiteIconProvider {
 function isThirdPartyFaviconSource(source: string): boolean {
     return source.includes('api.iowen.cn/favicon/')
         || source.includes('google.com/s2/favicons')
-        || source.includes('duckduckgo.com/ip3/');
+        || source.includes('t2.gstatic.com/faviconV2')
+        || source.includes('duckduckgo.com/ip3/')
+        || source.includes('favicon.yandex.net/favicon/')
+        || source.includes('favicon.im/')
+        || source.includes('icon.horse/icon/')
+        || source.includes('unavatar.io/');
 }
 
 function sanitizeProviderBackoffUntil(
@@ -432,6 +437,12 @@ function isRetryLocked(record: SiteIconCacheRecord | undefined, now = Date.now()
     return Number.isFinite(retryAfter) && retryAfter > now;
 }
 
+function hasProviderSpecificBackoff(record: SiteIconCacheRecord | undefined, now = Date.now()): boolean {
+    const map = getRecordProviderBackoffUntil(record);
+    if (!map) return false;
+    return Object.values(map).some((until) => Number(until) > now);
+}
+
 export function isRecordStale(record: SiteIconCacheRecord | undefined, ttlMs = SITE_ICON_TTL_MS): boolean {
     if (!record) return true;
     const updated = getRecordUpdatedAt(record);
@@ -504,8 +515,21 @@ function canFetchToBlob(url: string, provider: IconProvider): boolean {
     if (provider === 'browser_favicon') return false;
     if (url.startsWith('chrome://')) return false;
 
-    // In extension context, cross-origin fetch may be allowed by host permissions.
-    if (isExtensionContext()) return true;
+    if (isExtensionContext()) {
+        try {
+            const host = new URL(url).hostname.toLowerCase();
+            return host === 'api.iowen.cn'
+                || host === 'www.google.com'
+                || host === 't2.gstatic.com'
+                || host === 'icons.duckduckgo.com'
+                || host === 'favicon.yandex.net'
+                || host === 'favicon.im'
+                || host === 'icon.horse'
+                || host === 'unavatar.io';
+        } catch {
+            return false;
+        }
+    }
 
     // In web/dev context, avoid cross-origin fetch to prevent CORS errors.
     return isSameOriginHttpUrl(url);
@@ -718,11 +742,11 @@ export async function resolveAndCacheSiteIcon(
     const forceRefresh = !!options?.forceRefresh;
 
     if (!forceRefresh) {
-        if (recordMode === 'miss' && isRetryLocked(record, now)) {
+        if (recordMode === 'miss' && isRetryLocked(record, now) && !hasProviderSpecificBackoff(record, now)) {
             releaseSiteIconResultObjectUrl(cached);
             return null;
         }
-        if (recordMode === 'url' && isRetryLocked(record, now) && record?.lastError === 'img_error') {
+        if (recordMode === 'url' && isRetryLocked(record, now) && record?.lastError === 'img_error' && !hasProviderSpecificBackoff(record, now)) {
             releaseSiteIconResultObjectUrl(cached);
             return null;
         }

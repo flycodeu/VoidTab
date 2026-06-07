@@ -53,6 +53,7 @@ type ProbeOptions = {
 const CANDIDATE_FAIL_RETRY_MS = 30 * 60 * 1000;
 const CANDIDATE_OK_TTL_MS = 10 * 60 * 1000;
 const PERSISTENT_FAIL_TTL_MS = 24 * 60 * 60 * 1000;
+const PERSISTENT_TRANSIENT_FAIL_TTL_MS = 30 * 60 * 1000;
 const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v2';
 const PERSISTENT_FAIL_MAX_ENTRIES = 1200;
 const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v2';
@@ -165,8 +166,10 @@ function rememberPersistentFailure(url: string, status?: number): void {
     loadPersistentFailCache();
     const now = Date.now();
     const prev = persistentFailCache.get(url);
+    const isPermanentFailure = status === 404 || status === 410;
+    const ttlMs = isPermanentFailure ? PERSISTENT_FAIL_TTL_MS : PERSISTENT_TRANSIENT_FAIL_TTL_MS;
     persistentFailCache.set(url, {
-        retryAfter: now + PERSISTENT_FAIL_TTL_MS,
+        retryAfter: now + ttlMs,
         failCount: Number(prev?.failCount || 0) + 1,
         lastStatus: status,
         lastFailAt: now,
@@ -298,7 +301,7 @@ function getThirdPartyQueryDomains(hostname: string): string[] {
 
     const registrable = getRegistrableDomain(host);
     if (!registrable || registrable === host) return [host];
-    return [registrable, host];
+    return [host, registrable];
 }
 
 function dedupe(candidates: IconCandidate[]): IconCandidate[] {
@@ -424,24 +427,58 @@ function buildExtensionCandidates(pageUrl: string): IconCandidate[] {
 function buildExternalCandidates(domains: string[]): IconCandidate[] {
     const candidates: IconCandidate[] = [];
     for (const domain of domains) {
-        candidates.push(
-            {
-                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
-                provider: 'cn_favicon',
-            },
-            {
-                url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
-                provider: 'google_s2',
-            },
-            {
-                url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`,
-                provider: 'google_s2',
-            },
-            {
-                url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
-                provider: 'duckduckgo',
-            },
-        );
+        candidates.push({
+            url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
+            provider: 'duckduckgo',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://favicon.yandex.net/favicon/${encodeURIComponent(domain)}?size=120`,
+            provider: 'yandex',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
+            provider: 'cn_favicon',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
+            provider: 'google_s2',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=256`,
+            provider: 'google_s2',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://favicon.im/${encodeURIComponent(domain)}?larger=true`,
+            provider: 'unknown',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`,
+            provider: 'google_s2',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://unavatar.io/${encodeURIComponent(domain)}`,
+            provider: 'unknown',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://icon.horse/icon/${encodeURIComponent(domain)}`,
+            provider: 'unknown',
+        });
     }
     return candidates;
 }
@@ -472,11 +509,11 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         return dedupe(candidates);
     }
 
-    // Web/dev: prefer third-party sources to avoid CORP-blocked site icons.
+    // Web/dev: use presets first, then third-party sources to avoid CORP-blocked site icons.
+    pushPresetCandidate(candidates, host, rootDomain);
     if (!privateOrLocal) {
         candidates.push(...buildExternalCandidates(thirdPartyDomains));
     }
-    pushPresetCandidate(candidates, host, rootDomain);
     candidates.push(...buildSiteOriginCandidates(origin));
 
     return dedupe(candidates);
@@ -508,11 +545,11 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
         return dedupe(candidates);
     }
 
-    // Fast path (Web): third-party first, then preset, then site origin.
+    // Fast path (Web): preset first, then third-party, then site origin.
+    pushPresetCandidate(candidates, host, rootDomain);
     if (!privateOrLocal) {
         candidates.push(...buildExternalCandidates(thirdPartyDomains));
     }
-    pushPresetCandidate(candidates, host, rootDomain);
     candidates.push(...buildSiteOriginCandidates(origin));
 
     return dedupe(candidates);

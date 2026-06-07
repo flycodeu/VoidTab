@@ -1,10 +1,4 @@
 import {defineAsyncComponent} from 'vue';
-import {
-    PhClock, PhCalendarBlank, PhCloudSun, PhCpu, PhGithubLogo,
-    PhPiggyBank, PhConfetti, PhHandFist, PhTerminalWindow,
-    PhShieldCheck, PhTimer, PhImages, PhGlobe, PhCornersOut,
-    PhCode, PhChartLineUp
-} from '@phosphor-icons/vue';
 
 /**
  * 组件元数据接口定义
@@ -19,7 +13,7 @@ export interface WidgetMeta {
     component: ReturnType<typeof defineAsyncComponent>;
 
     //   新增视觉配置
-    icon: any; // Phosphor Icon 组件
+    icon: string; // Phosphor Icon 名称，避免首页静态引入整包图标
     color: string; // Tailwind 渐变色类名 (e.g. 'from-blue-500 to-cyan-500')
 }
 
@@ -35,7 +29,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'time',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/clock/ClockWidget.vue')),
-        icon: PhClock,
+        icon: 'Clock',
         color: 'from-gray-700 to-gray-900',
     },
     {
@@ -46,7 +40,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'time',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/calendar/CalendarWidget.vue')),
-        icon: PhCalendarBlank,
+        icon: 'CalendarBlank',
         color: 'from-red-500 to-rose-600',
     },
     {
@@ -57,7 +51,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'life',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/weather/WeatherWidget.vue')),
-        icon: PhCloudSun,
+        icon: 'CloudSun',
         color: 'from-blue-400 to-sky-500',
     },
     {
@@ -68,7 +62,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'system',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/system-monitor/SystemMonitorWidget.vue')),
-        icon: PhCpu,
+        icon: 'Cpu',
         color: 'from-emerald-500 to-teal-600',
     },
     {
@@ -79,7 +73,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/github-trending/GitHubTrendingWidget.vue')),
-        icon: PhGithubLogo,
+        icon: 'GithubLogo',
         color: 'from-gray-800 to-black',
     },
     {
@@ -90,7 +84,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/salary/SalaryWidget.vue')),
-        icon: PhPiggyBank,
+        icon: 'PiggyBank',
         color: 'from-amber-400 to-orange-500',
     },
     {
@@ -101,7 +95,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'time',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/holiday/HolidayWidget.vue')),
-        icon: PhConfetti,
+        icon: 'Confetti',
         color: 'from-pink-500 to-rose-500',
     },
     {
@@ -112,7 +106,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'game',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/wooden-fish/WoodenFishWidget.vue')),
-        icon: PhHandFist,
+        icon: 'HandFist',
         color: 'from-stone-500 to-stone-700',
     },
     {
@@ -123,7 +117,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/terminal-buffer/TerminalWidget.vue')),
-        icon: PhTerminalWindow,
+        icon: 'TerminalWindow',
         color: 'from-green-600 to-emerald-700',
     },
     {
@@ -134,7 +128,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/jwt-sentry/JWTSentryWidget.vue')),
-        icon: PhShieldCheck,
+        icon: 'ShieldCheck',
         color: 'from-violet-600 to-indigo-600',
     },
     {
@@ -145,7 +139,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/base64-codec/Base64CodecWidget.vue')),
-        icon: PhCode,
+        icon: 'Code',
         color: 'from-sky-500 to-cyan-600',
     },
     {
@@ -156,8 +150,41 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/stock-ticker/StockTickerWidget.vue')),
-        icon: PhChartLineUp,
+        icon: 'ChartLineUp',
         color: 'from-red-500 to-emerald-500',
+    },
+    {
+        type: 'novel_reader',
+        label: '小说阅读器',
+        description: '导入本地文本小说，在线预览章节并记录阅读进度。',
+        defaultW: 2,
+        defaultH: 2,
+        category: 'tool',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/novel-reader/NovelReaderWidget.vue')),
+        icon: 'BookOpenText',
+        color: 'from-emerald-600 to-lime-500',
+    },
+    {
+        type: 'code_lookup',
+        label: '编码速查',
+        description: '按编码、中英文名称查询国家、城市、电话、语言与货币信息。',
+        defaultW: 2,
+        defaultH: 2,
+        category: 'tool',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/code-lookup/CodeLookupWidget.vue')),
+        icon: 'IdentificationCard',
+        color: 'from-sky-600 to-blue-700',
+    },
+    {
+        type: 'ip_info',
+        label: 'IP 信息',
+        description: '查询当前公网 IP、城市、国家/地区、运营商与 ASN 信息。',
+        defaultW: 2,
+        defaultH: 1,
+        category: 'system',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/ip-info/IpInfoWidget.vue')),
+        icon: 'WifiHigh',
+        color: 'from-teal-500 to-cyan-700',
     },
     {
         type: 'cron',
@@ -167,7 +194,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/cron/CronWidget.vue')),
-        icon: PhTimer,
+        icon: 'Timer',
         color: 'from-orange-500 to-amber-600',
     },
     {
@@ -178,7 +205,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/photo-wall/PhotoWallWidget.vue')),
-        icon: PhImages,
+        icon: 'Images',
         color: 'from-indigo-400 to-purple-500',
     },
     {
@@ -189,7 +216,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'tool',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/site/SiteListWidget.vue')),
-        icon: PhGlobe,
+        icon: 'Globe',
         color: 'from-cyan-500 to-blue-500',
     },
     {
@@ -200,7 +227,7 @@ export const widgetRegistry: WidgetMeta[] = [
         defaultH: 2,
         category: 'game',
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/snake/SnakeWidget.vue')),
-        icon: PhCornersOut,
+        icon: 'CornersOut',
         color: 'from-emerald-500 to-zinc-900',
     },
     {
@@ -212,7 +239,7 @@ export const widgetRegistry: WidgetMeta[] = [
         category: 'game',
         // 指向新的 SnakeWidget.vue
         component: defineAsyncComponent(() => import('../../features/widgets/builtins/survivor/SurvivorWidget.vue')),
-        icon: PhCornersOut,
+        icon: 'CornersOut',
         color: 'from-emerald-500 to-zinc-900',
     },
 ];

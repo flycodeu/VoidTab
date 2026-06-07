@@ -67,6 +67,7 @@ function canWarmBrowserUrl(url: string): boolean {
 
 function canSpeculativelyWarmProvider(provider: IconProvider): boolean {
     return provider === 'browser_favicon'
+        || provider === 'cn_favicon'
         || provider === 'preset'
         || provider === 'google_s2'
         || provider === 'duckduckgo'

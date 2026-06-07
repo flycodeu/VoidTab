@@ -5,6 +5,7 @@ import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
+import {getFastIconCandidates} from "../../../shared/utils/icon.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -81,6 +82,15 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   }
 
   const token = ++resolveToken.value;
+  if (!forceRefresh && !autoIconUrl.value) {
+    const instantUrl = getFastIconCandidates(props.item.url)[0];
+    if (instantUrl) {
+      hasLoadError.value = false;
+      iconSourceMode.value = "auto";
+      setAutoIconUrl(instantUrl, false);
+    }
+  }
+
   const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
     forceRefresh,
     fastFirst: true,

@@ -115,6 +115,7 @@ watch(
   () => props.autoIconUrl,
   (url) => {
     if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
+    if (props.priority !== 'high') return;
     void warmBrowserIconUrl(url, {linkRel: 'preload', timeoutMs: 1000});
   },
   {immediate: true}

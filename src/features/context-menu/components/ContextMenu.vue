@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import {computed, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
+import {computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useToast} from '../../../shared/composables/useToast.ts';
 
 // 组件
 import ContextMenuPanel from './ContextMenuPanel.vue';
-import WidgetMarketplaceModal from '../../widgets/components/WidgetMarketplaceModal.vue';
 import ConfirmDialog from '../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {PhTrash} from '@phosphor-icons/vue';
+
+const WidgetMarketplaceModal = defineAsyncComponent(() => import('../../widgets/components/WidgetMarketplaceModal.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();

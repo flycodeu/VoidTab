@@ -67,22 +67,36 @@ const fetchTrends = async (force = false) => {
 onMounted(() => fetchTrends());
 
 const layout = computed(() => {
-  const w = props.item?.w ?? 2;
-  const h = props.item?.h ?? 2;
+  const w = Number(props.item?.w ?? 2);
+  const h = Number(props.item?.h ?? 2);
+  const isMini = w === 1 && h === 1;
+  const isWide = w >= 2 && h === 1;
+  const isTall = w === 1 && h >= 2;
+  const isLarge = w >= 2 && h >= 2;
   return {
-    isMini: w === 1 && h === 1,
-    isLarge: w >= 2 && h >= 2
+    isMini,
+    isWide,
+    isTall,
+    isLarge,
+    key: isMini ? 'mini' : isWide ? 'wide' : isTall ? 'tall' : isLarge ? 'large' : 'compact',
   };
+});
+
+const topRepos = computed(() => {
+  if (layout.value.isMini) return [];
+  if (layout.value.isLarge) return trends.value.slice(0, 3);
+  return trends.value.slice(0, 1);
 });
 </script>
 
 <template>
   <div
       class="gh-card w-full h-full relative flex flex-col rounded-[22px] overflow-hidden cursor-pointer select-none"
+      :data-layout="layout.key"
       @click="showModal = true"
   >
     <div
-        v-if="!layout.isMini"
+        v-if="!layout.isMini && !layout.isTall"
         class="gh-header px-4 py-3 flex items-center justify-between shrink-0"
     >
       <div class="flex items-center gap-2 min-w-0">
@@ -103,13 +117,29 @@ const layout = computed(() => {
         <PhGithubLogo size="28" class="gh-icon transition-all"/>
       </div>
 
-      <div v-else class="space-y-2">
+      <div v-else-if="layout.isTall" class="gh-tall">
+        <PhGithubLogo size="30" weight="fill" class="gh-accent"/>
+        <div class="gh-kicker text-[10px] font-bold tracking-widest uppercase">Trending</div>
+        <div v-if="topRepos[0]" class="gh-tall-repo">
+          <span class="gh-title truncate">{{ topRepos[0].name }}</span>
+          <span class="gh-star inline-flex items-center gap-1">
+            <PhStar weight="fill" size="10"/>
+            {{
+              topRepos[0].stargazers_count > 1000
+                  ? (topRepos[0].stargazers_count / 1000).toFixed(1) + 'k'
+                  : topRepos[0].stargazers_count
+            }}
+          </span>
+        </div>
+      </div>
+
+      <div v-else class="gh-list space-y-2">
         <div
-            v-for="repo in trends.slice(0, layout.isLarge ? 3 : 1)"
+            v-for="repo in topRepos"
             :key="repo.id"
-            class="gh-row p-2 rounded-xl flex justify-between items-center"
+            class="gh-row p-2 rounded-xl flex items-center gap-2"
         >
-          <span class="gh-title text-xs font-bold truncate max-w-[140px] transition-colors">
+          <span class="gh-title text-xs font-bold truncate min-w-0 flex-1 transition-colors">
             {{ repo.name }}
           </span>
 
@@ -141,7 +171,7 @@ const layout = computed(() => {
 /* 保持原有样式不变 */
 .gh-card {
   background: var(--settings-panel);
-  border: 1px solid var(--settings-border-soft);
+  border: 1px solid color-mix(in srgb, var(--settings-border) 72%, var(--settings-text) 16%);
   box-shadow: var(--settings-shadow-soft);
   color: var(--settings-text);
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
@@ -180,13 +210,15 @@ const layout = computed(() => {
 
 .gh-row {
   background: color-mix(in srgb, var(--settings-panel) 92%, var(--settings-surface));
-  border: 1px solid var(--settings-border-soft);
-  transition: background .18s ease, border-color .18s ease;
+  border: 1px solid color-mix(in srgb, var(--settings-border) 78%, var(--settings-text) 14%);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-color-rgb), 0.06);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
 
 .gh-row:hover {
   background: color-mix(in srgb, var(--settings-panel) 86%, var(--settings-surface));
   border-color: rgba(var(--accent-color-rgb), 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-color-rgb), 0.14);
 }
 
 .gh-title {
@@ -203,5 +235,56 @@ const layout = computed(() => {
 
 :global(html.light) .gh-card:hover {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12);
+}
+
+.gh-tall {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.gh-tall-repo {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--settings-panel) 88%, var(--settings-surface));
+  border: 1px solid color-mix(in srgb, var(--settings-border) 78%, var(--settings-text) 14%);
+}
+
+.gh-card[data-layout="wide"] .gh-header {
+  padding: 9px 12px 7px;
+}
+
+.gh-card[data-layout="wide"] .flex-1 {
+  padding: 8px 10px 10px;
+}
+
+.gh-card[data-layout="wide"] .gh-row {
+  padding: 7px 8px;
+}
+
+@container (max-width: 170px) {
+  .gh-card:not([data-layout="mini"]) .gh-header {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .gh-card:not([data-layout="mini"]) .gh-list {
+    gap: 6px;
+  }
+
+  .gh-card:not([data-layout="mini"]) .gh-row {
+    border-radius: 10px;
+    padding: 7px;
+  }
 }
 </style>

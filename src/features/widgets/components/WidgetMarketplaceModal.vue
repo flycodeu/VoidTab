@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref, computed} from 'vue';
 import {widgetRegistry} from '../../../core/registry/widgets.ts';
+import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
 import {
   PhX,
   PhMagnifyingGlass,
@@ -49,6 +50,8 @@ const select = (type: string) => {
   emit('select', type);
   emit('close');
 };
+
+const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFour');
 </script>
 <template>
   <Transition name="modal-fade">
@@ -135,7 +138,7 @@ const select = (type: string) => {
                       class="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md bg-gradient-to-br transition-transform duration-300 group-hover:scale-110"
                       :class="widget.color"
                   >
-                    <component :is="widget.icon" :size="24" weight="fill" />
+                    <component :is="resolveWidgetIcon(widget.icon)" :size="24" weight="fill" />
                   </div>
 
                   <div

@@ -85,7 +85,7 @@ const railClass = computed(() => {
 
 const railLayoutClass = computed(() => {
   return isHorizontal.value
-      ? 'hidden lg:flex pointer-events-auto h-[82px] flex-row items-center transition-all duration-300 overflow-visible sidebar-rail sidebar-rail--horizontal'
+      ? 'hidden lg:flex pointer-events-auto h-[88px] flex-row items-center transition-all duration-300 overflow-visible sidebar-rail sidebar-rail--horizontal'
       : 'hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail';
 });
 
@@ -140,8 +140,11 @@ const breathSeconds = computed<number>(() => {
 
 /** scoped 下也能用：用 style 喂 CSS 变量（动画用） */
 const railStyle = computed(() => {
+  const gridMaxWidth = Number(store.config.theme.gridMaxWidth || 1600);
+  const horizontalMaxWidth = Math.max(1120, Math.min(1840, gridMaxWidth + 160));
   return {
-    '--sidebar-breath-duration': `${breathSeconds.value}s`
+    '--sidebar-breath-duration': `${breathSeconds.value}s`,
+    '--sidebar-horizontal-max-width': `${horizontalMaxWidth}px`,
   } as Record<string, string>;
 });
 
@@ -342,8 +345,15 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-rail--horizontal {
-  width: min(920px, calc(100vw - 32px));
+  width: min(var(--sidebar-horizontal-max-width, 1440px), calc(100vw - 48px));
+  min-width: min(1120px, calc(100vw - 48px));
   transform-origin: center;
+}
+
+@media (min-width: 1600px) {
+  .sidebar-rail--horizontal {
+    width: min(var(--sidebar-horizontal-max-width, 1680px), calc(100vw - 96px));
+  }
 }
 
 /* ===================================================================== */

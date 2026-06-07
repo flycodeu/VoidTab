@@ -33,11 +33,15 @@ async function runBundledTypeScript(name, source) {
   await rm(dir, {recursive: true, force: true});
 }
 
-test('manifest uses least-privilege host permissions', async () => {
+test('manifest enables favicon fallbacks without broad host permissions', async () => {
   const manifest = JSON.parse(await read('public/manifest.json'));
-  assert.ok(!manifest.permissions.includes('favicon'));
+  assert.ok(manifest.permissions.includes('favicon'));
   assert.ok(!manifest.host_permissions.includes('<all_urls>'));
   assert.ok(manifest.host_permissions.includes('https://api.open-meteo.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://query1.finance.yahoo.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://api.iowen.cn/*'));
+  assert.ok(manifest.host_permissions.includes('https://t2.gstatic.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://icons.duckduckgo.com/*'));
 });
 
 test('favicon probing avoids extension fetch false negatives', async () => {
@@ -48,7 +52,8 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /permissions\.includes\('favicon'\)/);
   assert.doesNotMatch(icon, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
   assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v2'/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*7/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*8/);
+  assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
 });
 
 test('AI markdown rendering is sanitized before v-html', async () => {

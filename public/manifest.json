@@ -9,7 +9,8 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "contextMenus"
+    "contextMenus",
+    "favicon"
   ],
   "host_permissions": [
     "https://geocoding-api.open-meteo.com/*",
@@ -18,6 +19,17 @@
     "https://api.bigdatacloud.net/*",
     "https://api.github.com/*",
     "https://query1.finance.yahoo.com/*",
+    "https://ipwho.is/*",
+    "https://ipapi.co/*",
+    "https://api.ip.sb/*",
+    "https://api.iowen.cn/*",
+    "https://www.google.com/*",
+    "https://t2.gstatic.com/*",
+    "https://icons.duckduckgo.com/*",
+    "https://favicon.yandex.net/*",
+    "https://favicon.im/*",
+    "https://icon.horse/*",
+    "https://unavatar.io/*",
     "https://timor.tech/*",
     "https://api.deepseek.com/*",
     "https://api.siliconflow.cn/*",

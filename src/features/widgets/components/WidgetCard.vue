@@ -45,3 +45,9 @@ const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET
     />
   </div>
 </template>
+
+<style scoped>
+.widget-card {
+  container-type: size;
+}
+</style>
