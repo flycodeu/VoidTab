@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, ref} from 'vue';
+import {computed, nextTick, ref} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {
   PhCloudArrowUp,
@@ -24,10 +24,14 @@ import PrivacyTab from './tabs/PrivacyTab.vue';
 import SearchTab from './tabs/SearchTab.vue';
 import SyncTab from './tabs/SyncTab.vue';
 import ThemeTab from './tabs/ThemeTab.vue';
+import {useFocusTrap} from '../../../shared/composables/useFocusTrap';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
 const store = useConfigStore();
+const dialogRef = ref<HTMLElement | null>(null);
+const isDialogActive = computed(() => props.show);
+useFocusTrap(dialogRef, isDialogActive);
 
 const settingsTitle = '\u8bbe\u7f6e';
 const closeTitle = '\u5173\u95ed (Esc)';
@@ -60,17 +64,68 @@ const tabMap: Record<TabType, any> = {
 };
 
 const activeTab = computed(() => tabMap[settingsTab.value]);
+const activeMenuLabel = computed(() => menuItems.find(i => i.id === settingsTab.value)?.label || settingsTitle);
+const settingsTabId = (id: TabType) => `settings-tab-${id}`;
+const settingsPanelId = (id: TabType) => `settings-panel-${id}`;
+
+const focusTab = async (id: TabType) => {
+  await nextTick();
+  document.getElementById(settingsTabId(id))?.focus();
+};
+
+const selectSettingsTab = (id: TabType) => {
+  settingsTab.value = id;
+};
+
+const moveSettingsTab = (from: TabType, offset: number) => {
+  const index = menuItems.findIndex(item => item.id === from);
+  const nextIndex = (index + offset + menuItems.length) % menuItems.length;
+  const nextId = menuItems[nextIndex].id;
+  selectSettingsTab(nextId);
+  void focusTab(nextId);
+};
+
+const onSettingsTabKeydown = (event: KeyboardEvent, id: TabType) => {
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    moveSettingsTab(id, 1);
+    return;
+  }
+
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    moveSettingsTab(id, -1);
+    return;
+  }
+
+  if (event.key === 'Home') {
+    event.preventDefault();
+    const firstId = menuItems[0].id;
+    selectSettingsTab(firstId);
+    void focusTab(firstId);
+    return;
+  }
+
+  if (event.key === 'End') {
+    event.preventDefault();
+    const lastId = menuItems[menuItems.length - 1].id;
+    selectSettingsTab(lastId);
+    void focusTab(lastId);
+  }
+};
 </script>
 
 <template>
   <transition name="scale">
-    <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 md:p-12">
+    <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 md:p-12" data-modal="1">
       <div
         @click="emit('close')"
         class="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-[4px] transition-all duration-500"
+        aria-hidden="true"
       ></div>
 
       <div
+        ref="dialogRef"
         class="relative w-full max-w-5xl h-[85vh] md:h-[82vh] flex flex-col md:flex-row overflow-hidden rounded-[2rem] shadow-2xl transition-all animate-scale-in border backdrop-blur-2xl backdrop-saturate-150"
         :class="[
           store.config.theme.mode === 'dark' ? 'shadow-[0_0_50px_-10px_rgba(0,0,0,0.6)]' : 'shadow-2xl'
@@ -80,6 +135,10 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
           border-color: var(--settings-border);
           color: var(--settings-text);
         "
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+        tabindex="-1"
       >
         <div
           class="w-full md:w-64 flex flex-row md:flex-col p-2 md:p-6 overflow-x-auto md:overflow-y-auto gap-2 no-scrollbar shrink-0 z-10 border-b md:border-b-0 md:border-r"
@@ -91,16 +150,23 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
           <div class="hidden md:flex items-center gap-3 mb-8 px-2 mt-2 select-none">
             <div
               class="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-color)] to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/20"
+              aria-hidden="true"
             >
               <PhGear weight="fill" size="20"/>
             </div>
             <span class="font-bold text-xl tracking-tight">{{ settingsTitle }}</span>
           </div>
 
+          <div
+            role="tablist"
+            aria-label="设置分类"
+            class="flex flex-row md:flex-col gap-2"
+          >
           <button
             v-for="item in menuItems"
             :key="item.id"
-            @click="settingsTab = item.id"
+            @click="selectSettingsTab(item.id)"
+            @keydown="onSettingsTabKeydown($event, item.id)"
             class="group relative flex-shrink-0 flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all duration-200 whitespace-nowrap outline-none"
             :class="[
               settingsTab === item.id
@@ -108,12 +174,18 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
                 : 'text-[var(--settings-text)] hover:bg-black/5 dark:hover:bg-white/10 opacity-70 hover:opacity-100'
             ]"
             :style="settingsTab === item.id ? { backgroundColor: 'var(--accent-color)' } : {}"
+            role="tab"
+            :id="settingsTabId(item.id)"
+            :aria-selected="settingsTab === item.id"
+            :aria-controls="settingsPanelId(item.id)"
+            :tabindex="settingsTab === item.id ? 0 : -1"
           >
             <component
               :is="item.icon"
               size="18"
               :weight="settingsTab === item.id ? 'fill' : 'bold'"
               class="transition-transform duration-300 group-hover:scale-110"
+              aria-hidden="true"
             />
             <span>{{ item.label }}</span>
             <div
@@ -121,6 +193,7 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
               class="absolute inset-0 rounded-xl ring-1 ring-white/20 inset-shadow"
             ></div>
           </button>
+          </div>
         </div>
 
         <div class="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -131,11 +204,12 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
               background-color: rgba(255,255,255,0.05);
             "
           >
-            <h2 class="text-lg font-bold flex items-center gap-2">
-              {{ menuItems.find(i => i.id === settingsTab)?.label }}
+            <h2 id="settings-dialog-title" class="text-lg font-bold flex items-center gap-2">
+              {{ settingsTitle }}：{{ activeMenuLabel }}
               <span
                 class="text-xs font-normal opacity-40 px-2 py-0.5 rounded-full hidden sm:inline-block"
                 style="background-color: var(--settings-panel); color: var(--settings-text);"
+                aria-hidden="true"
               >
                 Console
               </span>
@@ -147,12 +221,18 @@ const activeTab = computed(() => tabMap[settingsTab.value]);
               style="color: var(--settings-text);"
               :class="'hover:bg-black/5 dark:hover:bg-white/10'"
               :title="closeTitle"
+              aria-label="关闭设置"
             >
-              <PhX size="22" weight="bold"/>
+              <PhX size="22" weight="bold" aria-hidden="true"/>
             </button>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-6 md:px-10 md:py-8 space-y-8 custom-scroll scroll-smooth">
+          <div
+            class="flex-1 overflow-y-auto p-6 md:px-10 md:py-8 space-y-8 custom-scroll scroll-smooth"
+            role="tabpanel"
+            :id="settingsPanelId(settingsTab)"
+            :aria-labelledby="settingsTabId(settingsTab)"
+          >
             <component :is="activeTab"/>
           </div>
         </div>

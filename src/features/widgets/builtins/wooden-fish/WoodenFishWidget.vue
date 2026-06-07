@@ -3,6 +3,7 @@ import {ref, computed, onBeforeUnmount, watch} from 'vue';
 import {useIntervalFn, useDebounceFn} from '@vueuse/core';
 import type {SiteItem} from '../../../../core/config/types';
 import {useConfigStore} from '../../../../stores/useConfigStore';
+import {useToast} from '../../../../shared/composables/useToast';
 
 import {
   PhHandsPraying, PhSpeakerHigh, PhSpeakerSlash,
@@ -10,6 +11,7 @@ import {
 } from '@phosphor-icons/vue';
 
 const store = useConfigStore();
+const toast = useToast();
 
 if (!store.config.runtime) (store.config as any).runtime = {};
 if (!store.config.runtime.widgetState) store.config.runtime.widgetState = {};
@@ -44,6 +46,7 @@ const soundEnabled = computed<boolean>({
 });
 
 const isAutoMode = ref(false);
+let audioFailureNotified = false;
 
 // 动画状态
 const isAnimate = ref(false);
@@ -113,8 +116,11 @@ const playWoodSound = () => {
     osc.stop(now + 0.2);
     osc2.start(now);
     osc2.stop(now + 0.25);
-  } catch (e) {
-    console.error(e)
+  } catch {
+    if (!audioFailureNotified) {
+      audioFailureNotified = true;
+      toast.warning('音频播放失败，请检查浏览器音频权限');
+    }
   }
 };
 

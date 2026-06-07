@@ -17,6 +17,13 @@ export interface WeatherCache {
     ts: number;
 }
 
+export interface StockCache {
+    data: any[];
+    history: number[];
+    symbols: string[];
+    ts: number;
+}
+
 /** * 统一的临时数据结构
  * 键名对应业务模块，保持扁平化
  */
@@ -24,4 +31,5 @@ export interface VoidTabTempConfig {
     holiday?: HolidayCache;
     github?: GithubCache;
     weather?: WeatherCache;
+    stock?: StockCache;
 }

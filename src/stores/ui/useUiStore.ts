@@ -19,6 +19,9 @@ export interface DragState {
 }
 
 export const useUiStore = defineStore('ui', () => {
+    const announcement = ref('');
+    let announcementTimer: ReturnType<typeof setTimeout> | null = null;
+
     const contextMenu = ref<ContextMenuState>({
         show: false,
         x: 0,
@@ -33,6 +36,9 @@ export const useUiStore = defineStore('ui', () => {
         item: null,
         fromGroupId: ''
     });
+
+    // 分组排序状态
+    const isGroupSorting = ref(false);
 
     const openContextMenu = (
         e: MouseEvent,
@@ -78,12 +84,45 @@ export const useUiStore = defineStore('ui', () => {
         dragState.value = {isDragging, fromGroupId, item};
     };
 
+    const setGroupSorting = (val: boolean) => {
+        isGroupSorting.value = val;
+    };
+
+    const announce = (message: string) => {
+        const text = message.trim();
+        if (!text) return;
+
+        if (announcementTimer) {
+            clearTimeout(announcementTimer);
+            announcementTimer = null;
+        }
+
+        announcement.value = '';
+
+        if (typeof window === 'undefined') {
+            announcement.value = text;
+            return;
+        }
+
+        window.setTimeout(() => {
+            announcement.value = text;
+            announcementTimer = window.setTimeout(() => {
+                announcement.value = '';
+                announcementTimer = null;
+            }, 4000);
+        }, 0);
+    };
+
     return {
+        announcement,
         contextMenu,
         dragState,
+        isGroupSorting,
         openContextMenu,
         openContextMenuAt,
         closeContextMenu,
-        setDragState
+        setDragState,
+        setGroupSorting,
+        announce
     };
 });

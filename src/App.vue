@@ -25,9 +25,13 @@ const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/
 const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
 import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
 import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
+import Toast from './shared/ui/Toast.vue';
+import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
+import {useToast} from './shared/composables/useToast';
 
 const store = useConfigStore();
 const ui = useUiStore();
+const toast = useToast();
 useTheme();
 useThemeRuntimeSync(store);
 
@@ -53,8 +57,14 @@ const toggleSidebarPos = () => {
   store.config.theme.sidebarPos = store.config.theme.sidebarPos === 'left' ? 'right' : 'left';
 };
 
+const getGroupTitle = (id: string) => {
+  return store.config.layout.find((group) => group.id === id)?.title || '';
+};
+
 const setActiveGroupId = (id: string) => {
   activeGroupId.value = id;
+  const title = getGroupTitle(id);
+  if (title) ui.announce(`已切换到「${title}」分组`);
 };
 
 const dialogLogic = useDialogs(store, ui);
@@ -98,6 +108,9 @@ function findScrollableAncestor(start: HTMLElement | null) {
 }
 
 function canScrollInDirection(el: HTMLElement, deltaY: number) {
+  // 如果没有滚动内容，返回 false 允许切换分组
+  if (el.scrollHeight <= el.clientHeight + 1) return false;
+
   if (deltaY < 0) return el.scrollTop > 0;
   if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight - 1;
   return false;
@@ -110,7 +123,7 @@ function canWheelSwitchGroup() {
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
   if (isTerminalOpen.value) return false;
   if (ui.dragState?.isDragging) return false;
-  if ((ui as any).isGroupSorting) return false;
+  if (ui.isGroupSorting) return false;
   return true;
 }
 
@@ -131,7 +144,7 @@ function switchGroup(dir: 1 | -1) {
   const base = idx >= 0 ? idx : 0;
   const nextIdx = (base + dir + groups.length) % groups.length;
   const nextId = groups[nextIdx]?.id;
-  if (nextId) activeGroupId.value = nextId;
+  if (nextId) setActiveGroupId(nextId);
 }
 
 function onWheelCapture(e: WheelEvent) {
@@ -146,7 +159,7 @@ function onWheelCapture(e: WheelEvent) {
   if (isPointerInsideSidebarList(e)) return;
 
   // 分组排序放行
-  if ((ui as any).isGroupSorting) return;
+  if (ui.isGroupSorting) return;
 
   // 指针下存在可滚容器且还能滚 -> 放行
   const scrollable = findScrollableAncestor(pointerEl);
@@ -220,7 +233,7 @@ function pickMainScrollEl(): HTMLElement | null {
  */
 function isAnyDraggingNow(): boolean {
   if (ui.dragState?.isDragging) return true;
-  if ((ui as any).isGroupSorting) return true;
+  if (ui.isGroupSorting) return true;
 
   // DOM 兜底（按你项目里出现过的 class）
   const hit =
@@ -306,6 +319,14 @@ function ensureAutoScrollRunning() {
 /** 用 DragEvent 更新指针位置（拖拽时一定会触发） */
 function onDragOverForAutoScroll(e: DragEvent) {
   if (!e) return;
+
+  // 如果在自动滚动状态，阻止默认行为
+  if (canAutoScroll()) {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+  }
+
   // dragover 会持续触发，拿 clientY 更新即可
   lastPointerY = e.clientY || lastPointerY;
 
@@ -345,7 +366,7 @@ const closeTerminal = () => {
 
 onMounted(async () => {
   if (!store.isLoaded) await store.loadConfig();
-  if (store.config.layout.length > 0) activeGroupId.value = store.config.layout[0].id;
+  if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
   void store.refreshAutoSiteIconsBatch();
 
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
@@ -355,7 +376,7 @@ onMounted(async () => {
   window.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
 
   // 核心：dragover 驱动自动滚动（最关键）
-  window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: true});
+  window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: false});
   window.addEventListener('dragend', onDragEndForAutoScroll, {capture: true, passive: true});
   window.addEventListener('drop', onDragEndForAutoScroll, {capture: true, passive: true});
 
@@ -384,7 +405,10 @@ const handleToggleEdit = () => {
 
 // 处理事件：配置组件
 const handleEditWidgetSettings = (item: any) => {
-  console.log('配置组件', item);
+  showWidgetModal.value = true;
+  const title = item?.title ? `「${item.title}」` : '该组件';
+  toast.info(`已打开组件面板，可在这里管理${title}。`);
+  ui.announce(`已打开组件面板，可管理${item?.title || '该组件'}`);
 };
 
 // 移动端视口信息
@@ -426,6 +450,10 @@ const tryOpenDevTools = () => {
 </script>
 
 <template>
+  <ErrorBoundary>
+  <a href="#main-content" class="skip-link">跳到主内容</a>
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ ui.announcement }}</div>
+
   <div v-if="!store.isLoaded" class="fixed inset-0 flex items-center justify-center bg-[#121212] text-white z-[9999]">
     <div class="flex flex-col items-center gap-4">
       <PhSpinner size="40" class="animate-spin text-[var(--accent-color)]"/>
@@ -460,7 +488,7 @@ const tryOpenDevTools = () => {
           class="relative z-10 w-full h-full flex flex-col transition-all duration-500"
           :class="store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row'"
       >
-        <div class="absolute top-0 left-0 right-0 z-50 pointer-events-none">
+        <header class="absolute top-0 left-0 right-0 z-50 pointer-events-none" aria-label="全局操作">
           <TopActions
               class="pointer-events-auto"
               :sidebarPos="store.config.theme.sidebarPos"
@@ -473,7 +501,7 @@ const tryOpenDevTools = () => {
               @toggleAi="showAiPanel = true"
               @toggleTerminal="handleToggleTerminal"
           />
-        </div>
+        </header>
 
         <SideBar
             class="hidden lg:flex z-40"
@@ -492,6 +520,8 @@ const tryOpenDevTools = () => {
             @update:isEditMode="isGlobalEditMode = $event"
             :sidebarPos="store.config.theme.sidebarPos"
             @openSettings="showSettings = true"
+            @openGroupDialog="dialogLogic.openAddGroupDialog"
+            @openWidgets="showWidgetModal = true"
             :mobileNarrow="mobileViewport.isNarrow"
             :mobileWidth="mobileViewport.width"
         />
@@ -565,6 +595,10 @@ const tryOpenDevTools = () => {
       <PhWarning :size="32" weight="duotone"/>
     </template>
   </ConfirmDialog>
+
+  <!-- 🔔 全局 Toast 通知系统 -->
+  <Toast />
+  </ErrorBoundary>
 </template>
 
 <style>

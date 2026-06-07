@@ -18,14 +18,14 @@ export function createWebDavProvider(): SyncProvider {
         async upload(profile: SyncProfile, payload: any): Promise<SyncOpResult> {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
-            const ok = await uploadToWebDav(p, payload);
+            const ok = await uploadToWebDav(p, payload, p.filename);
             return {ok, message: ok ? '云端备份成功' : '上传失败'};
         },
 
         async download(profile: SyncProfile): Promise<SyncOpResult> {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
-            const data = await downloadFromWebDav(p);
+            const data = await downloadFromWebDav(p, p.filename);
             if (!data) return {ok: false, message: '下载失败或无备份'};
 
             //   返回字符串（store 里 JSON.parse）

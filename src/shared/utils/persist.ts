@@ -4,8 +4,7 @@ export function loadJson<T>(key: string, fallback: T): T {
     if (!raw) return fallback;
     try {
         return JSON.parse(raw) as T;
-    } catch (e) {
-        console.error(`[persist] Failed to parse "${key}"`, e);
+    } catch {
         return fallback;
     }
 }
@@ -13,8 +12,8 @@ export function loadJson<T>(key: string, fallback: T): T {
 export function saveJson(key: string, value: unknown) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-        console.error(`[persist] Failed to save "${key}"`, e);
+    } catch {
+        // Optional persisted state keeps its in-memory value when storage is unavailable.
     }
 }
 

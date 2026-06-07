@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import * as PhIcons from '@phosphor-icons/vue';
-import {PhSquaresFour} from '@phosphor-icons/vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
+import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 
 interface GroupProps {
   id: string;
@@ -30,11 +29,14 @@ const props = defineProps<{
 const store = useConfigStore();
 
 const IconComp = computed(() => {
-  const iconName = 'Ph' + String(props.group?.icon || '').replace(/^Ph/, '');
-  return (PhIcons as any)[iconName] || PhSquaresFour;
+  return resolvePhosphorIcon(props.group?.icon, 'SquaresFour');
 });
 
 const count = computed(() => props.group.items?.length || 0);
+const dropHintId = computed(() => `group-${props.group.id}-drop-hint`);
+const groupButtonLabel = computed(() => {
+  return `${props.active ? '当前分组' : '打开分组'}：${props.group.title}，${count.value} 个项目`;
+});
 
 // 是否有自定义颜色
 const hasCustomColor = computed(() => !!props.group.iconColor);
@@ -66,6 +68,7 @@ const dynamicClasses = computed(() => {
 
 <template>
   <button
+      type="button"
       @click="onSelect(group.id)"
       @contextmenu="(e) => onContextMenu(e, group)"
       @dragenter.prevent="onDragEnter(group.id)"
@@ -73,6 +76,9 @@ const dynamicClasses = computed(() => {
       @dragover.prevent
       @drop="onDrop(group.id)"
       :title="`${group.title} (${count})`"
+      :aria-label="groupButtonLabel"
+      :aria-current="active ? 'page' : undefined"
+      :aria-describedby="showDropHint ? dropHintId : undefined"
       :class="dynamicClasses"
       :style="buttonStyle"
   >
@@ -81,6 +87,7 @@ const dynamicClasses = computed(() => {
         v-if="active"
         class="active-indicator"
         :style="{ backgroundColor: hasCustomColor ? safeColor : 'var(--accent-color)' }"
+        aria-hidden="true"
     />
 
     <div class="relative">
@@ -91,6 +98,7 @@ const dynamicClasses = computed(() => {
           class="icon"
           :class="[(!hasCustomColor && active) ? 'icon-glow' : '']"
           :style="hasCustomColor && active ? { filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))' } : {}"
+          aria-hidden="true"
       />
 
       <transition name="scale">
@@ -98,6 +106,7 @@ const dynamicClasses = computed(() => {
             v-if="count > 0 && store.config.theme.showGroupCount"
             class="count-badge"
             :style="hasCustomColor ? { backgroundColor: safeColor, color: '#fff' } : {}"
+            aria-hidden="true"
         >
           <span class="count-text">{{ count }}</span>
         </div>
@@ -106,6 +115,10 @@ const dynamicClasses = computed(() => {
 
     <span class="title" :class="active ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'">
       {{ group.title }}
+    </span>
+
+    <span v-if="showDropHint" :id="dropHintId" class="sr-only">
+      可将拖拽的网站放入此分组
     </span>
   </button>
 </template>

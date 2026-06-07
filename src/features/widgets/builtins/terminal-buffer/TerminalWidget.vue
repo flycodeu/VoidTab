@@ -4,8 +4,10 @@ import {useConfigStore} from '../../../../stores/useConfigStore';
 import type {SiteItem} from '../../../../core/config/types';
 import {PhTerminalWindow, PhCopy, PhCode} from '@phosphor-icons/vue';
 import TerminalModal from './TerminalModal.vue';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const toast = useToast();
 
 const store = useConfigStore();
 const content = computed<string>({
@@ -50,8 +52,9 @@ const copyToClipboard = async (e: MouseEvent) => {
   e.stopPropagation();
   try {
     await navigator.clipboard.writeText(content.value);
-  } catch (err) {
-    console.error('Failed to copy', err);
+    toast.success('缓冲区内容已复制');
+  } catch {
+    toast.error('复制失败，请检查浏览器权限');
   }
 };
 </script>

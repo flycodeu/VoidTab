@@ -3,12 +3,17 @@ import {ref, computed, onMounted, defineAsyncComponent} from 'vue';
 import {useIntervalFn, useLocalStorage} from '@vueuse/core';
 import type {SiteItem} from '../../../../core/config/types';
 import {PhTrendUp, PhTrendDown, PhChartLineUp, PhCurrencyBtc} from '@phosphor-icons/vue';
+import {fetchJsonWithRetry} from '../../../../shared/utils/network';
+import {tempStorage} from '../../../../core/storage/tempStorage';
+import {useToast} from '../../../../shared/composables/useToast';
 
 // 异步加载配置弹窗
 const StockConfigModal = defineAsyncComponent(() => import('./StockConfigModal.vue'));
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const toast = useToast();
 const showModal = ref(false);
+const CACHE_TIME = 15 * 60 * 1000;
 
 // === 配置状态 ===
 const CACHE_KEY = `widget_stock_${props.item.id}`;
@@ -26,23 +31,72 @@ const activeIndex = ref(0); // 2x1 轮播索引
 
 // === 核心：获取数据 (CoinGecko 示例) ===
 const fetchData = async () => {
-  try {
-    const ids = config.value.symbols.join(',');
-    if (!ids) return;
+  const ids = config.value.symbols.join(',');
+  if (!ids) {
+    loading.value = false;
+    return;
+  }
 
+  const cache = tempStorage.get('stock');
+  const hasMatchingCache = cache
+      && tempStorage.isValid(cache.ts, CACHE_TIME)
+      && cache.symbols.join(',') === ids;
+
+  if (hasMatchingCache) {
+    marketData.value = cache.data;
+    historyData.value = cache.history;
+    loading.value = false;
+    return;
+  }
+
+  try {
     // 1. 获取当前价格
-    const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=10&page=1&sparkline=false&price_change_percentage=24h`);
-    const data = await res.json();
+    const data = await fetchJsonWithRetry<any[]>(
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=10&page=1&sparkline=false&price_change_percentage=24h`,
+        {cache: 'no-store'},
+        {
+          timeoutMs: 10000,
+          retries: 2,
+          retryDelayMs: 700,
+          maxRetryDelayMs: 5000,
+          metricName: 'stock.market',
+          fallbackName: 'stock.cache.market',
+          fallbackData: () => cache?.symbols.join(',') === ids ? cache.data : undefined,
+        }
+    );
     marketData.value = data;
 
     // 2. 如果是 2x2 模式，额外获取走势数据 (仅第一只)
     if (layout.value.isStandard && config.value.symbols[0]) {
-      const chartRes = await fetch(`https://api.coingecko.com/api/v3/coins/${config.value.symbols[0]}/market_chart?vs_currency=usd&days=1&interval=hourly`);
-      const chartJson = await chartRes.json();
-      historyData.value = chartJson.prices.map((p: any) => p[1]);
+      const chartJson = await fetchJsonWithRetry<{prices?: any[]}>(
+          `https://api.coingecko.com/api/v3/coins/${config.value.symbols[0]}/market_chart?vs_currency=usd&days=1&interval=hourly`,
+          {cache: 'no-store'},
+          {
+            timeoutMs: 10000,
+            retries: 2,
+            retryDelayMs: 700,
+            maxRetryDelayMs: 5000,
+            metricName: 'stock.chart',
+            fallbackName: 'stock.cache.chart',
+            fallbackData: () => cache?.symbols.join(',') === ids ? {prices: cache.history.map((price, index) => [index, price])} : undefined,
+          }
+      );
+      historyData.value = (chartJson.prices || []).map((p: any) => p[1]);
     }
-  } catch (e) {
-    console.error('Stock fetch failed', e);
+
+    tempStorage.set('stock', {
+      data: marketData.value,
+      history: historyData.value,
+      symbols: [...config.value.symbols],
+      ts: Date.now(),
+    });
+  } catch {
+    if (cache?.symbols.join(',') === ids) {
+      marketData.value = cache.data;
+      historyData.value = cache.history;
+    } else {
+      toast.warning('行情数据获取失败，请稍后重试');
+    }
   } finally {
     loading.value = false;
   }

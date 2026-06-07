@@ -6,6 +6,7 @@ import {normalizeConfig} from './normalize';
 import {storage} from '../storage';
 import {CONFIG_KEY, WALLPAPER_KEY, LOCAL_WALLPAPER_MARKER} from './keys';
 import {applyLegacyLocalStorageIntoConfig} from "./legacyLocalStorage.ts";
+import {openSensitiveConfigFromStorage, sealSensitiveConfigForStorage} from './sensitive';
 
 const isBase64Image = (s: string) => typeof s === 'string' && s.startsWith('data:image');
 
@@ -22,7 +23,7 @@ export const configRepository = {
         const local = await storage.get<any>(CONFIG_KEY, null, 'local');
         const sync = local ? null : await storage.get<any>(CONFIG_KEY, null, 'sync');
 
-        const raw = (local ?? sync ?? defaultConfig) as any;
+        const raw = await openSensitiveConfigFromStorage(local ?? sync ?? defaultConfig);
         const next = normalizeConfig(migrateConfig(raw));
 
         // wallpaper marker 还原（始终从 local 读大体积）
@@ -45,7 +46,7 @@ export const configRepository = {
      * - config 本体写 local（你也可以未来改成：enabled 时写 sync）
      */
     async save(cfg: Config): Promise<void> {
-        const copy: any = JSON.parse(JSON.stringify(cfg));
+        const copy: any = await sealSensitiveConfigForStorage(cfg);
         const wp = copy?.theme?.wallpaper ?? '';
 
         if (isBase64Image(wp)) {

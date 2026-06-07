@@ -10,8 +10,7 @@ function readConfig(): VoidTabTempConfig {
     try {
         const raw = localStorage.getItem(KEY);
         return raw ? JSON.parse(raw) : {};
-    } catch (e) {
-        console.error('[TempStorage] Parse error', e);
+    } catch {
         return {};
     }
 }
@@ -22,8 +21,8 @@ function readConfig(): VoidTabTempConfig {
 function saveConfig(config: VoidTabTempConfig) {
     try {
         localStorage.setItem(KEY, JSON.stringify(config));
-    } catch (e) {
-        console.error('[TempStorage] Save error (quota exceeded?)', e);
+    } catch {
+        // Ignore quota failures for non-critical temporary caches.
     }
 }
 

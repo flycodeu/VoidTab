@@ -16,22 +16,48 @@ function getArea(area: StorageArea): ChromeStorageArea {
     return area === 'sync' ? chromeApi.storage.sync : chromeApi.storage.local;
 }
 
+function getLastErrorMessage(): string | null {
+    const message = getChromeApi()?.runtime?.lastError?.message;
+    return typeof message === 'string' && message ? message : null;
+}
+
 function chromeGet(area: ChromeStorageArea, key: string): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         // callback 版：最兼容
-        area.get([key], (obj: any) => resolve(obj));
+        area.get([key], (obj: any) => {
+            const error = getLastErrorMessage();
+            if (error) {
+                reject(new Error(`[storage] chrome.storage.get failed: ${error}`));
+                return;
+            }
+            resolve(obj);
+        });
     });
 }
 
 function chromeSet(area: ChromeStorageArea, key: string, value: any): Promise<void> {
-    return new Promise((resolve) => {
-        area.set({[key]: value}, () => resolve());
+    return new Promise((resolve, reject) => {
+        area.set({[key]: value}, () => {
+            const error = getLastErrorMessage();
+            if (error) {
+                reject(new Error(`[storage] chrome.storage.set failed: ${error}`));
+                return;
+            }
+            resolve();
+        });
     });
 }
 
 function chromeRemove(area: ChromeStorageArea, key: string): Promise<void> {
-    return new Promise((resolve) => {
-        area.remove([key], () => resolve());
+    return new Promise((resolve, reject) => {
+        area.remove([key], () => {
+            const error = getLastErrorMessage();
+            if (error) {
+                reject(new Error(`[storage] chrome.storage.remove failed: ${error}`));
+                return;
+            }
+            resolve();
+        });
     });
 }
 

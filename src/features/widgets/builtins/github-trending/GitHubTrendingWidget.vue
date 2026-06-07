@@ -5,13 +5,17 @@ import {PhStar, PhSpinner, PhGithubLogo, PhClockClockwise} from '@phosphor-icons
 import GithubTrendModal from './GithubTrendModal.vue';
 // 1. 引入统一存储工具
 import {tempStorage} from '../../../../core/storage/tempStorage';
+import {fetchJsonWithRetry} from '../../../../shared/utils/network';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const props = defineProps<{ item: SiteItem }>();
+const toast = useToast();
 const trends = ref<any[]>([]);
 const isLoading = ref(true);
 const showModal = ref(false);
 
 const EXPIRE_TIME = 2 * 60 * 60 * 1000; // 2小时过期
+type GitHubSearchResponse = {items?: any[]};
 
 const fetchTrends = async (force = false) => {
   // 2. 从统一存储读取缓存
@@ -26,8 +30,24 @@ const fetchTrends = async (force = false) => {
 
   try {
     isLoading.value = true;
-    const res = await fetch(`https://api.github.com/search/repositories?q=created:>2025-12-01&sort=stars&order=desc&per_page=15`);
-    const data = await res.json();
+    const data = await fetchJsonWithRetry<GitHubSearchResponse>(
+        `https://api.github.com/search/repositories?q=created:>2025-12-01&sort=stars&order=desc&per_page=15`,
+        {
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/vnd.github+json',
+          },
+        },
+        {
+          timeoutMs: 10000,
+          retries: 2,
+          retryDelayMs: 600,
+          maxRetryDelayMs: 5000,
+          metricName: 'github.trending',
+          fallbackName: 'github.trending.cache',
+          fallbackData: () => cache?.data ? {items: cache.data} : undefined,
+        }
+    );
     const items = data.items || [];
 
     trends.value = items;
@@ -37,8 +57,8 @@ const fetchTrends = async (force = false) => {
       data: items,
       ts: Date.now()
     });
-  } catch (e) {
-    console.error("GitHub API Error", e);
+  } catch {
+    toast.error('GitHub 趋势数据获取失败，请稍后重试');
   } finally {
     isLoading.value = false;
   }

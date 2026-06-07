@@ -30,9 +30,6 @@ export const storage = {
         if (isExtension) {
             return new Promise<void>((resolve) => {
                 chrome.storage[area].set({ [key]: value }, () => {
-                    if (chrome.runtime.lastError) {
-                        console.error(`Storage Error (${area}):`, chrome.runtime.lastError);
-                    }
                     resolve();
                 });
             });

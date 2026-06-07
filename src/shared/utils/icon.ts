@@ -1,3 +1,5 @@
+import {fetchWithRetry} from './network';
+
 export type IconProvider =
     | 'browser_favicon'
     | 'cn_favicon'
@@ -408,10 +410,6 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
     for (const domain of domains) {
         candidates.push(
             {
-                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
-                provider: 'cn_favicon',
-            },
-            {
                 url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
                 provider: 'google_s2',
             },
@@ -422,6 +420,10 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
             {
                 url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
                 provider: 'duckduckgo',
+            },
+            {
+                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
+                provider: 'cn_favicon',
             },
         );
     }
@@ -571,21 +573,22 @@ function scoreDeclaredCandidate(url: string, declaredEdge: number, rel: string, 
 }
 
 async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<string | null> {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), Math.max(300, timeoutMs));
     try {
-        const resp = await fetch(url, {
+        const resp = await fetchWithRetry(url, {
             method: 'GET',
             cache: 'no-store',
             credentials: 'omit',
-            signal: controller.signal,
+        }, {
+            timeoutMs,
+            retries: 1,
+            retryDelayMs: 250,
+            maxRetryDelayMs: 750,
+            metricName: 'icon.declared.text',
         });
         if (!resp.ok) return null;
         return await resp.text();
     } catch {
         return null;
-    } finally {
-        clearTimeout(timer);
     }
 }
 
@@ -662,18 +665,15 @@ async function prevalidateCandidateUrl(candidate: IconCandidate, timeoutMs = 120
     if (!canPrevalidateUrl(candidate.url)) return true;
 
     const tryFetch = async (method: 'HEAD' | 'GET'): Promise<Response> => {
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => controller.abort(), Math.max(300, timeoutMs));
-        try {
-            return await fetch(candidate.url, {
-                method,
-                cache: 'no-store',
-                credentials: 'omit',
-                signal: controller.signal,
-            });
-        } finally {
-            clearTimeout(timer);
-        }
+        return await fetchWithRetry(candidate.url, {
+            method,
+            cache: 'no-store',
+            credentials: 'omit',
+        }, {
+            timeoutMs,
+            retries: 0,
+            metricName: `icon.prevalidate.${method.toLowerCase()}`,
+        });
     };
 
     try {
@@ -809,9 +809,9 @@ export async function probeBestIconCandidate(
         ...siteOriginCandidates,
         ...unknownCandidates,
     ] : [
-        ...cnFallbackCandidates,
         ...externalCandidates,
         ...presetCandidates,
+        ...cnFallbackCandidates,
         ...siteOriginCandidates,
         ...unknownCandidates,
     ]);

@@ -6,6 +6,13 @@ import './style.css';
 import {useConfigStore} from './stores/useConfigStore';
 import {applyThemeToDom} from './shared/composables/theme/applyThemeToDom';
 
+// ResizeObserver polyfill（仅在不支持的浏览器中加载）
+if (typeof window !== 'undefined' && !('ResizeObserver' in window)) {
+    import('resize-observer-polyfill').then((module) => {
+        (window as any).ResizeObserver = module.default;
+    });
+}
+
 const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {computed, onUnmounted, ref, watch} from 'vue';
-import * as PhIcons from '@phosphor-icons/vue';
 import {useConfigStore} from '../../stores/useConfigStore.ts';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../utils/siteIconCache.ts';
+import {resolvePhosphorIcon} from './phosphorIconMap';
 
 const props = defineProps<{
   item: {
@@ -100,8 +100,7 @@ const displayMode = computed(() => {
 const phosphorComp = computed(() => {
   if (displayMode.value !== 'icon') return null;
   const rawName = props.item.iconValue || props.item.icon || 'Globe';
-  const name = 'Ph' + String(rawName).replace(/^Ph/, '');
-  return (PhIcons as any)[name] || null;
+  return resolvePhosphorIcon(String(rawName), 'Globe');
 });
 
 const avatarBg = computed(() => props.item.bgColor || '#3b82f6');

@@ -8,9 +8,9 @@ import {
   PhSparkle, PhAppWindow, PhArrowSquareOut,
   PhClockCounterClockwise
 } from '@phosphor-icons/vue';
-import * as PhIcons from '@phosphor-icons/vue';
 import AiChatPanel from "../../../ai/components/AiChatPanel.vue";
 import HistoryModal from './HistoryModal.vue';
+import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 
 const store = useConfigStore();
 const historyStore = useHistoryStore();
@@ -38,7 +38,7 @@ onClickOutside(searchContainer, () => {
 // --- 1. 引擎图标逻辑 ---
 const currentEngineIcon = computed(() => {
   const engine = store.config.searchEngines.find((e: any) => e.id === store.config.currentEngineId);
-  return engine ? (PhIcons as any)['Ph' + engine.icon] || PhIcons.PhMagnifyingGlass : PhIcons.PhMagnifyingGlass;
+  return engine ? resolvePhosphorIcon(engine.icon, 'MagnifyingGlass') : PhMagnifyingGlass;
 });
 
 // --- 2. 智能建议 (AI / 跳转) ---
@@ -204,7 +204,7 @@ const handleSearch = () => {
                  class="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 cursor-pointer group/item transition-colors"
                  @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
               <div class="flex items-center gap-3">
-                <component :is="(PhIcons as any)['Ph' + eng.icon] || PhIcons.PhGlobe" size="18"/>
+                <component :is="resolvePhosphorIcon(eng.icon, 'Globe')" size="18"/>
                 <span class="text-sm font-bold">{{ eng.name }}</span>
               </div>
               <button v-if="store.config.searchEngines.length > 1" @click.stop="store.removeEngine(eng.id)"

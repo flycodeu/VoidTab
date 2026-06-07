@@ -5,6 +5,7 @@ import {
     LOCAL_WALLPAPER_MARKER,
     CTX_MENU_SET_WALLPAPER_ID
 } from './core/config/keys';
+import {fetchWithRetry} from './shared/utils/network';
 
 // 监听安装事件：创建右键菜单
 chrome.runtime.onInstalled.addListener(() => {
@@ -25,8 +26,16 @@ chrome.contextMenus.onClicked.addListener((info) => {
 // 辅助函数：将网络图片转为 Base64
 async function convertImageToBase64(url: string) {
     try {
-        const response = await fetch(url);
+        const response = await fetchWithRetry(url, {cache: 'force-cache'}, {
+            timeoutMs: 10000,
+            retries: 1,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 1500,
+            metricName: 'background.wallpaper.fetch',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
+        if (!blob || blob.size <= 0) throw new Error('empty image blob');
 
         const reader = new FileReader();
         reader.onloadend = () => {

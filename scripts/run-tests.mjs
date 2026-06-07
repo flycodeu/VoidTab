@@ -1,0 +1,244 @@
+import assert from 'node:assert/strict';
+import {readFile, mkdir, rm, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {build} from 'esbuild';
+import {pathToFileURL} from 'node:url';
+
+const root = process.cwd();
+const read = (file) => readFile(path.join(root, file), 'utf8');
+const tmpRoot = path.join(root, '.tmp-build', 'tests');
+
+const checks = [];
+const test = (name, fn) => checks.push({name, fn});
+
+async function runBundledTypeScript(name, source) {
+  const dir = path.join(tmpRoot, name.replace(/[^a-z0-9]+/gi, '-').toLowerCase());
+  const entry = path.join(dir, 'entry.ts');
+  const outfile = path.join(dir, 'entry.mjs');
+
+  await rm(dir, {recursive: true, force: true});
+  await mkdir(dir, {recursive: true});
+  await writeFile(entry, source, 'utf8');
+
+  await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    logLevel: 'silent',
+  });
+
+  await import(`${pathToFileURL(outfile).href}?t=${Date.now()}`);
+  await rm(dir, {recursive: true, force: true});
+}
+
+test('manifest uses least-privilege host permissions', async () => {
+  const manifest = JSON.parse(await read('public/manifest.json'));
+  assert.ok(!manifest.permissions.includes('favicon'));
+  assert.ok(!manifest.host_permissions.includes('<all_urls>'));
+  assert.ok(manifest.host_permissions.includes('https://api.open-meteo.com/*'));
+});
+
+test('AI markdown rendering is sanitized before v-html', async () => {
+  const panel = await read('src/features/ai/components/AiChatPanel.vue');
+  assert.match(panel, /import DOMPurify from 'dompurify'/);
+  assert.match(panel, /html:\s*false/);
+  assert.match(panel, /DOMPurify\.sanitize/);
+  assert.match(panel, /ALLOWED_URI_REGEXP/);
+});
+
+test('config storage encrypts sensitive local fields and strips sync payload', async () => {
+  const sensitive = await read('src/core/config/sensitive.ts');
+  const repository = await read('src/core/config/repository.ts');
+  const syncActions = await read('src/stores/config/syncActions.ts');
+
+  assert.match(sensitive, /sync\.password/);
+  assert.match(sensitive, /ai\.apiKey/);
+  assert.match(sensitive, /runtime\.auth\.jwtToken/);
+  assert.match(sensitive, /ENCRYPTED_VALUE_PREFIX\s*=\s*'enc:v1:'/);
+  assert.match(repository, /sealSensitiveConfigForStorage/);
+  assert.match(repository, /openSensitiveConfigFromStorage/);
+  assert.match(syncActions, /stripSensitiveConfigForSync/);
+  assert.match(syncActions, /mergeLocalSensitiveFields/);
+  assert.match(syncActions, /buildSyncPayload/);
+});
+
+test('config store delegates major action groups to focused modules', async () => {
+  const store = await read('src/stores/useConfigStore.ts');
+
+  assert.match(store, /createLayoutActions/);
+  assert.match(store, /createSiteActions/);
+  assert.match(store, /createIconActions/);
+  assert.match(store, /createSyncActions/);
+  assert.match(store, /createLifecycleActions/);
+});
+
+test('root app is wrapped by ErrorBoundary and still mounts Toast', async () => {
+  const app = await read('src/App.vue');
+  assert.match(app, /import ErrorBoundary/);
+  assert.match(app, /<ErrorBoundary>/);
+  assert.match(app, /<Toast \/>/);
+});
+
+test('interval widgets pause while document is hidden', async () => {
+  const composable = await read('src/shared/composables/useVisibilityInterval.ts');
+  const clock = await read('src/features/widgets/builtins/clock/ClockWidget.vue');
+  const calendar = await read('src/features/widgets/builtins/calendar/CalendarWidget.vue');
+  const cron = await read('src/features/widgets/builtins/cron/CronWidget.vue');
+
+  assert.match(composable, /useDocumentVisibility/);
+  assert.match(composable, /visibility\.value === 'hidden'/);
+  assert.match(clock, /useVisibilityInterval\(updateClock,\s*1000/);
+  assert.match(calendar, /useVisibilityInterval\(updateTime,\s*60000/);
+  assert.match(cron, /useVisibilityInterval\(calculateNextRun,\s*1000/);
+});
+
+test('MainGrid debounces resize and ResizeObserver recalculation', async () => {
+  const grid = await read('src/features/home/components/MainGrid.vue');
+  assert.match(grid, /useDebounceFn/);
+  assert.match(grid, /recalcGridDebounced/);
+  assert.match(grid, /new ResizeObserver\(\(\) => recalcGridDebounced\(\)\)/);
+});
+
+test('primary dialogs provide focus traps and dialog semantics', async () => {
+  const focusTrap = await read('src/shared/composables/useFocusTrap.ts');
+  const confirm = await read('src/shared/ui/dialogs/ConfirmDialog.vue');
+  const settings = await read('src/features/settings/components/SettingsModal.vue');
+  const site = await read('src/shared/ui/dialogs/SiteDialogForm.vue');
+  const group = await read('src/shared/ui/dialogs/GroupDialogForm.vue');
+
+  assert.match(focusTrap, /event\.key !== 'Tab'/);
+  for (const source of [confirm, settings, site, group]) {
+    assert.match(source, /useFocusTrap/);
+    assert.match(source, /role="dialog"|:role="danger \? 'alertdialog' : 'dialog'"/);
+    assert.match(source, /aria-modal="true"/);
+    assert.match(source, /data-modal="1"/);
+  }
+});
+
+test('app exposes semantic landmarks and skip navigation', async () => {
+  const app = await read('src/App.vue');
+  const home = await read('src/features/home/components/HomeMain.vue');
+  const sidebar = await read('src/features/navigation/components/SideBar.vue');
+  const styles = await read('src/style.css');
+
+  assert.match(app, /class="skip-link"/);
+  assert.match(app, /<header[^>]+aria-label="全局操作"/);
+  assert.match(home, /id="main-content"/);
+  assert.match(home, /aria-label="主内容"/);
+  assert.match(sidebar, /role="navigation"/);
+  assert.match(sidebar, /aria-label="分组导航"/);
+  assert.match(styles, /\.skip-link:focus/);
+  assert.match(styles, /\.sr-only/);
+});
+
+test('normalizeConfig preserves and repairs core config shape', async () => {
+  await runBundledTypeScript('normalize-config', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+    import {CURRENT_CONFIG_VERSION} from '../../../src/core/config/types.ts';
+
+    const normalized = normalizeConfig({
+      version: 0,
+      sync: { provider: 'webdav', password: 'secret' },
+      ai: { apiKey: 'api-secret', maxHistory: 6 },
+      layout: [{
+        id: 'g1',
+        title: 'Group',
+        icon: 'Folder',
+        items: [
+          { id: 'local', title: 'Localhost', url: 'http://localhost:3000', iconType: 'auto' },
+          { id: 'widget', kind: 'widget', widgetType: 'clock', w: 99, h: -1 }
+        ]
+      }],
+      runtime: {
+        siteIcons: {
+          version: 1,
+          records: {
+            'example.com': { source: 'https://www.google.com/s2/favicons?domain=example.com' }
+          }
+        }
+      }
+    });
+
+    assert.equal(normalized.version, CURRENT_CONFIG_VERSION);
+    assert.equal(normalized.sync.provider, 'webdav');
+    assert.equal(normalized.sync.password, 'secret');
+    assert.equal(normalized.ai.apiKey, 'api-secret');
+    assert.equal(normalized.ai.maxHistory, 6);
+    assert.equal(normalized.layout[0].items[0].iconType, 'text');
+    assert.equal(normalized.layout[0].items[1].kind, 'widget');
+    assert.equal(normalized.layout[0].items[1].w, 4);
+    assert.equal(normalized.layout[0].items[1].h, 1);
+    assert.equal(normalized.runtime.siteIcons.records['example.com'].cacheMode, 'miss');
+    assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'unknown');
+  `);
+});
+
+test('sensitive config helpers encrypt local secrets and keep sync payload clean', async () => {
+  await runBundledTypeScript('sensitive-config', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {
+      ENCRYPTED_VALUE_PREFIX,
+      mergeLocalSensitiveFields,
+      openSensitiveConfigFromStorage,
+      sealSensitiveConfigForStorage,
+      stripSensitiveConfigForSync,
+    } from '../../../src/core/config/sensitive.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const config = clone(defaultConfig);
+    config.sync.password = 'webdav-pass';
+    config.ai.apiKey = 'ai-key';
+    config.runtime.auth.jwtToken = 'jwt-token';
+
+    const sealed = await sealSensitiveConfigForStorage(config);
+    assert.ok(sealed.sync.password.startsWith(ENCRYPTED_VALUE_PREFIX));
+    assert.ok(sealed.ai.apiKey.startsWith(ENCRYPTED_VALUE_PREFIX));
+    assert.ok(sealed.runtime.auth.jwtToken.startsWith(ENCRYPTED_VALUE_PREFIX));
+    assert.notEqual(sealed.sync.password, config.sync.password);
+
+    const sealedAgain = await sealSensitiveConfigForStorage(sealed);
+    assert.equal(sealedAgain.sync.password, sealed.sync.password);
+    assert.equal(sealedAgain.ai.apiKey, sealed.ai.apiKey);
+
+    const opened = await openSensitiveConfigFromStorage(sealed);
+    assert.equal(opened.sync.password, 'webdav-pass');
+    assert.equal(opened.ai.apiKey, 'ai-key');
+    assert.equal(opened.runtime.auth.jwtToken, 'jwt-token');
+
+    const syncPayload = stripSensitiveConfigForSync(config);
+    assert.equal(syncPayload.sync.password, '');
+    assert.equal(syncPayload.ai.apiKey, '');
+    assert.equal(syncPayload.runtime.auth.jwtToken, '');
+
+    const remote = clone(defaultConfig);
+    const merged = mergeLocalSensitiveFields(remote, config);
+    assert.equal(merged.sync.password, 'webdav-pass');
+    assert.equal(merged.ai.apiKey, 'ai-key');
+    assert.equal(merged.runtime.auth.jwtToken, 'jwt-token');
+  `);
+});
+
+let failed = 0;
+for (const check of checks) {
+  try {
+    await check.fn();
+    console.log(`ok - ${check.name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`not ok - ${check.name}`);
+    console.error(error);
+  }
+}
+
+if (failed > 0) {
+  console.error(`${failed} test(s) failed`);
+  await rm(tmpRoot, {recursive: true, force: true});
+  process.exit(1);
+}
+
+await rm(tmpRoot, {recursive: true, force: true});
+console.log(`${checks.length} test(s) passed`);

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue';
 import {PhX, PhWarningCircle, PhCheck} from '@phosphor-icons/vue';
-import * as PhIcons from '@phosphor-icons/vue';
 import IconPicker from './IconPicker.vue';
+import {useFocusTrap} from '../../composables/useFocusTrap';
+import {resolvePhosphorIcon} from '../../icons/phosphorIconMap';
 
 type GroupForm = {
   title: string;
@@ -26,6 +27,15 @@ const emit = defineEmits<{
 }>();
 
 const inputRef = ref<HTMLInputElement | null>(null);
+const dialogRef = ref<HTMLElement | null>(null);
+const idSuffix = Math.random().toString(36).slice(2);
+const dialogTitleId = `group-dialog-title-${idSuffix}`;
+const groupNameInputId = `group-dialog-name-${idSuffix}`;
+const groupNameErrorId = `group-dialog-name-error-${idSuffix}`;
+const themeColorLabelId = `group-dialog-theme-color-${idSuffix}`;
+const customHexInputId = `group-dialog-custom-hex-${idSuffix}`;
+const isDialogActive = computed(() => props.show);
+useFocusTrap(dialogRef, isDialogActive);
 
 const presetColors = [
   {fg: '#3b82f6'}, {fg: '#8b5cf6'}, {fg: '#ec4899'}, {fg: '#ef4444'},
@@ -33,6 +43,9 @@ const presetColors = [
 ];
 
 const customHex = ref('');
+const customHexInvalid = computed(() => {
+  return !!customHex.value && !/^#([0-9a-fA-F]{6})$/.test(customHex.value);
+});
 
 watch(() => props.modelValue.iconColor, (val) => {
   if (val && !presetColors.some(c => c.fg === val)) {
@@ -44,7 +57,7 @@ watch(() => props.modelValue.iconColor, (val) => {
 
 const canSubmit = computed(() => {
   if (props.modelValue.title.trim().length === 0) return false;
-  if (customHex.value && !/^#([0-9a-fA-F]{6})$/.test(customHex.value)) return false;
+  if (customHexInvalid.value) return false;
   return true;
 });
 
@@ -79,8 +92,7 @@ const setTitle = (v: string) => emit('update:modelValue', {...props.modelValue, 
 const setIcon = (v: string) => emit('update:modelValue', {...props.modelValue, icon: v});
 
 const PreviewIcon = computed(() => {
-  const name = 'Ph' + props.modelValue.icon;
-  return (PhIcons as any)[name] || PhIcons.PhFolder;
+  return resolvePhosphorIcon(props.modelValue.icon, 'Folder');
 });
 
 defineExpose({
@@ -93,7 +105,7 @@ defineExpose({
 
 <template>
   <Transition name="scale">
-    <div v-if="show" class="fixed inset-0 z-[105] flex items-center justify-center p-4">
+    <div v-if="show" class="fixed inset-0 z-[105] flex items-center justify-center p-4" data-modal="1">
       <!--   遮罩：用主题 overlay 变量，不再写死黑雾 -->
       <div
           class="absolute inset-0 transition-opacity"
@@ -101,37 +113,45 @@ defineExpose({
           background: 'rgba(var(--overlay-rgb), var(--overlay-alpha))',
           backdropFilter: 'blur(14px) saturate(140%)',
           WebkitBackdropFilter: 'blur(14px) saturate(140%)'
-        }"
+          }"
           @click="emit('close')"
+          aria-hidden="true"
       />
 
       <!--   弹窗主体 -->
       <div
+          ref="dialogRef"
           class="relative w-full max-w-[500px] rounded-3xl shadow-2xl flex flex-col border transition-all h-[85vh] max-h-[720px] overflow-hidden"
           :style="{
           backgroundColor: 'var(--modal-bg)',
           color: 'var(--modal-text)',
           borderColor: 'var(--modal-border)',
           boxShadow: 'var(--modal-shadow)'
-        }"
+          }"
           @click.stop
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="dialogTitleId"
+          tabindex="-1"
+          @keydown.esc.prevent.stop="emit('close')"
       >
         <!-- Header -->
         <div
             class="flex-shrink-0 flex justify-between items-center px-6 py-4 border-b"
             :style="{ borderColor: 'var(--modal-border)' }"
         >
-          <h3 class="text-lg font-bold" :style="{ color: 'var(--modal-text)' }">
+          <h3 :id="dialogTitleId" class="text-lg font-bold" :style="{ color: 'var(--modal-text)' }">
             {{ isEdit ? '编辑分类' : '新建分类' }}
           </h3>
 
           <button
+              type="button"
               @click="emit('close')"
               class="icon-btn p-2 rounded-full transition-colors"
-              aria-label="Close"
+              :aria-label="isEdit ? '关闭编辑分类弹窗' : '关闭新建分类弹窗'"
               :style="{ color: 'var(--modal-text)' }"
           >
-            <PhX size="20"/>
+            <PhX size="20" aria-hidden="true"/>
           </button>
         </div>
 
@@ -153,12 +173,15 @@ defineExpose({
                   borderColor: 'var(--modal-border)',
                   color: modelValue.iconColor || 'var(--modal-text)'
                 }"
+                  aria-hidden="true"
               >
                 <component :is="PreviewIcon" size="28" weight="duotone"/>
               </div>
 
               <div class="flex-1 relative">
+                <label :for="groupNameInputId" class="sr-only">分类名称</label>
                 <input
+                    :id="groupNameInputId"
                     ref="inputRef"
                     :value="modelValue.title"
                     @input="setTitle(($event.target as HTMLInputElement).value)"
@@ -170,21 +193,26 @@ defineExpose({
                     color: 'var(--modal-text)',
                     borderColor: 'var(--modal-border)'
                   }"
+                    :aria-invalid="!!errorMsg"
+                    :aria-describedby="errorMsg ? groupNameErrorId : undefined"
                 />
                 <div
                     v-if="errorMsg"
+                    :id="groupNameErrorId"
                     class="absolute right-3 top-1/2 -translate-y-1/2 text-red-500"
                     :title="errorMsg"
+                    role="alert"
                 >
-                  <PhWarningCircle size="18" weight="fill"/>
+                  <PhWarningCircle size="18" weight="fill" aria-hidden="true"/>
+                  <span class="sr-only">{{ errorMsg }}</span>
                 </div>
               </div>
             </div>
 
             <!-- 主题色 -->
-            <div class="space-y-3">
+            <div class="space-y-3" role="group" :aria-labelledby="themeColorLabelId">
               <div class="flex justify-between items-end">
-                <span class="text-xs font-bold uppercase tracking-wider" style="opacity: .55;">
+                <span :id="themeColorLabelId" class="text-xs font-bold uppercase tracking-wider" style="opacity: .55;">
                   主题色
                 </span>
 
@@ -193,7 +221,9 @@ defineExpose({
                   <span class="text-[10px] font-bold select-none" style="opacity:.55;">自定义</span>
                   <div class="sep"></div>
 
+                  <label :for="customHexInputId" class="sr-only">自定义主题色 HEX</label>
                   <input
+                      :id="customHexInputId"
                       type="text"
                       v-model="customHex"
                       @input="onCustomHexInput"
@@ -201,6 +231,8 @@ defineExpose({
                       class="w-16 bg-transparent text-xs font-mono font-bold outline-none uppercase text-center"
                       :style="{ color: 'var(--modal-text)' }"
                       maxlength="7"
+                      aria-label="自定义主题色 HEX"
+                      :aria-invalid="customHexInvalid"
                   />
 
                   <!--   预览小圆点：加边框，白色也清晰 -->
@@ -217,6 +249,7 @@ defineExpose({
               <div class="flex flex-wrap gap-3">
                 <!-- 默认 -->
                 <button
+                    type="button"
                     @click="selectColor(null)"
                     class="swatch w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
                     :style="{
@@ -225,12 +258,15 @@ defineExpose({
                     color: 'var(--modal-text)'
                   }"
                     title="默认"
+                    aria-label="使用默认主题色"
+                    :aria-pressed="!modelValue.iconColor"
                 >
-                  <PhX v-if="!modelValue.iconColor" size="14"/>
+                  <PhX v-if="!modelValue.iconColor" size="14" aria-hidden="true"/>
                 </button>
 
                 <!-- 预设色 -->
                 <button
+                    type="button"
                     v-for="c in presetColors"
                     :key="c.fg"
                     @click="selectColor(c)"
@@ -239,12 +275,16 @@ defineExpose({
                     backgroundColor: c.fg,
                     border: modelValue.iconColor === c.fg ? '2px solid rgba(0,0,0,0.10)' : '2px solid transparent'
                   }"
+                    :aria-label="modelValue.iconColor === c.fg ? `当前主题色：${c.fg}` : `选择主题色：${c.fg}`"
+                    :aria-pressed="modelValue.iconColor === c.fg"
+                    :title="c.fg"
                 >
                   <PhCheck
                       v-if="modelValue.iconColor === c.fg"
                       size="16"
                       class="text-white drop-shadow-md"
                       weight="bold"
+                      aria-hidden="true"
                   />
                 </button>
               </div>
@@ -266,6 +306,7 @@ defineExpose({
           }"
         >
           <button
+              type="button"
               @click="emit('submit')"
               :disabled="!canSubmit"
               class="modal-submit w-full py-3.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed"

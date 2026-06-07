@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import {computed} from 'vue';
-import * as PhIcons from '@phosphor-icons/vue';
+import {computed, watch} from 'vue';
 import {PhGlobe} from '@phosphor-icons/vue';
 import type {SiteItem, BookmarkDensity} from '../../../core/config/types.ts';
+import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
+import {warmBrowserIconUrl} from '../../../shared/utils/iconPreloader';
 
 const props = defineProps<{
   item: SiteItem;
@@ -14,6 +15,7 @@ const props = defineProps<{
   text: string;
   textFontSize: number;
   density?: BookmarkDensity;
+  priority?: 'high' | 'low';
 }>();
 
 const emit = defineEmits<{
@@ -30,8 +32,7 @@ const bg = computed(() => {
 
 const PhosphorIcon = computed(() => {
   if (props.item.iconType === 'icon' && props.item.iconValue) {
-    const name = 'Ph' + props.item.iconValue.replace(/^Ph/, '');
-    return (PhIcons as any)[name] || PhGlobe;
+    return resolvePhosphorIcon(props.item.iconValue, 'Globe');
   }
   return PhGlobe;
 });
@@ -69,6 +70,17 @@ const shouldShowText = computed(() => {
 });
 
 const isImageMode = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);
+const imageLoading = computed(() => props.priority === 'high' ? 'eager' : 'lazy');
+const imageFetchPriority = computed(() => props.priority === 'high' ? 'high' : 'low');
+
+watch(
+  () => props.autoIconUrl,
+  (url) => {
+    if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
+    void warmBrowserIconUrl(url, {linkRel: 'preload', timeoutMs: 1000});
+  },
+  {immediate: true}
+);
 </script>
 
 <template>
@@ -86,7 +98,10 @@ const isImageMode = computed(() => props.isAuto && !props.hasError && !!props.au
         :key="autoIconUrl"
         :src="autoIconUrl"
         class="w-full h-full object-cover"
-        loading="lazy"
+        :loading="imageLoading"
+        decoding="async"
+        :fetchpriority="imageFetchPriority"
+        referrerpolicy="no-referrer"
         draggable="false"
         @load="emit('loaded')"
         @error="emit('fallback')"

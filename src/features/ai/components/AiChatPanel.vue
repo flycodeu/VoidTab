@@ -11,8 +11,21 @@ import {
 // 🟢 引入自定义弹窗组件
 import ConfirmDialog from '../../../shared/ui/dialogs/ConfirmDialog.vue';
 
+// 🔒 XSS 防护
+import DOMPurify from 'dompurify';
+import {fetchWithRetry} from '../../../shared/utils/network';
+import {useToast} from '../../../shared/composables/useToast';
+
 import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js';
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import css from 'highlight.js/lib/languages/css';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import markdown from 'highlight.js/lib/languages/markdown';
+import python from 'highlight.js/lib/languages/python';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
 import 'highlight.js/styles/atom-one-dark.css';
 
 const props = defineProps<{
@@ -23,6 +36,7 @@ const emit = defineEmits(['close']);
 
 const configStore = useConfigStore();
 const aiStore = useAiStore();
+const toast = useToast();
 
 const userInput = ref('');
 const isSending = ref(false);
@@ -32,6 +46,7 @@ const mdRenderer = ref<MarkdownIt | null>(null);
 
 // 🟢 弹窗与保存状态
 const showKeyAlert = ref(false);
+const showClearHistoryConfirm = ref(false);
 const alertMessage = ref('');
 const saveStatus = ref<'idle' | 'saving' | 'saved'>('idle');
 
@@ -43,6 +58,20 @@ const PRESETS = [
   {name: 'Local (Ollama)', baseUrl: 'http://localhost:11434/v1', model: 'llama3'},
   {name: '自定义 (Custom)', baseUrl: '', model: '', isCustom: true}
 ];
+
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('js', javascript);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('md', markdown);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('py', python);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('ts', typescript);
+hljs.registerLanguage('html', xml);
+hljs.registerLanguage('xml', xml);
 
 // 应用预设 (只填充，不保存)
 const applyPreset = (preset: any) => {
@@ -71,6 +100,12 @@ const handleManualSave = async () => {
 const openSettingsAndFocus = () => {
   showKeyAlert.value = false;
   showSettings.value = true;
+};
+
+const confirmClearHistory = () => {
+  showClearHistoryConfirm.value = false;
+  aiStore.clearHistory();
+  aiStore.createSession();
 };
 
 onMounted(async () => {
@@ -155,7 +190,7 @@ const sendMessage = async () => {
       endpoint = `${endpoint}/chat/completions`;
     }
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -166,6 +201,13 @@ const sendMessage = async () => {
         messages: [{role: "system", content: "You are a helpful assistant."}, ...history],
         stream: true
       })
+    }, {
+      timeoutMs: 30000,
+      retries: 1,
+      retryDelayMs: 800,
+      maxRetryDelayMs: 3000,
+      metricName: 'ai.chat.stream',
+      fallbackName: 'ai.chat.unavailable',
     });
 
     if (!response.ok) {
@@ -196,14 +238,44 @@ const sendMessage = async () => {
     }
     aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, fullContent, 'done');
   } catch (e: any) {
-    aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, `🔴 请求失败: ${e.message}`, 'error');
+    const message = e instanceof Error ? e.message : '未知错误';
+    aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, `请求失败: ${message}`, 'error');
+    toast.error('AI 请求失败，请检查网络或接口配置。', {
+      duration: 8000,
+      action: {
+        label: '重试',
+        handler: () => {
+          userInput.value = text;
+          return sendMessage();
+        }
+      }
+    });
   } finally {
     isSending.value = false;
     scrollToBottom();
   }
 };
 
-const renderMd = (text: string) => mdRenderer.value ? mdRenderer.value.render(text) : text;
+// XSS 防护：使用 DOMPurify 清理 HTML
+const renderMd = (text: string) => {
+  if (!mdRenderer.value) return text;
+  const html = mdRenderer.value.render(text);
+
+  // 配置允许的标签和属性白名单
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'u', 's', 'code', 'pre',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li', 'blockquote',
+      'a', 'img',
+      'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      'span', 'div'
+    ],
+    ALLOWED_ATTR: ['href', 'title', 'class', 'src', 'alt', 'target', 'rel'],
+    ALLOW_DATA_ATTR: false,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):)/i
+  });
+};
 const copyText = (text: string) => navigator.clipboard.writeText(text);
 
 watch(() => props.isOpen, async (val) => {
@@ -312,7 +384,7 @@ watch(() => props.isOpen, async (val) => {
                 <PhDownloadSimple/>
                 导出
               </button>
-              <button @click="aiStore.clearHistory()"
+              <button @click="showClearHistoryConfirm = true"
                       class="flex-1 py-1.5 text-xs bg-red-500/10 text-red-500 rounded flex items-center justify-center gap-1 hover:bg-red-500/20">
                 <PhTrash/>
                 清空
@@ -397,6 +469,21 @@ watch(() => props.isOpen, async (val) => {
     >
       <template #icon>
         <PhWarning :size="32" weight="duotone" class="text-orange-500"/>
+      </template>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+        :show="showClearHistoryConfirm"
+        title="清空聊天记录？"
+        :message="['将删除所有本地 AI 聊天会话。', '此操作不可撤销。']"
+        confirmText="确认清空"
+        cancelText="取消"
+        :danger="true"
+        @confirm="confirmClearHistory"
+        @cancel="showClearHistoryConfirm = false"
+    >
+      <template #icon>
+        <PhWarning :size="32" weight="duotone" class="text-red-500"/>
       </template>
     </ConfirmDialog>
   </div>

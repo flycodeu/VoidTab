@@ -6,10 +6,13 @@ import {
   PhConfetti, PhCalendarStar, PhBalloon, PhAirplaneTilt, PhTreePalm, PhMoonStars, PhSunHorizon, PhTimer
 } from '@phosphor-icons/vue';
 import {tempStorage} from "../../../../core/storage/tempStorage.ts";
+import {fetchJsonWithRetry} from '../../../../shared/utils/network';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const HolidayDetailModal = defineAsyncComponent(() => import('./HolidayDetailModal.vue'));
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const toast = useToast();
 const showModal = ref(false);
 
 // 优化：每分钟刷新一次即可，不需要每秒刷新
@@ -50,7 +53,6 @@ const fetchHolidays = async () => {
 
   // 2. 检查缓存：存在 + 年份匹配 + 未过期 (24小时)
   if (cache && cache.year === year && tempStorage.isValid(cache.ts, 24 * 60 * 60 * 1000)) {
-    console.log('[Holiday] Hit unified cache');
     holidays.value = transformData(cache.data);
     return;
   }
@@ -61,7 +63,19 @@ const fetchHolidays = async () => {
       `https://timor.tech/api/holiday/year/${year}`,
       `https://timor.tech/api/holiday/year/${year + 1}`
     ];
-    const results = await Promise.all(urls.map(url => fetch(url).then(r => r.json())));
+    const results = await Promise.all(urls.map((url, index) => fetchJsonWithRetry<any>(
+        url,
+        {cache: 'no-store'},
+        {
+          timeoutMs: 8000,
+          retries: 2,
+          retryDelayMs: 500,
+          maxRetryDelayMs: 4000,
+          metricName: `holiday.year.${index}`,
+          fallbackName: 'holiday.cache',
+          fallbackData: () => cache?.data && cache.year === year ? {holiday: cache.data} : undefined,
+        }
+    )));
     const mergedData = { ...results[0].holiday, ...results[1].holiday };
 
     // 4. 写入统一存储 (只更新 holiday 字段)
@@ -72,8 +86,13 @@ const fetchHolidays = async () => {
     });
 
     holidays.value = transformData(mergedData);
-  } catch (e) {
-    console.error('[Holiday] API failed', e);
+  } catch {
+    if (cache?.data) {
+      holidays.value = transformData(cache.data);
+    } else {
+      holidays.value = defaultHolidays;
+      toast.warning('节假日数据获取失败，已显示默认假期');
+    }
   }
 };
 

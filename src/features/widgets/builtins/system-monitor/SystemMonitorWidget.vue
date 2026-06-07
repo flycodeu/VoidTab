@@ -41,8 +41,8 @@ onMounted(async () => {
       updateBattery();
       batteryManager.addEventListener('levelchange', updateBattery);
       batteryManager.addEventListener('chargingchange', updateBattery);
-    } catch (e) {
-      console.log('Battery API not supported');
+    } catch {
+      battery.value.supported = false;
     }
   }
 });

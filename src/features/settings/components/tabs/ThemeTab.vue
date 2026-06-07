@@ -11,8 +11,10 @@ import {
   PhFileImage
 } from '@phosphor-icons/vue';
 import { wallpaperStorage } from '../../../../core/wallpaper/storage';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
+const toast = useToast();
 
 /** -----------------------------
  * Theme mode
@@ -166,7 +168,7 @@ const handleWallpaperUpload = async (event: Event) => {
   if (!file) return;
 
   if (file.size > 10 * 1024 * 1024) {
-    alert('文件过大，请上传 10MB 以内的图片或视频');
+    toast.warning('文件过大，请上传 10MB 以内的图片或视频');
     input.value = '';
     return;
   }
@@ -177,16 +179,24 @@ const handleWallpaperUpload = async (event: Event) => {
   const isImage = mime.startsWith('image/');
 
   if (!isVideo && !isImage) {
-    alert('不支持的文件类型');
+    toast.warning('不支持的文件类型');
     input.value = '';
     return;
   }
 
   //   存到 IndexedDB：避免 pinia/config 里出现巨大 base64 字符串
-  const key = await wallpaperStorage.save(file, mime);
+  let key = '';
+  try {
+    key = await wallpaperStorage.save(file, mime);
+  } catch {
+    toast.error('壁纸保存失败，请稍后重试');
+    input.value = '';
+    return;
+  }
 
   store.config.theme.wallpaper = `idb:${key}`;
   (store.config.theme as any).wallpaperType = isVideo ? 'video' : 'image';
+  toast.success('壁纸已更新');
 
   input.value = '';
 };
@@ -198,7 +208,11 @@ const removeWallpaper = async () => {
   if (wp.startsWith('idb:')) {
     const key = wp.slice(4).trim();
     if (key) {
-      try { await wallpaperStorage.remove(key); } catch {}
+      try {
+        await wallpaperStorage.remove(key);
+      } catch {
+        toast.error('壁纸缓存删除失败，请稍后重试');
+      }
     }
   }
 
@@ -228,7 +242,7 @@ const handleLogoUpload = (event: Event) => {
   if (!file) return;
 
   if (file.size > 2 * 1024 * 1024) {
-    alert('Logo 图片建议小于 2MB');
+    toast.warning('Logo 图片建议小于 2MB');
     return;
   }
 
@@ -236,8 +250,10 @@ const handleLogoUpload = (event: Event) => {
   reader.onload = (e) => {
     if (e.target?.result) {
       (store.config.theme as any).customLogoUrl = e.target.result as string;
+      toast.success('Logo 已更新');
     }
   };
+  reader.onerror = () => toast.error('Logo 读取失败，请重新选择文件');
   reader.readAsDataURL(file);
   (event.target as HTMLInputElement).value = '';
 };

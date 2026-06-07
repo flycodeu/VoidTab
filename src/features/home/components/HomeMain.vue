@@ -20,6 +20,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'openSettings'): void;
+  (e: 'openGroupDialog'): void;
+  (e: 'openWidgets'): void;
   (e: 'update:isEditMode', val: boolean): void;
 }>();
 
@@ -92,6 +94,9 @@ const handleBackgroundClick = () => {
 
 <template>
   <main
+      id="main-content"
+      tabindex="-1"
+      aria-label="主内容"
       data-main-scroll="1"
       :data-wheel-allow="isEditMode ? 'true' : null"
       class="flex-1 relative overflow-x-hidden overflow-y-auto no-scrollbar"
@@ -131,6 +136,9 @@ const handleBackgroundClick = () => {
           :isEditMode="isEditMode"
           :siteCardW="effectiveCardW"
           :siteCardH="userCardH"
+          @openSettings="emit('openSettings')"
+          @openGroupDialog="emit('openGroupDialog')"
+          @openWidgets="emit('openWidgets')"
       />
     </div>
   </main>

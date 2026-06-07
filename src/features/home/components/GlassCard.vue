@@ -15,6 +15,7 @@ const props = defineProps<{
   density?: BookmarkDensity;
   cardSpanW?: number;
   cardSpanH?: number;
+  priority?: 'high' | 'low';
 }>();
 
 /** ---------------------------
@@ -354,6 +355,7 @@ const showDomainRow = computed(() => {
               :text="displayText"
               :textFontSize="cardTextFontSize"
               :density="density"
+              :priority="priority"
               @loaded="handleImgLoad"
               @fallback="handleFallback"
           />
@@ -415,6 +417,7 @@ const showDomainRow = computed(() => {
           return base * 0.5;
         })()"
           :density="density"
+          :priority="priority"
           @loaded="handleImgLoad"
           @fallback="handleFallback"
       />

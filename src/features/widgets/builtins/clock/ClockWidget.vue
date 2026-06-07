@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {ref, computed, onMounted, onUnmounted} from 'vue';
+import {ref, computed} from 'vue';
 import type {SiteItem} from '../../../../core/config/types.ts';
 import ClockDetailModal from './ClockDetailModal.vue';
+import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
 
 // 默认值
 const props = withDefaults(defineProps<{ item?: SiteItem }>(), {
@@ -10,7 +11,6 @@ const props = withDefaults(defineProps<{ item?: SiteItem }>(), {
 
 const now = ref(new Date());
 const showModal = ref(false);
-let timer: number | null = null;
 
 const hStr = ref('');
 const mStr = ref('');
@@ -22,14 +22,7 @@ const updateClock = () => {
   mStr.value = d.getMinutes().toString().padStart(2, '0');
 };
 
-onMounted(() => {
-  updateClock();
-  timer = setInterval(updateClock, 1000);
-});
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
+useVisibilityInterval(updateClock, 1000, {immediate: true});
 
 // --- 核心修复：全尺寸适配逻辑 ---
 const layout = computed(() => {

@@ -13,8 +13,10 @@ import {
 } from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
+const toast = useToast();
 
 /** provider 收窄 */
 const isWebdav = computed(() => store.config.sync?.provider === 'webdav');
@@ -91,6 +93,8 @@ const showRemoteHelp = ref(false);
 
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
+  if (success) toast.success(msg);
+  else toast.error(msg);
   setTimeout(() => {
     opResult.value = null;
   }, 3000);
@@ -150,7 +154,7 @@ const executeRestore = async () => {
 
   try {
     const res = await store.downloadBackup();
-    showFeedback(true, res.msg);
+    showFeedback(res.success !== false, res.msg);
   } catch (error) {
     showFeedback(false, '恢复失败，请检查网络或配置');
   } finally {

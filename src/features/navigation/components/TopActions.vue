@@ -49,48 +49,58 @@ const breathAnimStyle = computed(() => {
   <div
       class="fixed top-6 z-50 flex items-center gap-3 transition-all duration-500"
       :class="sidebarPos === 'right' ? 'left-6' : 'right-6'"
+      role="toolbar"
+      aria-label="快捷操作"
   >
     <template v-if="!isFocusMode">
       <!-- 切换侧边栏位置 -->
       <button
+          type="button"
           @click="emit('toggleSidebarPos')"
           class="fab-btn group"
           :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
           :style="breathAnimStyle"
+          :aria-label="sidebarPos === 'left' ? '切换到右侧布局' : '切换到左侧布局'"
           :title="sidebarPos === 'left' ? '切换到右侧布局' : '切换到左侧布局'"
       >
         <PhArrowsLeftRight
             size="20"
             weight="bold"
             class="group-hover:rotate-180 transition-transform duration-500"
+            aria-hidden="true"
         />
       </button>
 
       <!-- 终端 -->
       <button
+          type="button"
           @click="emit('toggleTerminal')"
           class="fab-btn group"
           :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
           :style="breathAnimStyle"
+          aria-label="切换终端模式"
           title="终端模式 (CMD)"
       >
         <!--  不写死颜色，吃按钮 currentColor -->
-        <PhTerminalWindow size="20" weight="bold"/>
+        <PhTerminalWindow size="20" weight="bold" aria-hidden="true"/>
       </button>
 
       <!-- AI -->
       <button
+          type="button"
           @click="emit('toggleAi')"
           class="fab-btn group relative"
           :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
           :style="breathAnimStyle"
+          aria-label="切换 AI 助手"
           title="AI 助手"
       >
-        <PhRobot size="20" weight="bold"/>
+        <PhRobot size="20" weight="bold" aria-hidden="true"/>
       </button>
 
       <!-- 整理桌面 -->
       <button
+          type="button"
           @click="emit('toggleEdit')"
           class="fab-btn group"
           :class="[
@@ -98,14 +108,17 @@ const breathAnimStyle = computed(() => {
           isEditMode ? 'fab-btn--active' : ''
         ]"
           :style="breathAnimStyle"
+          :aria-label="isEditMode ? '完成整理桌面' : '整理桌面'"
+          :aria-pressed="isEditMode"
           title="整理桌面"
       >
-        <component :is="isEditMode ? PhCheck : PhPencilSimple" size="20" weight="bold"/>
+        <component :is="isEditMode ? PhCheck : PhPencilSimple" size="20" weight="bold" aria-hidden="true"/>
       </button>
     </template>
 
     <!-- 专注模式 -->
     <button
+        type="button"
         @click="emit('toggleFocus')"
         class="fab-btn group"
         :class="[
@@ -113,9 +126,11 @@ const breathAnimStyle = computed(() => {
         isFocusMode ? 'fab-btn--focus' : ''
       ]"
         :style="breathAnimStyle"
+        :aria-label="isFocusMode ? '退出专注模式' : '进入专注模式'"
+        :aria-pressed="isFocusMode"
         :title="isFocusMode ? '退出专注' : '专注模式'"
     >
-      <component :is="isFocusMode ? PhEyeSlash : PhEye" size="20" weight="bold"/>
+      <component :is="isFocusMode ? PhEyeSlash : PhEye" size="20" weight="bold" aria-hidden="true"/>
     </button>
   </div>
 </template>

@@ -103,19 +103,19 @@ const unbindSortingWheel = () => {
 
 const onGroupSortStart = () => {
   isGroupSorting.value = true;
-  (ui as any).isGroupSorting = true;
+  ui.setGroupSorting(true);
   bindSortingWheel();
 };
 
 const onGroupSortEnd = () => {
   isGroupSorting.value = false;
-  (ui as any).isGroupSorting = false;
+  ui.setGroupSorting(false);
   unbindSortingWheel();
   store.saveConfig();
 };
 
 onBeforeUnmount(() => {
-  (ui as any).isGroupSorting = false;
+  ui.setGroupSorting(false);
   unbindSortingWheel();
 });
 </script>
@@ -136,11 +136,13 @@ onBeforeUnmount(() => {
           ]"
           :data-side="store.config.theme.sidebarPos"
           :style="railStyle"
+          role="navigation"
+          aria-label="分组导航"
       >
         <div class="flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider">
           <div
               class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand">
-            <BrandLogo/>
+            <BrandLogo aria-hidden="true"/>
           </div>
 
           <transition name="fade">
@@ -163,6 +165,8 @@ onBeforeUnmount(() => {
               data-wheel-allow="true"
               data-sidebar-list="1"
               class="flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2"
+              style="max-height: calc(100vh - 280px); min-height: 200px;"
+              aria-label="分组列表"
           >
             <VueDraggable
                 v-model="store.config.layout"
@@ -198,24 +202,26 @@ onBeforeUnmount(() => {
             </VueDraggable>
 
             <button
+                type="button"
                 @click="emit('openGroupDialog')"
                 class="w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn"
-                aria-label="Add group"
+                aria-label="新建分组"
                 title="新建分组"
             >
-              <PhPlus size="18" weight="bold" class="group-hover:scale-110 transition-transform"/>
+              <PhPlus size="18" weight="bold" class="group-hover:scale-110 transition-transform" aria-hidden="true"/>
             </button>
           </div>
         </div>
 
         <div class="flex-shrink-0 w-full p-4 flex justify-center sidebar-footer">
           <button
+              type="button"
               @click="emit('openSettings')"
               class="p-2.5 rounded-full transition-all active:scale-95 sidebar-icon-btn"
-              aria-label="Settings"
+              aria-label="打开设置"
               title="系统设置"
           >
-            <PhGear :size="20" weight="fill"/>
+            <PhGear :size="20" weight="fill" aria-hidden="true"/>
           </button>
         </div>
       </aside>

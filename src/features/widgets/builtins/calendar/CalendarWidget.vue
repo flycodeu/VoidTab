@@ -1,23 +1,20 @@
 <script setup lang="ts">
-import {ref, computed, onMounted, onUnmounted} from 'vue';
+import {ref, computed} from 'vue';
 import type {SiteItem} from '../../../../core/config/types.ts';
 import {Solar} from 'lunar-typescript';
 import CalendarDetailModal from './CalendarDetailModal.vue';
+import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
 
 const props = defineProps<{ item: SiteItem }>();
 
 const now = ref(new Date());
-let timer: number;
 const showModal = ref(false);
 
 const updateTime = () => {
   now.value = new Date();
 };
 
-onMounted(() => {
-  timer = window.setInterval(updateTime, 60000);
-});
-onUnmounted(() => window.clearInterval(timer));
+useVisibilityInterval(updateTime, 60000, {immediate: true});
 
 const getDayOfYear = (date: Date) => {
   const start = new Date(date.getFullYear(), 0, 0);

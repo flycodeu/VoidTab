@@ -1,4 +1,12 @@
 // src/core/system/systemStats.ts
+import {
+    fetchJsonWithRetry,
+    fetchWithRetry,
+    getNetworkPerformanceSummary,
+    getPerformanceMeasures,
+    type NetworkPerformanceSummary,
+} from '../../shared/utils/network';
+
 export type GeoInfo = {
     ip?: string;
     country?: string;
@@ -33,9 +41,27 @@ export type SystemStats = {
     };
 
     geo?: GeoInfo;              //   只有你配置 geoUrl 才会取
+    performance: SystemPerformanceStats;
     browser: {
         ua: string;
         platform?: string;
+    };
+};
+
+export type SystemPerformanceStats = {
+    network: NetworkPerformanceSummary;
+    measures: {
+        recentCount: number;
+        failureCount: number;
+        avgDurationMs?: number;
+    };
+    navigation?: {
+        domContentLoadedMs?: number;
+        loadMs?: number;
+        responseMs?: number;
+        transferSizeKB?: number;
+        decodedBodySizeKB?: number;
+        resourceCount?: number;
     };
 };
 
@@ -60,29 +86,36 @@ const hasChromeSystem = () => {
 
 /** --------- HTTP RTT（通用，无需扩展权限）--------- */
 export async function httpRttMs(url: string, timeoutMs = 3000): Promise<number> {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const request = async (method: 'HEAD' | 'GET') => {
+        const start = performance.now();
+        const res = await fetchWithRetry(url, {method, cache: 'no-store'}, {
+            timeoutMs,
+            retries: 1,
+            retryDelayMs: 250,
+            maxRetryDelayMs: 1000,
+            metricName: `system.rtt.${method.toLowerCase()}`,
+        });
+        if (!res.ok) throw new Error(`${method} not ok`);
+        return Math.round(performance.now() - start);
+    };
 
-    const start = performance.now();
     try {
         // HEAD 有时被服务端禁用；失败就 fallback GET
-        const res = await fetch(url, {method: 'HEAD', cache: 'no-store', signal: ctrl.signal});
-        if (!res.ok) throw new Error('HEAD not ok');
-        return Math.round(performance.now() - start);
+        return await request('HEAD');
     } catch {
-        const start2 = performance.now();
-        await fetch(url, {method: 'GET', cache: 'no-store', signal: ctrl.signal});
-        return Math.round(performance.now() - start2);
-    } finally {
-        clearTimeout(t);
+        return await request('GET');
     }
 }
 
 /** --------- Geo（可选）--------- */
 async function fetchGeo(geoUrl: string): Promise<GeoInfo> {
-    const res = await fetch(geoUrl, {cache: 'no-store'});
-    if (!res.ok) return {};
-    const data = await res.json().catch(() => ({}));
+    const data = await fetchJsonWithRetry<Record<string, any>>(geoUrl, {cache: 'no-store'}, {
+        timeoutMs: 5000,
+        retries: 1,
+        retryDelayMs: 400,
+        metricName: 'system.geo',
+    });
+
     return {
         ip: data.ip,
         country: data.country,
@@ -149,6 +182,38 @@ async function chromeMemoryInfo(): Promise<{ totalMB?: number; availableMB?: num
     const availableMB = info?.availableCapacity ? Math.round(info.availableCapacity / 1024 / 1024) : undefined;
 
     return {totalMB, availableMB};
+}
+
+const positiveMs = (value: number | undefined) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
+
+function collectPerformanceStats(): SystemPerformanceStats {
+    const perf = globalThis.performance;
+    const measures = getPerformanceMeasures();
+    const measureDurations = measures.map((entry) => entry.durationMs);
+    const avgMeasure = measureDurations.length
+        ? Math.round(measureDurations.reduce((sum, value) => sum + value, 0) / measureDurations.length)
+        : undefined;
+
+    const nav = perf?.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+    const navigation = nav ? {
+        domContentLoadedMs: positiveMs(nav.domContentLoadedEventEnd),
+        loadMs: positiveMs(nav.loadEventEnd),
+        responseMs: positiveMs(nav.responseEnd - nav.requestStart),
+        transferSizeKB: positiveMs(nav.transferSize ? nav.transferSize / 1024 : undefined),
+        decodedBodySizeKB: positiveMs(nav.decodedBodySize ? nav.decodedBodySize / 1024 : undefined),
+        resourceCount: perf?.getEntriesByType?.('resource')?.length,
+    } : undefined;
+
+    return {
+        network: getNetworkPerformanceSummary(),
+        measures: {
+            recentCount: measures.length,
+            failureCount: measures.filter((entry) => !entry.ok).length,
+            avgDurationMs: avgMeasure,
+        },
+        navigation,
+    };
 }
 
 /**   你要的：collectSystemStats（通用 + 自动增强） */
@@ -220,6 +285,7 @@ export async function collectSystemStats(opts: CollectOpts = {}): Promise<System
         cpu,
         memory,
         geo,
+        performance: collectPerformanceStats(),
         browser: {
             ua: navigator.userAgent,
             platform: (navigator as any).platform,

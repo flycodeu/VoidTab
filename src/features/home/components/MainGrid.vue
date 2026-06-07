@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {inject, onBeforeUnmount, onMounted, ref, computed, CSSProperties, watch} from "vue";
 import {VueDraggable} from "vue-draggable-plus";
+import {useDebounceFn} from "@vueuse/core";
 
 // Stores
 import {useConfigStore} from "../../../stores/useConfigStore.ts";
@@ -13,10 +14,13 @@ import WidgetCard from "../../widgets/components/WidgetCard.vue";
 import AddCard from "./AddCard.vue";
 import GroupHeaderBar from "../../widgets/components/widget-panel/GroupHeaderBar.vue";
 import ConfirmDialog from "../../../shared/ui/dialogs/ConfirmDialog.vue";
-import {PhTrash, PhX} from "@phosphor-icons/vue";
+import EmptyState from "../../../shared/ui/EmptyState.vue";
+import {PhPlus, PhSquaresFour, PhTrash, PhX} from "@phosphor-icons/vue";
 
 // Composables
 import {useVisibleGroups} from "../composables/useVisibleGroups.ts";
+import {useToast} from "../../../shared/composables/useToast.ts";
+import {queueSiteIconPreload, type SiteIconPreloadHandle} from "../../../shared/utils/iconPreloader.ts";
 
 // Types
 import type {GroupSortKey} from "../../../core/config/types.ts";
@@ -37,9 +41,16 @@ const props = defineProps<{
   siteCardH: number;
 }>();
 
+const emit = defineEmits<{
+  (e: "openSettings"): void;
+  (e: "openGroupDialog"): void;
+  (e: "openWidgets"): void;
+}>();
+
 const store = useConfigStore();
 const ui = useUiStore();
 const statsStore = useStateStore();
+const toast = useToast();
 
 const dialog = inject("dialog") as { openAddDialog: (gid: string) => void } | undefined;
 const openAddDialog = (gid: string) => dialog?.openAddDialog?.(gid);
@@ -50,6 +61,9 @@ const {visibleGroups} = useVisibleGroups({
   activeGroupId: () => props.activeGroupId,
   dragState: ui.dragState,
 });
+
+const visibleLayoutGroups = computed(() => visibleGroups.value as LayoutGroup[]);
+const hasVisibleGroups = computed(() => visibleLayoutGroups.value.length > 0);
 
 const activeGroupData = computed(() => {
   return (store.config.layout as any[]).find((g) => g.id === props.activeGroupId) as LayoutGroup | undefined;
@@ -89,6 +103,21 @@ const getWidgetTitle = (item: any) => {
   return getWidgetLabel(item.widgetType);
 };
 
+const getItemTitle = (item: any) => {
+  if (!item) return "未命名项目";
+  if (item.kind === "widget") return getWidgetTitle(item);
+  return (item.title || "").trim() || "未命名网站";
+};
+
+const getItemKindLabel = (item: any) => item?.kind === "widget" ? "组件" : "网站";
+
+const isGroupEmpty = (group: LayoutGroup) => !Array.isArray(group.items) || group.items.length === 0;
+
+const handleEmptyGroupAction = (groupId: string) => {
+  openAddDialog(groupId);
+  ui.announce("已打开添加网站窗口");
+};
+
 function recalcGrid() {
   const el = gridHostEl.value;
   if (!el) return;
@@ -118,6 +147,8 @@ function recalcGrid() {
   gridCols.value = siteCols;
 }
 
+const recalcGridDebounced = useDebounceFn(() => recalcGrid(), 150, {maxWait: 300});
+
 const onMqChange = () => {
   isMobile.value = !!mq?.matches;
   recalcGrid();
@@ -127,17 +158,19 @@ onMounted(() => {
   mq = window.matchMedia("(max-width: 767px)");
   onWindowResize = () => {
     viewportW.value = window.innerWidth;
-    recalcGrid();
+    recalcGridDebounced();
   };
   window.addEventListener("resize", onWindowResize, {passive: true});
   onMqChange();
   mq.addEventListener?.("change", onMqChange);
 
-  ro = new ResizeObserver(() => requestAnimationFrame(() => recalcGrid()));
+  ro = new ResizeObserver(() => recalcGridDebounced());
   if (gridHostEl.value) ro.observe(gridHostEl.value);
 });
 
 onBeforeUnmount(() => {
+  iconPreloadDisposed = true;
+  cancelIconPreloadBatches();
   mq?.removeEventListener?.("change", onMqChange);
   ro?.disconnect();
   if (onWindowResize) window.removeEventListener("resize", onWindowResize);
@@ -149,7 +182,7 @@ onBeforeUnmount(() => {
 
 watch(
     () => [store.config.theme.iconSize, store.config.theme.gap, store.config.theme.siteLayoutMode, store.config.theme.gridMaxWidth],
-    () => recalcGrid()
+    () => recalcGridDebounced()
 );
 
 const gridShellStyle = computed<CSSProperties>(() => {
@@ -176,6 +209,102 @@ const densityStyle = computed<CSSProperties>(() => {
   };
 });
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || "normal"}`);
+
+const PRELOAD_CURRENT_GROUP_LIMIT = 48;
+const PRELOAD_NEIGHBOR_GROUP_LIMIT = 36;
+let primaryIconPreload: SiteIconPreloadHandle | null = null;
+let secondaryIconPreload: SiteIconPreloadHandle | null = null;
+let iconPreloadDisposed = false;
+
+const isAutoIconSiteItem = (item: LayoutItem) => {
+  if (!item || item.kind === "widget") return false;
+  const iconType = item.iconType || "auto";
+  return iconType === "auto" && typeof item.url === "string" && item.url.trim().length > 0;
+};
+
+const collectAutoIconUrls = (groups: LayoutGroup[], limit: number) => {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const item of group.items || []) {
+      if (!isAutoIconSiteItem(item)) continue;
+      const url = String(item.url || "").trim();
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      urls.push(url);
+      if (urls.length >= limit) return urls;
+    }
+  }
+
+  return urls;
+};
+
+const getNeighborGroups = () => {
+  const groups = store.config.layout as LayoutGroup[];
+  const activeIndex = groups.findIndex((group) => group.id === props.activeGroupId);
+  if (activeIndex < 0) return [];
+
+  return [groups[activeIndex - 1], groups[activeIndex + 1]].filter(Boolean) as LayoutGroup[];
+};
+
+const cancelIconPreloadBatches = () => {
+  primaryIconPreload?.cancel();
+  secondaryIconPreload?.cancel();
+  primaryIconPreload = null;
+  secondaryIconPreload = null;
+};
+
+const scheduleIconPreloadBatches = useDebounceFn(() => {
+  if (iconPreloadDisposed) return;
+  cancelIconPreloadBatches();
+
+  const runtime = store.config.runtime;
+  if (!runtime) return;
+
+  const currentGroup = activeGroupData.value;
+  const currentUrls = collectAutoIconUrls(currentGroup ? [currentGroup] : [], PRELOAD_CURRENT_GROUP_LIMIT);
+  if (currentUrls.length) {
+    primaryIconPreload = queueSiteIconPreload(currentUrls, runtime, {
+      concurrency: isMobile.value ? 3 : 5,
+      fastFirst: true,
+      fastTimeoutMs: 650,
+      timeoutMs: 1400,
+      browserWarm: true,
+      browserWarmLimit: 3,
+      backgroundUpgrade: false,
+      idleTimeoutMs: 250,
+    });
+  }
+
+  const neighborUrls = collectAutoIconUrls(getNeighborGroups(), PRELOAD_NEIGHBOR_GROUP_LIMIT);
+  if (neighborUrls.length) {
+    secondaryIconPreload = queueSiteIconPreload(neighborUrls, runtime, {
+      concurrency: 2,
+      fastFirst: true,
+      fastTimeoutMs: 850,
+      timeoutMs: 1800,
+      browserWarm: true,
+      browserWarmLimit: 2,
+      backgroundUpgrade: false,
+      idleTimeoutMs: 1600,
+    });
+  }
+}, 250, {maxWait: 1000});
+
+const iconPreloadSignature = computed(() => {
+  const groups = store.config.layout as LayoutGroup[];
+  return [
+    props.activeGroupId,
+    store.config.runtime?.siteIcons?.version || 0,
+    groups.map((group) => {
+      const sample = collectAutoIconUrls([group], 12).join(",");
+      return `${group.id}:${group.items?.length || 0}:${sample}`;
+    }).join("|"),
+  ].join("::");
+});
+
+watch(iconPreloadSignature, () => scheduleIconPreloadBatches(), {immediate: true, flush: "post"});
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 const MAX_W = 4;
@@ -384,19 +513,102 @@ const handleItemContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   ui.openContextMenu(e, item, type, groupId);
 };
 
-const deleteDialogOpen = ref(false);
-const deleteTarget = ref<{ groupId: string; siteId: string } | null>(null);
+type DeleteTarget = { groupId: string; itemId: string };
+type DeletedItemSnapshot = {
+  groupId: string;
+  index: number;
+  item: LayoutItem;
+  title: string;
+  kindLabel: string;
+};
 
-const askDelete = (groupId: string, siteId: string) => {
-  deleteTarget.value = {groupId, siteId};
+const deleteDialogOpen = ref(false);
+const deleteTarget = ref<DeleteTarget | null>(null);
+
+const findGroupById = (groupId: string) => {
+  return (store.config.layout as LayoutGroup[]).find((group) => group.id === groupId);
+};
+
+const cloneLayoutItem = (item: LayoutItem) => {
+  if (typeof structuredClone === "function") return structuredClone(item);
+  return JSON.parse(JSON.stringify(item));
+};
+
+const cancelDelete = () => {
+  deleteDialogOpen.value = false;
+  deleteTarget.value = null;
+};
+
+const askDelete = (groupId: string, itemId: string) => {
+  const group = findGroupById(groupId);
+  const item = group?.items.find((entry) => entry.id === itemId);
+  if (!item) {
+    toast.warning("这个项目已经不在当前分组中。");
+    ui.announce("这个项目已经不在当前分组中");
+    return;
+  }
+
+  deleteTarget.value = {groupId, itemId};
   deleteDialogOpen.value = true;
+};
+
+const restoreDeletedItem = (snapshot: DeletedItemSnapshot) => {
+  const group = findGroupById(snapshot.groupId);
+  if (!group) {
+    toast.error("原分组不存在，无法撤销这次移除。");
+    ui.announce("原分组不存在，无法撤销这次移除");
+    return;
+  }
+
+  if (group.items.some((item) => item.id === snapshot.item.id)) {
+    toast.info(`「${snapshot.title}」已经在分组中。`);
+    ui.announce(`${snapshot.title}已经在分组中`);
+    return;
+  }
+
+  const index = Math.max(0, Math.min(snapshot.index, group.items.length));
+  group.items.splice(index, 0, cloneLayoutItem(snapshot.item));
+  void store.saveConfig();
+
+  toast.success(`已恢复「${snapshot.title}」。`);
+  ui.announce(`已恢复${snapshot.kindLabel}${snapshot.title}`);
 };
 
 const confirmDelete = () => {
   if (!deleteTarget.value) return;
-  store.removeSite(deleteTarget.value.groupId, deleteTarget.value.siteId);
-  deleteDialogOpen.value = false;
-  deleteTarget.value = null;
+
+  const {groupId, itemId} = deleteTarget.value;
+  const group = findGroupById(groupId);
+  const index = group?.items.findIndex((item) => item.id === itemId) ?? -1;
+  const item = index >= 0 ? group?.items[index] : null;
+
+  if (!group || !item) {
+    cancelDelete();
+    toast.warning("这个项目已经被移除，列表已更新。");
+    ui.announce("这个项目已经被移除，列表已更新");
+    return;
+  }
+
+  const snapshot: DeletedItemSnapshot = {
+    groupId,
+    index,
+    item: cloneLayoutItem(item),
+    title: getItemTitle(item),
+    kindLabel: getItemKindLabel(item),
+  };
+
+  store.removeSite(groupId, itemId);
+  void store.saveConfig();
+  cancelDelete();
+
+  toast.warning(`已移除「${snapshot.title}」。`, {
+    duration: 6000,
+    action: {
+      label: "撤销",
+      handler: () => restoreDeletedItem(snapshot),
+    },
+  });
+  ui.announce(`已移除${snapshot.kindLabel}${snapshot.title}，可在通知中选择撤销`);
 };
 </script>
 
@@ -419,8 +631,24 @@ const confirmDelete = () => {
           :key="activeGroupId"
       />
 
-      <template v-for="group in (visibleGroups as any)" :key="group.id">
-        <div class="transition-all duration-300 mb-8 animate-fade-in w-full">
+      <EmptyState
+          v-if="!hasVisibleGroups"
+          :icon="PhSquaresFour"
+          title="还没有分组"
+          description="新建一个分组后，就可以把常用网站和组件放在这里。"
+          actionLabel="新建分组"
+          secondaryActionLabel="打开设置"
+          ariaLabel="空白主页"
+          @action="emit('openGroupDialog')"
+          @secondaryAction="emit('openSettings')"
+      />
+
+      <template v-for="group in visibleLayoutGroups" :key="group.id">
+        <div
+            class="transition-all duration-300 mb-8 animate-fade-in w-full"
+            role="region"
+            :aria-label="`${group.title}分组`"
+        >
           <!-- 编辑模式分组标题：主题色 + 主题面板变量 -->
           <div
               v-if="isEditMode"
@@ -430,7 +658,21 @@ const confirmDelete = () => {
             {{ group.title }}
           </div>
 
+          <EmptyState
+              v-if="isGroupEmpty(group)"
+              :icon="PhSquaresFour"
+              :actionIcon="PhPlus"
+              title="这个分组还没有内容"
+              description="添加常用网站或组件后，它们会显示在这个分组里。"
+              actionLabel="添加网站"
+              secondaryActionLabel="打开组件库"
+              :ariaLabel="`${group.title}分组为空`"
+              @action="handleEmptyGroupAction(group.id)"
+              @secondaryAction="emit('openWidgets')"
+          />
+
           <VueDraggable
+              v-else
               :key="(isEditMode ? 'edit-' : 'view-') + group.id + '-' + (group.sortKey || 'custom')"
               :modelValue="modelValueOf(group)"
               @update:modelValue="(val:any) => updateModelValue(group, val)"
@@ -445,6 +687,8 @@ const confirmDelete = () => {
               :style="densityStyle"
               :disabled="!isEditMode && !canFreeReorder(group)"
               @contextmenu.prevent.self="handleBlankContextMenu($event, group.id)"
+              role="list"
+              :aria-label="`${group.title}内容网格`"
           >
             <div
                 v-for="item in modelValueOf(group)"
@@ -452,6 +696,7 @@ const confirmDelete = () => {
                 :style="getItemStyle(item)"
                 class="site-tile relative"
                 :class="[{ 'arrange-mode': isEditMode }, densityItemClass]"
+                role="listitem"
             >
               <div
                   class="site-wrap relative w-full h-full min-w-0 min-h-0"
@@ -491,6 +736,7 @@ const confirmDelete = () => {
                       :density="store.config.theme.density"
                       :cardSpanW="Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
                       :cardSpanH="Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
+                      :priority="group.id === activeGroupId ? 'high' : 'low'"
                       @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
                   />
                 </div>
@@ -499,10 +745,11 @@ const confirmDelete = () => {
                 <button
                     v-if="isEditMode"
                     class="delete-btn ignore-drag"
-                    title="删除"
+                    :title="`移除${getItemKindLabel(item)}：${getItemTitle(item)}`"
+                    :aria-label="`移除${getItemKindLabel(item)}：${getItemTitle(item)}`"
                     @click.stop="askDelete(group.id, item.id)"
                 >
-                  <PhX size="12" weight="bold"/>
+                  <PhX size="12" weight="bold" aria-hidden="true"/>
                 </button>
               </div>
             </div>
@@ -517,6 +764,11 @@ const confirmDelete = () => {
                   :showName="!!store.config.theme.showIconName"
                   :textSize="Number(store.config.theme.iconTextSize)"
                   @click="openAddDialog(group.id)"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`向${group.title}分组添加网站`"
+                  @keydown.enter.prevent="openAddDialog(group.id)"
+                  @keydown.space.prevent="openAddDialog(group.id)"
               />
             </div>
           </VueDraggable>
@@ -526,16 +778,16 @@ const confirmDelete = () => {
 
     <ConfirmDialog
         :show="deleteDialogOpen"
-        title="确认删除？"
-        :message="['删除后无法恢复，', '确定要移除这个图标吗？']"
-        confirmText="确认删除"
+        title="移除这个项目？"
+        :message="['确认后会先从当前分组移除，', '你可以在通知中点击撤销恢复。']"
+        confirmText="移除"
         cancelText="取消"
         :danger="true"
-        @cancel="deleteDialogOpen = false"
+        @cancel="cancelDelete"
         @confirm="confirmDelete"
     >
       <template #icon>
-        <PhTrash :size="32" weight="duotone"/>
+        <PhTrash :size="32" weight="duotone" aria-hidden="true"/>
       </template>
     </ConfirmDialog>
   </div>

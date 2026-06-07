@@ -3,6 +3,59 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+const getNodePackageName = (id: string) => {
+    const normalizedId = id.replace(/\\/g, '/')
+    const marker = '/node_modules/'
+    const markerIndex = normalizedId.lastIndexOf(marker)
+    if (markerIndex < 0) return ''
+
+    const segments = normalizedId.slice(markerIndex + marker.length).split('/')
+    if (!segments[0]) return ''
+    if (segments[0].startsWith('@')) return `${segments[0]}/${segments[1] || ''}`
+    return segments[0]
+}
+
+const getVendorChunkName = (id: string) => {
+    const packageName = getNodePackageName(id)
+    if (!packageName) return undefined
+
+    if (packageName === '@phosphor-icons/vue') return 'vendor-icons'
+    if (
+        packageName === 'vue' ||
+        packageName === 'pinia' ||
+        packageName.startsWith('@vue/') ||
+        packageName.startsWith('@vueuse/')
+    ) {
+        return 'vendor-vue'
+    }
+    if (
+        packageName === 'markdown-it' ||
+        packageName === 'highlight.js' ||
+        packageName === 'dompurify'
+    ) {
+        return 'vendor-markdown'
+    }
+    if (
+        packageName === 'lunar-javascript' ||
+        packageName === 'lunar-typescript' ||
+        packageName === 'cron-parser' ||
+        packageName === 'cronstrue'
+    ) {
+        return 'vendor-widgets-time'
+    }
+    if (packageName === 'fuse.js' || packageName === 'pinyin-pro') return 'vendor-search'
+    if (packageName === 'idb' || packageName === 'uuid' || packageName === 'immer') return 'vendor-data'
+    if (
+        packageName === 'sortablejs' ||
+        packageName === 'vue-draggable-plus' ||
+        packageName === 'vuedraggable'
+    ) {
+        return 'vendor-dnd'
+    }
+
+    return 'vendor-core'
+}
+
 export default defineConfig(({ mode }) => {
     // mode === 'ext' 时才把 background 作为入口构建
     const isExt = mode === 'ext'
@@ -30,6 +83,7 @@ export default defineConfig(({ mode }) => {
         build: {
             outDir: 'dist',
             assetsInlineLimit: 4096,
+            chunkSizeWarningLimit: 900,
             minify: 'esbuild',
 
             rollupOptions: {
@@ -51,10 +105,7 @@ export default defineConfig(({ mode }) => {
                     // 手动分包：背景脚本只在 ext 模式下存在
                     manualChunks(id) {
                         // ⚠️ 注意：background.ts 是独立入口时，不需要再手动切它的 chunk
-                        // 这里只保留 vendor 拆分即可，避免奇怪的依赖/预加载行为
-                        if (id.includes('node_modules')) {
-                            return 'vendor'
-                        }
+                        return getVendorChunkName(id)
                     },
                 },
             },

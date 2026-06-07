@@ -8,6 +8,8 @@ import {
   PhMagnifyingGlass, PhArrowSquareOut, PhSparkle, PhCopy, PhCheckCircle
 } from '@phosphor-icons/vue';
 import MarkdownIt from 'markdown-it';
+import {fetchWithRetry} from '../../../../shared/utils/network';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const md = new MarkdownIt({html: true});
 
@@ -16,6 +18,7 @@ const emit = defineEmits(['close']);
 
 const store = useHistoryStore();
 const config = useConfigStore();
+const toast = useToast();
 
 const activeTab = ref<'timeline' | 'stats' | 'ai'>('timeline');
 const showAiConfirm = ref(false);
@@ -42,9 +45,13 @@ const onScroll = (e: Event) => {
 // 复制结果
 const copyResult = () => {
   if (!aiAnalysisResult.value) return;
-  navigator.clipboard.writeText(aiAnalysisResult.value);
-  showCopySuccess.value = true;
-  setTimeout(() => showCopySuccess.value = false, 2000);
+  navigator.clipboard.writeText(aiAnalysisResult.value)
+      .then(() => {
+        showCopySuccess.value = true;
+        toast.success('报告已复制');
+        setTimeout(() => showCopySuccess.value = false, 2000);
+      })
+      .catch(() => toast.error('复制失败，请检查浏览器权限'));
 };
 
 // AI 分析逻辑 (Prompt 已优化为趣味报告风格)
@@ -53,7 +60,7 @@ const startAnalysis = async () => {
 
   const {apiKey, baseUrl, model} = config.config.ai;
   if (!baseUrl || (!apiKey && !baseUrl.includes('localhost'))) {
-    alert("请先在设置中配置 AI Key 和 URL");
+    toast.warning('请先在设置中配置 AI Key 和 URL');
     return;
   }
 
@@ -95,7 +102,7 @@ const startAnalysis = async () => {
     let endpoint = baseUrl.trim().replace(/\/+$/, '');
     if (!endpoint.endsWith('/chat/completions')) endpoint = `${endpoint}/chat/completions`;
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`},
       body: JSON.stringify({
@@ -103,6 +110,13 @@ const startAnalysis = async () => {
         messages: [{role: "user", content: prompt}],
         stream: true
       })
+    }, {
+      timeoutMs: 30000,
+      retries: 1,
+      retryDelayMs: 800,
+      maxRetryDelayMs: 3000,
+      metricName: 'history.ai.analysis',
+      fallbackName: 'history.ai.unavailable',
     });
 
     if (!response.ok) throw new Error(response.statusText);
@@ -130,7 +144,15 @@ const startAnalysis = async () => {
       }
     }
   } catch (e: any) {
-    aiAnalysisResult.value = `Error: ${e.message}`;
+    const message = e instanceof Error ? e.message : '未知错误';
+    aiAnalysisResult.value = `Error: ${message}`;
+    toast.error('AI 分析失败，请稍后重试。', {
+      duration: 8000,
+      action: {
+        label: '重试',
+        handler: () => startAnalysis(),
+      },
+    });
   } finally {
     isAnalyzing.value = false;
   }

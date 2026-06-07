@@ -2,6 +2,7 @@
 import {defineStore} from 'pinia';
 import {ref, watch} from 'vue';
 import {AI_HISTORY_KEY} from '../core/config/keys';
+import {useToast} from '../shared/composables/useToast';
 
 export interface Message {
     id: string;
@@ -19,6 +20,7 @@ export interface Session {
 }
 
 export const useAiStore = defineStore('ai', () => {
+    const toast = useToast();
     const sessions = ref<Session[]>([]);
     const currentSessionId = ref<string>('');
 
@@ -29,15 +31,19 @@ export const useAiStore = defineStore('ai', () => {
             try {
                 sessions.value = JSON.parse(local);
                 sessions.value.sort((a, b) => b.updatedAt - a.updatedAt);
-            } catch (e) {
-                console.error('AI History load failed', e);
+            } catch {
+                toast.warning('AI 历史记录读取失败，已使用空会话');
             }
         }
     };
 
     // 持久化保存
     const saveHistory = () => {
-        localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(sessions.value));
+        try {
+            localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(sessions.value));
+        } catch {
+            toast.error('AI 历史记录保存失败，请检查浏览器存储空间');
+        }
     };
 
     // 监听变化自动保存
@@ -72,12 +78,10 @@ export const useAiStore = defineStore('ai', () => {
     };
 
     const clearHistory = () => {
-        if (confirm('确定要清空所有聊天记录吗？无法恢复。')) {
-            sessions.value = [];
-            currentSessionId.value = '';
-            //   可选：顺手清掉本地缓存，避免下一次 load 又回来
-            localStorage.removeItem(AI_HISTORY_KEY);
-        }
+        sessions.value = [];
+        currentSessionId.value = '';
+        localStorage.removeItem(AI_HISTORY_KEY);
+        toast.success('AI 聊天记录已清空');
     };
 
     const addMessage = (sessionId: string, role: Message['role'], content: string) => {

@@ -1,13 +1,80 @@
 // src/composables/icon/useDebouncedFavicon.ts
 import {ref, watch, onUnmounted, type Ref} from 'vue';
+import type {RuntimeConfig} from '../../../core/config/types';
 import {getFastIconCandidates, getIconCandidates, getEffectiveMinEdgePx, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
+import {resolveAndCacheSiteIcon, type SiteIconResult} from '../../utils/siteIconCache';
+import {warmBrowserIconCache} from '../../utils/iconPreloader';
 
-export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
+type MaybeRuntimeRef = RuntimeConfig | Ref<RuntimeConfig | undefined> | undefined;
+
+type DebouncedFaviconOptions = {
+    runtime?: MaybeRuntimeRef;
+    timeoutMs?: number;
+    minEdgePx?: number;
+};
+
+const candidateProbeInflight = new Map<string, Promise<{url: string; width: number; height: number} | null>>();
+
+function unwrapRuntime(runtime: MaybeRuntimeRef): RuntimeConfig | undefined {
+    if (!runtime) return undefined;
+    if (typeof runtime === 'object' && 'value' in runtime) {
+        return runtime.value;
+    }
+    return runtime;
+}
+
+function probeCandidateIcon(url: string, timeoutMs: number): Promise<{url: string; width: number; height: number} | null> {
+    const existing = candidateProbeInflight.get(url);
+    if (existing) return existing;
+
+    const promise = new Promise<{url: string; width: number; height: number} | null>((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const finish = (value: {url: string; width: number; height: number} | null) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            img.onload = null;
+            img.onerror = null;
+            resolve(value);
+        };
+        const timer = setTimeout(() => finish(null), Math.max(300, timeoutMs));
+
+        img.onload = () => {
+            finish({
+                url,
+                width: Number(img.naturalWidth || 0),
+                height: Number(img.naturalHeight || 0),
+            });
+        };
+        img.onerror = () => finish(null);
+        img.decoding = 'async';
+        img.referrerPolicy = 'no-referrer';
+        img.src = url;
+    });
+
+    candidateProbeInflight.set(url, promise);
+    void promise.finally(() => candidateProbeInflight.delete(url));
+    return promise;
+}
+
+function releaseResultObjectUrl(result: SiteIconResult | null | undefined): void {
+    if (result?.objectUrl && result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url);
+    }
+}
+
+export function useDebouncedFavicon(
+    urlRef: Ref<string>,
+    delay = 500,
+    options?: DebouncedFaviconOptions
+) {
     const faviconUrl = ref('');
     const isFetching = ref(false);
+    const currentIsObjectUrl = ref(false);
 
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let currentImg: HTMLImageElement | null = null; // 用于取消上一次的加载请求
+    let runToken = 0;
 
     const clearTimer = () => {
         if (timer) {
@@ -16,94 +83,112 @@ export function useDebouncedFavicon(urlRef: Ref<string>, delay = 500) {
         }
     };
 
-    /**
-     * 核心逻辑：尝试加载图片列表中的 URL
-     * 只要有一个成功，就使用它；全部失败则置空。
-     */
-    const tryLoadIcons = (candidates: string[]) => {
-        if (candidates.length === 0) {
-            faviconUrl.value = '';
-            isFetching.value = false;
-            return;
+    const releaseCurrentObjectUrl = () => {
+        if (currentIsObjectUrl.value && faviconUrl.value.startsWith('blob:')) {
+            URL.revokeObjectURL(faviconUrl.value);
         }
-
-        // 取出第一个候选地址
-        const attemptUrl = candidates[0];
-        const remaining = candidates.slice(1);
-
-        // 创建一个隐形的图片对象来探测是否能加载
-        const img = new Image();
-        currentImg = img;
-        img.referrerPolicy = 'no-referrer';
-
-        img.onload = () => {
-            // 只有当这个 img 还是"当前正在请求"的 img 时才赋值
-            // 防止快速输入时，旧的请求结果覆盖了新的
-            if (currentImg === img) {
-                const w = Number(img.naturalWidth || 0);
-                const h = Number(img.naturalHeight || 0);
-                const minEdge = getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
-                const lowQuality = Math.min(w, h) > 0 && Math.min(w, h) < minEdge;
-                if (lowQuality && remaining.length > 0) {
-                    tryLoadIcons(remaining);
-                    return;
-                }
-                faviconUrl.value = attemptUrl;
-                isFetching.value = false;
-            }
-        };
-
-        img.onerror = () => {
-            if (currentImg === img) {
-                // 如果失败了，且还有备选方案，递归尝试下一个
-                if (remaining.length > 0) {
-                    tryLoadIcons(remaining);
-                } else {
-                    // 彻底放弃，显示默认图标
-                    faviconUrl.value = '';
-                    isFetching.value = false;
-                }
-            }
-        };
-
-        // 开始加载
-        img.src = attemptUrl;
+        currentIsObjectUrl.value = false;
     };
 
-    const run = (url: string) => {
-        isFetching.value = true;
-        faviconUrl.value = ''; // 开始加载时先清空，或者保留旧的看你喜好
+    const setFaviconUrl = (url: string, objectUrl = false) => {
+        releaseCurrentObjectUrl();
+        faviconUrl.value = url;
+        currentIsObjectUrl.value = objectUrl;
+    };
 
-        // 获取候选列表 (例如: [DDG地址, Google地址, /favicon.ico])
+    const loadFromRuntimeCache = async (url: string, token: number): Promise<boolean> => {
+        const runtime = unwrapRuntime(options?.runtime);
+        if (!runtime) return false;
+
+        const result = await resolveAndCacheSiteIcon(url, runtime, {
+            fastFirst: true,
+            fastTimeoutMs: Math.min(900, Number(options?.timeoutMs ?? 1200)),
+            timeoutMs: options?.timeoutMs,
+            minEdgePx: options?.minEdgePx,
+        });
+
+        if (token !== runToken) {
+            releaseResultObjectUrl(result);
+            return true;
+        }
+
+        if (!result?.url) {
+            setFaviconUrl('', false);
+            return true;
+        }
+
+        setFaviconUrl(result.url, !!result.objectUrl);
+        return true;
+    };
+
+    const loadFromBrowserCandidates = async (url: string, token: number) => {
         const fastCandidates = getFastIconCandidates(url);
         const fullCandidates = getIconCandidates(url);
         const candidates = [...fastCandidates, ...fullCandidates.filter((x) => !fastCandidates.includes(x))];
+        const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
+        const timeoutMs = Math.max(300, Number(options?.timeoutMs ?? 1600));
 
-        tryLoadIcons(candidates);
+        void warmBrowserIconCache(url, {fastFirst: true, limit: 4, timeoutMs: Math.min(1200, timeoutMs)});
+
+        for (const candidate of candidates) {
+            if (token !== runToken) return;
+
+            const loaded = await probeCandidateIcon(candidate, timeoutMs);
+            if (token !== runToken) return;
+            if (!loaded) continue;
+
+            const edge = Math.min(loaded.width, loaded.height);
+            const lowQuality = edge > 0 && edge < minEdge;
+            if (lowQuality && candidate !== candidates[candidates.length - 1]) continue;
+
+            setFaviconUrl(loaded.url, false);
+            return;
+        }
+
+        setFaviconUrl('', false);
+    };
+
+    const run = async (url: string, token: number) => {
+        isFetching.value = true;
+        setFaviconUrl('', false);
+
+        try {
+            void warmBrowserIconCache(url, {fastFirst: true, limit: 3});
+            const handledByRuntime = await loadFromRuntimeCache(url, token);
+            if (!handledByRuntime) {
+                await loadFromBrowserCandidates(url, token);
+            }
+        } finally {
+            if (token === runToken) {
+                isFetching.value = false;
+            }
+        }
     };
 
     const refresh = (immediate = false) => {
         clearTimer();
         const url = urlRef.value;
+        const token = ++runToken;
 
         if (!url) {
-            faviconUrl.value = '';
+            setFaviconUrl('', false);
             isFetching.value = false;
             return;
         }
 
         if (immediate) {
-            run(url);
+            void run(url, token);
         } else {
-            timer = setTimeout(() => run(url), delay);
+            timer = setTimeout(() => void run(url, token), delay);
         }
     };
 
     watch(urlRef, () => refresh(false)); // 去掉 immediate: true，由组件控制初始化
 
     onUnmounted(() => {
+        runToken += 1;
         clearTimer();
-        currentImg = null;
+        releaseCurrentObjectUrl();
     });
 
     return {faviconUrl, isFetching, refresh};

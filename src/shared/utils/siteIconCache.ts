@@ -8,6 +8,7 @@ import {
     probeBestIconCandidate,
     type IconProvider
 } from './icon';
+import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
 export const SITE_ICON_CACHE_VERSION = 6;
@@ -28,6 +29,38 @@ export type SiteIconResult = {
     provider: IconProvider;
     qualityScore: number;
 };
+
+export type SiteIconResolveOptions = {
+    forceRefresh?: boolean;
+    ttlMs?: number;
+    retryMs?: number;
+    timeoutMs?: number;
+    minEdgePx?: number;
+    fastFirst?: boolean;
+    fastTimeoutMs?: number;
+    backgroundUpgrade?: boolean;
+};
+
+type SiteIconCacheAsset = {
+    cacheMode: SiteIconCacheMode;
+    domain: string;
+    updatedAt: number;
+    source: string;
+    provider: IconProvider;
+    qualityScore: number;
+    width: number;
+    height: number;
+    retryAfter?: number;
+    lastError?: string;
+    url?: string;
+    blob?: Blob;
+};
+
+const SITE_ICON_MEMORY_MAX_ENTRIES = 512;
+const siteIconMemoryCache = new Map<string, SiteIconCacheAsset>();
+const siteIconResolveInflight = new Map<string, Promise<SiteIconCacheAsset | null>>();
+const siteIconBlobFetchInflight = new Map<string, Promise<Blob | null>>();
+const siteIconBackgroundRefreshQueued = new Set<string>();
 
 function toRuntimeProvider(provider: IconProvider): SiteIconProvider {
     return provider;
@@ -118,6 +151,157 @@ function getProviderBackoffMs(provider: IconProvider | undefined, error: string,
     return Math.max(SITE_ICON_PROVIDER_BACKOFF_MS, retryMs);
 }
 
+function trimSiteIconMemoryCache(): void {
+    if (siteIconMemoryCache.size <= SITE_ICON_MEMORY_MAX_ENTRIES) return;
+
+    const keep = Array.from(siteIconMemoryCache.entries())
+        .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
+        .slice(0, SITE_ICON_MEMORY_MAX_ENTRIES);
+
+    siteIconMemoryCache.clear();
+    for (const [domain, asset] of keep) {
+        siteIconMemoryCache.set(domain, asset);
+    }
+}
+
+function isUsableMemoryAsset(asset: SiteIconCacheAsset | undefined): asset is SiteIconCacheAsset {
+    if (!asset) return false;
+    if (asset.cacheMode === 'blob') return !!asset.blob;
+    if (asset.cacheMode === 'url') return !!asset.url;
+    return asset.cacheMode === 'miss';
+}
+
+function getSiteIconMemoryAsset(domain: string): SiteIconCacheAsset | null {
+    const asset = siteIconMemoryCache.get(domain);
+    if (!asset) return null;
+    if (isUsableMemoryAsset(asset)) return asset;
+    siteIconMemoryCache.delete(domain);
+    return null;
+}
+
+function rememberSiteIconMemoryAsset(asset: SiteIconCacheAsset): void {
+    if (!asset.domain) return;
+    siteIconMemoryCache.set(asset.domain, asset);
+    trimSiteIconMemoryCache();
+}
+
+function forgetSiteIconMemoryAsset(domain: string): void {
+    siteIconMemoryCache.delete(domain);
+}
+
+function touchSiteIconMemoryRetryLock(
+    domain: string,
+    retryAfter: number,
+    error: string,
+    provider?: IconProvider
+): void {
+    const asset = getSiteIconMemoryAsset(domain);
+    if (!asset) return;
+    rememberSiteIconMemoryAsset({
+        ...asset,
+        retryAfter,
+        lastError: error,
+        provider: provider || asset.provider,
+        updatedAt: Date.now(),
+    });
+}
+
+function createResultFromAsset(
+    asset: SiteIconCacheAsset,
+    ttlMs: number,
+    fromCache: boolean
+): SiteIconResult | null {
+    if (asset.cacheMode === 'miss') return null;
+
+    const edge = Number(asset.qualityScore || Math.min(asset.width || 0, asset.height || 0) || 0);
+    const minEdge = getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
+    const lowQuality = edge > 0 ? edge < minEdge : false;
+    const stale = !asset.updatedAt || (Date.now() - Number(asset.updatedAt || 0) > ttlMs);
+
+    if (asset.cacheMode === 'url') {
+        if (!asset.url) return null;
+        return {
+            url: asset.url,
+            domain: asset.domain,
+            fromCache,
+            objectUrl: false,
+            lowQuality,
+            stale,
+            provider: asset.provider,
+            qualityScore: edge,
+        };
+    }
+
+    if (asset.cacheMode === 'blob') {
+        if (!asset.blob) return null;
+        return {
+            url: URL.createObjectURL(asset.blob),
+            domain: asset.domain,
+            fromCache,
+            objectUrl: true,
+            lowQuality,
+            stale,
+            provider: asset.provider,
+            qualityScore: edge,
+        };
+    }
+
+    return null;
+}
+
+function memoryAssetFromRecord(
+    domain: string,
+    record: SiteIconCacheRecord | undefined,
+    blob?: Blob
+): SiteIconCacheAsset | null {
+    if (!record) return null;
+    const mode = getRecordCacheMode(record);
+    const provider = (record.provider || 'unknown') as IconProvider;
+    const qualityScore = getRecordEdge(record);
+    const width = Number(record.width || qualityScore || 0);
+    const height = Number(record.height || qualityScore || 0);
+    const base = {
+        domain,
+        updatedAt: getRecordUpdatedAt(record),
+        source: String(record.source || ''),
+        provider,
+        qualityScore,
+        width,
+        height,
+        retryAfter: Number.isFinite(Number(record.retryAfter)) ? Number(record.retryAfter) : undefined,
+        lastError: record.lastError,
+    };
+
+    if (mode === 'url') {
+        if (!record.fallbackUrl) return null;
+        return {
+            ...base,
+            cacheMode: 'url',
+            url: record.fallbackUrl,
+        };
+    }
+
+    if (mode === 'blob') {
+        if (!blob) return null;
+        return {
+            ...base,
+            cacheMode: 'blob',
+            blob,
+        };
+    }
+
+    return {
+        ...base,
+        cacheMode: 'miss',
+    };
+}
+
+function releaseSiteIconResultObjectUrl(result: SiteIconResult | null | undefined): void {
+    if (result?.objectUrl && result.url.startsWith('blob:')) {
+        URL.revokeObjectURL(result.url);
+    }
+}
+
 export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
     if (!runtime.siteIcons) {
         runtime.siteIcons = {
@@ -148,6 +332,7 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
             const rec = value as SiteIconCacheRecord | undefined;
             if (!rec || typeof rec !== 'object') {
                 delete runtime.siteIcons.records[domain];
+                forgetSiteIconMemoryAsset(domain);
                 continue;
             }
 
@@ -173,6 +358,7 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
 
             if (poisonedBrowserScheme || poisonedBrowserUrl || poisonedFailedExternal || poisonedMiss || poisonedUnknownThirdParty) {
                 delete runtime.siteIcons.records[domain];
+                forgetSiteIconMemoryAsset(domain);
                 continue;
             }
 
@@ -236,44 +422,40 @@ export async function readCachedSiteIcon(
     const domain = extractSiteDomain(rawUrl);
     if (!domain) return null;
 
+    const memoryAsset = getSiteIconMemoryAsset(domain);
+    if (memoryAsset) {
+        const result = createResultFromAsset(memoryAsset, ttlMs, true);
+        if (result || memoryAsset.cacheMode === 'miss') return result;
+    }
+
     const record = runtime.siteIcons.records[domain];
     if (!record) return null;
+
     const mode = getRecordCacheMode(record);
-    const edge = getRecordEdge(record);
-    const minEdge = getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
-    const lowQuality = edge > 0 ? edge < minEdge : false;
-    const stale = isRecordStale(record, ttlMs);
-    const provider = (record.provider || 'unknown') as IconProvider;
 
     if (mode === 'url') {
         if (!record.fallbackUrl) return null;
-        return {
-            url: record.fallbackUrl,
-            domain,
-            fromCache: true,
-            objectUrl: false,
-            lowQuality,
-            stale,
-            provider,
-            qualityScore: edge,
-        };
+        const asset = memoryAssetFromRecord(domain, record);
+        if (!asset) return null;
+        rememberSiteIconMemoryAsset(asset);
+        return createResultFromAsset(asset, ttlMs, true);
     }
 
-    if (mode !== 'blob' || !record.blobKey) return null;
+    if (mode === 'miss') {
+        const asset = memoryAssetFromRecord(domain, record);
+        if (asset) rememberSiteIconMemoryAsset(asset);
+        return null;
+    }
+
+    if (!record.blobKey) return null;
 
     const blob = await idbGetBlob(record.blobKey);
     if (!blob) return null;
+    const asset = memoryAssetFromRecord(domain, record, blob);
+    if (!asset) return null;
+    rememberSiteIconMemoryAsset(asset);
 
-    return {
-        url: URL.createObjectURL(blob),
-        domain,
-        fromCache: true,
-        objectUrl: true,
-        lowQuality,
-        stale,
-        provider,
-        qualityScore: edge,
-    };
+    return createResultFromAsset(asset, ttlMs, true);
 }
 
 function isSameOriginHttpUrl(rawUrl: string): boolean {
@@ -362,6 +544,20 @@ function writeUrlRecord(
         lastTriedProvider: toRuntimeProvider(payload.provider),
         lastSuccessProvider: toRuntimeProvider(payload.provider),
     };
+
+    rememberSiteIconMemoryAsset({
+        cacheMode: 'url',
+        domain,
+        updatedAt: Date.now(),
+        source: payload.source,
+        provider: payload.provider,
+        qualityScore: payload.qualityScore,
+        width: payload.width,
+        height: payload.height,
+        retryAfter: payload.retryAfter,
+        lastError: payload.error,
+        url: payload.url,
+    });
 }
 
 function writeMissRecord(
@@ -386,6 +582,19 @@ function writeMissRecord(
         providerBackoffUntil: withProviderBackoff(runtime.siteIcons.records[domain], provider, retryAfter),
         lastTriedProvider: provider ? toRuntimeProvider(provider) : undefined,
     };
+
+    rememberSiteIconMemoryAsset({
+        cacheMode: 'miss',
+        domain,
+        updatedAt: Date.now(),
+        source: 'miss',
+        provider: provider || 'unknown',
+        retryAfter,
+        lastError: error,
+        qualityScore: 0,
+        width: 0,
+        height: 0,
+    });
 }
 
 function touchRecordRetryLock(
@@ -418,6 +627,7 @@ export function markSiteIconMiss(
     const existingMode = getRecordCacheMode(existing);
     if (preserveExisting && existing && existingMode === 'blob') {
         touchRecordRetryLock(existing, retryAfter, error, existingProvider);
+        touchSiteIconMemoryRetryLock(domain, retryAfter, error, existingProvider);
         return true;
     }
 
@@ -427,30 +637,41 @@ export function markSiteIconMiss(
 }
 
 async function fetchIconBlob(iconUrl: string): Promise<Blob | null> {
+    const inflight = siteIconBlobFetchInflight.get(iconUrl);
+    if (inflight) return inflight;
+
+    const promise = (async () => {
+        try {
+            const resp = await fetchWithRetry(iconUrl, {cache: 'force-cache', credentials: 'omit'}, {
+                timeoutMs: 4000,
+                retries: 1,
+                retryDelayMs: 300,
+                maxRetryDelayMs: 900,
+                metricName: 'icon.blob.cache',
+            });
+            if (!resp.ok) return null;
+            const blob = await resp.blob();
+            if (!blob || blob.size <= 0) return null;
+            return blob;
+        } catch {
+            return null;
+        }
+    })();
+
+    siteIconBlobFetchInflight.set(iconUrl, promise);
     try {
-        const resp = await fetch(iconUrl, {cache: 'force-cache', credentials: 'omit'});
-        if (!resp.ok) return null;
-        const blob = await resp.blob();
-        if (!blob || blob.size <= 0) return null;
-        return blob;
-    } catch {
-        return null;
+        return await promise;
+    } finally {
+        if (siteIconBlobFetchInflight.get(iconUrl) === promise) {
+            siteIconBlobFetchInflight.delete(iconUrl);
+        }
     }
 }
 
 export async function resolveAndCacheSiteIcon(
     rawUrl: string,
     runtime: RuntimeConfig,
-    options?: {
-        forceRefresh?: boolean;
-        ttlMs?: number;
-        retryMs?: number;
-        timeoutMs?: number;
-        minEdgePx?: number;
-        fastFirst?: boolean;
-        fastTimeoutMs?: number;
-        backgroundUpgrade?: boolean;
-    }
+    options?: SiteIconResolveOptions
 ): Promise<SiteIconResult | null> {
     ensureSiteIconRuntime(runtime);
 
@@ -458,6 +679,67 @@ export async function resolveAndCacheSiteIcon(
     if (!domain) return null;
 
     const ttlMs = options?.ttlMs ?? SITE_ICON_TTL_MS;
+    const backgroundUpgrade = options?.backgroundUpgrade ?? true;
+    const now = Date.now();
+    const record = runtime.siteIcons.records[domain];
+    const recordMode = getRecordCacheMode(record);
+    const cached = await readCachedSiteIcon(rawUrl, runtime, ttlMs);
+    const forceRefresh = !!options?.forceRefresh;
+
+    if (!forceRefresh) {
+        if (recordMode === 'miss' && isRetryLocked(record, now)) {
+            releaseSiteIconResultObjectUrl(cached);
+            return null;
+        }
+        if (recordMode === 'url' && isRetryLocked(record, now) && record?.lastError === 'img_error') {
+            releaseSiteIconResultObjectUrl(cached);
+            return null;
+        }
+        if (cached) {
+            if (backgroundUpgrade && (cached.stale || cached.lowQuality)) {
+                scheduleBackgroundSiteIconRefresh(rawUrl, runtime, options);
+            }
+            return cached;
+        }
+    }
+
+    const inflightKey = domain;
+    let inflight = siteIconResolveInflight.get(inflightKey);
+    if (!inflight) {
+        inflight = resolveAndCacheSiteIconAsset(rawUrl, runtime, options, !!cached);
+        siteIconResolveInflight.set(inflightKey, inflight);
+        void inflight.finally(() => {
+            if (siteIconResolveInflight.get(inflightKey) === inflight) {
+                siteIconResolveInflight.delete(inflightKey);
+            }
+        }).catch(() => null);
+    }
+
+    const asset = await inflight;
+    if (!asset) {
+        return cached;
+    }
+
+    releaseSiteIconResultObjectUrl(cached);
+    const fromCache = asset.cacheMode === 'blob';
+    const result = createResultFromAsset(asset, ttlMs, fromCache);
+    if (!forceRefresh && backgroundUpgrade && result && (result.stale || result.lowQuality)) {
+        scheduleBackgroundSiteIconRefresh(rawUrl, runtime, options);
+    }
+    return result;
+}
+
+async function resolveAndCacheSiteIconAsset(
+    rawUrl: string,
+    runtime: RuntimeConfig,
+    options: SiteIconResolveOptions | undefined,
+    hasCachedFallback: boolean
+): Promise<SiteIconCacheAsset | null> {
+    ensureSiteIconRuntime(runtime);
+
+    const domain = extractSiteDomain(rawUrl);
+    if (!domain) return null;
+
     const retryMs = options?.retryMs ?? SITE_ICON_RETRY_MS;
     const slowTimeoutMs = Number.isFinite(Number(options?.timeoutMs))
         ? Math.max(400, Number(options?.timeoutMs))
@@ -465,34 +747,12 @@ export async function resolveAndCacheSiteIcon(
     const fastFirst = options?.fastFirst ?? true;
     const fastTimeoutMsRaw = Number(options?.fastTimeoutMs ?? 800);
     const fastTimeoutMs = Number.isFinite(fastTimeoutMsRaw) ? Math.max(300, fastTimeoutMsRaw) : 800;
-    const backgroundUpgrade = options?.backgroundUpgrade ?? true;
     const minEdgePx = options?.minEdgePx ?? getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
     const now = Date.now();
     const record = runtime.siteIcons.records[domain];
-    const recordMode = getRecordCacheMode(record);
     const skipProviders = getSkippedProviders(record, now);
-    const cached = await readCachedSiteIcon(rawUrl, runtime, ttlMs);
-    const forceRefresh = !!options?.forceRefresh;
 
-    const releaseCachedIfUnused = () => {
-        if (cached?.objectUrl && cached.url.startsWith('blob:')) {
-            URL.revokeObjectURL(cached.url);
-        }
-    };
-
-    if (!forceRefresh) {
-        if (recordMode === 'miss' && isRetryLocked(record, now)) {
-            return null;
-        }
-        if (recordMode === 'url' && isRetryLocked(record, now) && record?.lastError === 'img_error') {
-            return null;
-        }
-        if (cached) {
-            return cached;
-        }
-    }
-
-    const materializeProbeResult = async (probe: {
+    const materializeProbeAsset = async (probe: {
         url: string;
         source: string;
         provider: IconProvider;
@@ -500,8 +760,9 @@ export async function resolveAndCacheSiteIcon(
         width: number;
         height: number;
         lowQuality: boolean;
-    }): Promise<SiteIconResult> => {
+    }): Promise<SiteIconCacheAsset> => {
         const canPersist = !probe.lowQuality && canFetchToBlob(probe.url, probe.provider);
+        const updatedAt = Date.now();
 
         if (canPersist) {
             const blob = await fetchIconBlob(probe.url);
@@ -518,16 +779,19 @@ export async function resolveAndCacheSiteIcon(
                     providerBackoffUntil: withoutProviderBackoff(runtime.siteIcons.records[domain], probe.provider),
                 });
 
-                return {
-                    url: URL.createObjectURL(blob),
+                const asset: SiteIconCacheAsset = {
+                    cacheMode: 'blob',
                     domain,
-                    fromCache: true,
-                    objectUrl: true,
-                    lowQuality: false,
-                    stale: false,
+                    updatedAt,
+                    source: probe.source,
                     provider: probe.provider,
                     qualityScore: probe.qualityScore,
+                    width: probe.width,
+                    height: probe.height,
+                    blob,
                 };
+                rememberSiteIconMemoryAsset(asset);
+                return asset;
             }
         }
 
@@ -544,22 +808,19 @@ export async function resolveAndCacheSiteIcon(
             providerBackoffUntil: withoutProviderBackoff(runtime.siteIcons.records[domain], probe.provider),
         });
 
-        return {
-            url: probe.url,
+        return getSiteIconMemoryAsset(domain) || {
+            cacheMode: 'url',
             domain,
-            fromCache: false,
-            objectUrl: false,
-            lowQuality: probe.lowQuality,
-            stale: false,
+            updatedAt,
+            source: probe.source,
             provider: probe.provider,
             qualityScore: probe.qualityScore,
+            width: probe.width,
+            height: probe.height,
+            retryAfter: urlRetryAfter,
+            lastError: canPersist ? 'persist_blob_failed' : 'display_only',
+            url: probe.url,
         };
-    };
-
-    const releaseUnusedResultObjectUrl = (result: SiteIconResult | null | undefined) => {
-        if (result?.objectUrl && result.url.startsWith('blob:')) {
-            URL.revokeObjectURL(result.url);
-        }
     };
 
     if (fastFirst) {
@@ -570,27 +831,7 @@ export async function resolveAndCacheSiteIcon(
         });
 
         if (fastProbe) {
-            const fastResult = await materializeProbeResult(fastProbe);
-            releaseCachedIfUnused();
-
-            if (!forceRefresh && backgroundUpgrade && fastProbe.lowQuality) {
-                window.setTimeout(() => {
-                    void resolveAndCacheSiteIcon(rawUrl, runtime, {
-                        forceRefresh: true,
-                        ttlMs,
-                        retryMs,
-                        timeoutMs: slowTimeoutMs,
-                        minEdgePx,
-                        fastFirst: false,
-                        fastTimeoutMs,
-                        backgroundUpgrade: false,
-                    })
-                        .then((result) => releaseUnusedResultObjectUrl(result))
-                        .catch(() => null);
-                }, 0);
-            }
-
-            return fastResult;
+            return await materializeProbeAsset(fastProbe);
         }
     }
 
@@ -601,13 +842,34 @@ export async function resolveAndCacheSiteIcon(
     });
 
     if (!probe) {
-        if (cached) return cached;
-        writeMissRecord(runtime, domain, now + retryMs, 'probe_failed', record?.provider as IconProvider | undefined);
-        releaseCachedIfUnused();
+        if (!hasCachedFallback) {
+            writeMissRecord(runtime, domain, now + retryMs, 'probe_failed', record?.provider as IconProvider | undefined);
+        }
         return null;
     }
 
-    const finalResult = await materializeProbeResult(probe);
-    releaseCachedIfUnused();
-    return finalResult;
+    return await materializeProbeAsset(probe);
+}
+
+function scheduleBackgroundSiteIconRefresh(
+    rawUrl: string,
+    runtime: RuntimeConfig,
+    options?: SiteIconResolveOptions
+): void {
+    if (typeof window === 'undefined') return;
+    const domain = extractSiteDomain(rawUrl);
+    if (!domain || siteIconBackgroundRefreshQueued.has(domain)) return;
+
+    siteIconBackgroundRefreshQueued.add(domain);
+    window.setTimeout(() => {
+        void resolveAndCacheSiteIcon(rawUrl, runtime, {
+            ...options,
+            forceRefresh: true,
+            fastFirst: false,
+            backgroundUpgrade: false,
+        })
+            .then((result) => releaseSiteIconResultObjectUrl(result))
+            .catch(() => null)
+            .finally(() => siteIconBackgroundRefreshQueued.delete(domain));
+    }, 0);
 }

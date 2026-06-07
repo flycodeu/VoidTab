@@ -6,9 +6,12 @@ import {
 } from '@phosphor-icons/vue';
 // 1. 引入统一存储工具
 import {tempStorage} from '../../../../core/storage/tempStorage';
+import {fetchJsonWithRetry} from '../../../../shared/utils/network';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const props = defineProps<{ show: boolean; initialTrends: any[] }>();
 const emit = defineEmits(['close', 'refresh']);
+const toast = useToast();
 
 const currentTrends = ref(props.initialTrends);
 const isLocalLoading = ref(false);
@@ -16,6 +19,7 @@ const isLocalLoading = ref(false);
 const selectedLang = ref('');
 const sortBy = ref('stars');
 const languages = ['TypeScript', 'JavaScript', 'Python', 'Go', 'Rust', 'Java'];
+type GitHubSearchResponse = {items?: any[]};
 
 // 弹窗内的筛选逻辑
 const applyFilter = async () => {
@@ -24,11 +28,39 @@ const applyFilter = async () => {
   if (selectedLang.value) q += ` language:${selectedLang.value}`;
 
   try {
-    const res = await fetch(`https://api.github.com/search/repositories?q=${q}&sort=${sortBy.value}&order=desc&per_page=20`);
-    const data = await res.json();
+    const params = new URLSearchParams({
+      q,
+      sort: sortBy.value,
+      order: 'desc',
+      per_page: '20',
+    });
+    const cache = tempStorage.get('github');
+    const data = await fetchJsonWithRetry<GitHubSearchResponse>(
+        `https://api.github.com/search/repositories?${params.toString()}`,
+        {
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/vnd.github+json',
+          },
+        },
+        {
+          timeoutMs: 10000,
+          retries: 2,
+          retryDelayMs: 600,
+          maxRetryDelayMs: 5000,
+          metricName: 'github.trending.filter',
+          fallbackName: 'github.trending.filter.cache',
+          fallbackData: () => {
+            const fallbackItems = currentTrends.value.length
+                ? currentTrends.value
+                : cache?.data || props.initialTrends;
+            return fallbackItems?.length ? {items: fallbackItems} : undefined;
+          },
+        }
+    );
     currentTrends.value = data.items || [];
-  } catch (e) {
-    console.error("Filter error");
+  } catch {
+    toast.error('筛选 GitHub 趋势失败，请稍后重试');
   } finally {
     isLocalLoading.value = false;
   }

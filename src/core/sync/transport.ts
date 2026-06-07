@@ -1,8 +1,12 @@
+import {fetchWithRetry} from '../../shared/utils/network';
+
 export interface HttpRequest {
     url: string;
     method: string;
     headers?: Record<string, string>;
     body?: string;
+    timeoutMs?: number;
+    retries?: number;
 }
 
 export interface HttpResponse {
@@ -24,10 +28,17 @@ export interface HttpTransport {
  */
 export class FetchTransport implements HttpTransport {
     async request(req: HttpRequest): Promise<HttpResponse> {
-        const res = await fetch(req.url, {
+        const res = await fetchWithRetry(req.url, {
             method: req.method,
             headers: req.headers,
             body: req.body
+        }, {
+            timeoutMs: req.timeoutMs ?? 12000,
+            retries: req.retries ?? 2,
+            retryDelayMs: 400,
+            metricName: `sync.transport.${req.method.toLowerCase()}`,
+            fallbackName: `sync.transport.${req.method.toLowerCase()}.unavailable`,
+            fallback: () => new Response('', {status: 503, statusText: 'Service Unavailable'}),
         });
 
         const headersObj: Record<string, string> = {};

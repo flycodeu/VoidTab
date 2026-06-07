@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
-import {PhGear, PhSquaresFour} from '@phosphor-icons/vue';
-import * as PhIcons from '@phosphor-icons/vue';
+import {PhGear} from '@phosphor-icons/vue';
+import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
 
 const props = defineProps<{
   show: boolean;
@@ -142,10 +142,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
+  <nav
       v-if="show"
       ref="barRef"
       class="fixed bottom-0 left-0 right-0 z-50 lg:hidden flex items-center justify-between px-3 border-t border-white/10"
+      aria-label="移动分组导航"
       style="
       background: var(--modal-bg);
       backdrop-filter: blur(25px);
@@ -157,6 +158,7 @@ onUnmounted(() => {
         ref="scrollerRef"
         class="flex-1 min-w-0 pr-2"
         :class="shouldFit ? '' : 'overflow-x-auto overflow-y-hidden no-scrollbar'"
+        aria-label="移动分组列表"
         style="
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-x: contain;
@@ -165,6 +167,7 @@ onUnmounted(() => {
     >
       <div class="flex items-center gap-2" :class="shouldFit ? 'w-full' : 'flex-nowrap w-max'">
         <button
+            type="button"
             v-for="group in groups"
             :key="group.id"
             @click="emit('update:activeGroupId', group.id)"
@@ -175,11 +178,14 @@ onUnmounted(() => {
               ? 'bg-white/10 text-[var(--accent-color)] shadow-sm border-white/5'
               : 'text-[var(--text-secondary)] opacity-60 active:opacity-100'
           ]"
+            :aria-label="`切换到分组：${group.title}，${group.items?.length || 0} 个项目`"
+            :aria-current="activeGroupId === group.id ? 'page' : undefined"
         >
           <component
-              :is="(PhIcons as any)['Ph' + group.icon] || PhSquaresFour"
+              :is="resolvePhosphorIcon(group.icon, 'SquaresFour')"
               size="20"
               :weight="activeGroupId === group.id ? 'fill' : 'regular'"
+              aria-hidden="true"
           />
 
           <span class="text-[10px] font-medium mt-0.5 truncate" :class="shouldFit ? 'max-w-[6.5em]' : 'max-w-[5.5em]'">
@@ -189,6 +195,7 @@ onUnmounted(() => {
           <span
               v-if="group.items?.length"
               class="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full bg-current opacity-40"
+              aria-hidden="true"
           />
         </button>
       </div>
@@ -196,13 +203,16 @@ onUnmounted(() => {
 
     <div class="pl-2 border-l border-white/10 ml-1">
       <button
+          type="button"
           @click="emit('openSettings')"
           class="p-3 rounded-full bg-white/5 text-[var(--text-primary)] active:scale-90 transition-transform border border-white/5"
+          aria-label="打开设置"
+          title="打开设置"
       >
-        <PhGear size="22" weight="fill"/>
+        <PhGear size="22" weight="fill" aria-hidden="true"/>
       </button>
     </div>
-  </div>
+  </nav>
 </template>
 
 <style scoped>

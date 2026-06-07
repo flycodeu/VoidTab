@@ -6,11 +6,13 @@ import {
   PhWarningCircle, PhHourglassHigh, PhCode, PhShieldCheck, PhCopy
 } from '@phosphor-icons/vue'
 import {useConfigStore} from '../../../../stores/useConfigStore'
+import {useToast} from '../../../../shared/composables/useToast'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits(['close'])
 
 const store = useConfigStore()
+const toast = useToast()
 
 //   Config Safety
 if (!store.config.runtime) (store.config as any).runtime = {}
@@ -115,8 +117,8 @@ const pasteFromClipboard = async () => {
   try {
     const text = await navigator.clipboard.readText()
     if (text) rawToken.value = text.trim()
-  } catch (e) {
-    console.error(e)
+  } catch {
+    toast.error('读取剪贴板失败，请检查浏览器权限')
   }
 }
 

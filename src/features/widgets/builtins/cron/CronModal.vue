@@ -171,7 +171,7 @@ const generateCron = () => {
 
 const parseCronToUI = (val: string) => {
   // 你目前写的是“简化版”，这里保留：至少别把错误状态卡死
-  console.log(val);
+  void val;
   inputError.value = '';
 };
 

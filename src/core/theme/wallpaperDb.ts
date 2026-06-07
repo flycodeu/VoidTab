@@ -44,11 +44,11 @@ export const wallpaperDb = {
     async delete(): Promise<void> {
         const db = await openDB();
         return new Promise((resolve, reject) => {
-            console.log(reject)
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             store.delete(KEY);
             tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
         });
     }
 };

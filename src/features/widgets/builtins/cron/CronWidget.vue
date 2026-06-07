@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import {computed, ref, watch, onMounted, onUnmounted} from 'vue';
+import {computed, ref, watch} from 'vue';
 import type {SiteItem} from '../../../../core/config/types';
 import {PhGraph, PhTimer, PhHash, PhHourglass} from '@phosphor-icons/vue';
 import CronModal from './CronModal.vue';
 import parser from 'cron-parser';
 import {useDebounceFn} from '@vueuse/core';
 import {useConfigStore} from '../../../../stores/useConfigStore';
+import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
@@ -58,7 +59,6 @@ const cronExpression = computed<string>({
 const showModal = ref(false);
 const nextRunTime = ref('--:--:--');
 const timeToNext = ref('--:--:--');
-let timer: number | null = null;
 
 const calculateNextRun = () => {
   try {
@@ -89,13 +89,7 @@ const calculateNextRun = () => {
 
 watch(cronExpression, calculateNextRun);
 
-onMounted(() => {
-  calculateNextRun();
-  timer = setInterval(calculateNextRun, 1000);
-});
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
+useVisibilityInterval(calculateNextRun, 1000, {immediate: true});
 
 const openModal = () => {
   if (props.isEditMode) return;

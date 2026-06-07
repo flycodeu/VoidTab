@@ -1,4 +1,5 @@
 // src/utils/webdav.ts
+import {fetchWithRetry} from './network';
 
 export interface WebDavConfig {
     // 建议用户填：https://dav.jianguoyun.com/dav/
@@ -90,6 +91,7 @@ export const buildFullPath = (config: WebDavConfig, filename = ''): string => {
  * 增加了 credentials: 'omit' 以解决插件端 401 弹窗死循环
  */
 const webdavFetch = async (config: WebDavConfig, url: string, init: RequestInit) => {
+    const method = (init.method || 'GET').toUpperCase();
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', authHeader(config));
 
@@ -98,12 +100,20 @@ const webdavFetch = async (config: WebDavConfig, url: string, init: RequestInit)
         headers.set('Content-Type', 'application/xml; charset=utf-8');
     }
 
-    return fetch(url, {
+    return fetchWithRetry(url, {
         ...init,
         headers,
         // 🔥 关键点：防止浏览器弹出原生登录框，并允许跨域携带 Auth 头
         credentials: 'omit',
         mode: 'cors'
+    }, {
+        timeoutMs: 15000,
+        retries: 2,
+        retryDelayMs: 500,
+        maxRetryDelayMs: 5000,
+        metricName: `webdav.${method.toLowerCase()}`,
+        fallbackName: `webdav.${method.toLowerCase()}.unavailable`,
+        fallback: () => new Response('', {status: 503, statusText: 'Service Unavailable'}),
     });
 };
 
@@ -131,8 +141,6 @@ export const checkWebDavConnection = async (config: WebDavConfig): Promise<boole
         await ensureWebDavFolder(config);
 
         const targetUrl = buildFullPath(config, ''); // .../voidtab/
-        console.log(`[WebDAV] 测试连接 URL: ${targetUrl}`);
-
         const body = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:">
   <d:prop><d:resourcetype/></d:prop>
@@ -150,10 +158,8 @@ export const checkWebDavConnection = async (config: WebDavConfig): Promise<boole
         if (resp.status === 207) return true;
         if (resp.ok) return true;
 
-        console.warn('[WebDAV] PROPFIND failed:', resp.status);
         return false;
-    } catch (e) {
-        console.error('[WebDAV] 连接失败:', e);
+    } catch {
         return false;
     }
 };
@@ -168,8 +174,6 @@ export const uploadToWebDav = async (
         await ensureWebDavFolder(config);
 
         const targetUrl = buildFullPath(config, filename);
-        console.log(`[WebDAV] 上传 URL: ${targetUrl}`);
-
         const resp = await webdavFetch(config, targetUrl, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json; charset=utf-8'},
@@ -177,8 +181,7 @@ export const uploadToWebDav = async (
         });
 
         return resp.ok || resp.status === 201 || resp.status === 204;
-    } catch (e) {
-        console.error('[WebDAV] 上传失败:', e);
+    } catch {
         return false;
     }
 };
@@ -190,17 +193,13 @@ export const downloadFromWebDav = async (
 ): Promise<any | null> => {
     try {
         const targetUrl = buildFullPath(config, filename);
-        console.log(`[WebDAV] 下载 URL: ${targetUrl}`);
-
         const resp = await webdavFetch(config, targetUrl, {method: 'GET'});
 
         if (!resp.ok) {
-            console.warn('[WebDAV] 下载失败 status=', resp.status);
             return null;
         }
         return await resp.json();
-    } catch (e) {
-        console.error('[WebDAV] 下载失败:', e);
+    } catch {
         return null;
     }
 };

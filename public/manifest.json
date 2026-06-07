@@ -9,11 +9,9 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "contextMenus",
-    "favicon"
+    "contextMenus"
   ],
   "host_permissions": [
-    "<all_urls>",
     "https://geocoding-api.open-meteo.com/*",
     "https://api.open-meteo.com/*",
     "https://*.jianguoyun.com/*"
@@ -37,7 +35,8 @@
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_title": "VoidTab"
   },
   "minimum_edge_version": "114.0.0.0"
 }

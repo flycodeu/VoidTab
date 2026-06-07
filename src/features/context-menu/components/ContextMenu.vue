@@ -2,7 +2,7 @@
 import {computed, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
-import {useDeleteConfirm} from '../../confirm-delete/composables/useDeleteConfirm.ts';
+import {useToast} from '../../../shared/composables/useToast.ts';
 
 // 组件
 import ContextMenuPanel from './ContextMenuPanel.vue';
@@ -12,7 +12,7 @@ import {PhTrash} from '@phosphor-icons/vue';
 
 const store = useConfigStore();
 const ui = useUiStore();
-useDeleteConfirm();
+const toast = useToast();
 const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | undefined;
 
 // 菜单容器 Ref
@@ -39,12 +39,59 @@ type DeleteTarget =
 const showDeleteModal = ref(false);
 const deleteTarget = ref<DeleteTarget>(null);
 
+type DeleteSnapshot =
+    | { type: 'site' | 'widget'; groupId: string; index: number; item: any; title: string }
+    | { type: 'group'; index: number; group: any; title: string };
+
+const cloneValue = <T,>(value: T): T => {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+};
+
+const restoreDeleted = (snapshot: DeleteSnapshot) => {
+  if (snapshot.type === 'group') {
+    if (store.config.layout.some((group: any) => group.id === snapshot.group.id)) {
+      toast.info(`「${snapshot.title}」已经在列表中。`);
+      return;
+    }
+    const index = Math.max(0, Math.min(snapshot.index, store.config.layout.length));
+    store.config.layout.splice(index, 0, cloneValue(snapshot.group));
+    void store.saveConfig();
+    toast.success(`已恢复分组「${snapshot.title}」。`);
+    ui.announce(`已恢复分组${snapshot.title}`);
+    return;
+  }
+
+  const group = store.config.layout.find((item: any) => item.id === snapshot.groupId);
+  if (!group) {
+    toast.error('原分组不存在，无法撤销这次移除。');
+    ui.announce('原分组不存在，无法撤销这次移除');
+    return;
+  }
+  if (group.items.some((item: any) => item.id === snapshot.item.id)) {
+    toast.info(`「${snapshot.title}」已经在分组中。`);
+    return;
+  }
+  const index = Math.max(0, Math.min(snapshot.index, group.items.length));
+  group.items.splice(index, 0, cloneValue(snapshot.item));
+  void store.saveConfig();
+  toast.success(`已恢复「${snapshot.title}」。`);
+  ui.announce(`已恢复${snapshot.type === 'widget' ? '组件' : '网站'}${snapshot.title}`);
+};
+
 const openDeleteModal = () => {
   if (!ui.contextMenu?.show) return;
 
   const {type, groupId, item} = ui.contextMenu;
 
   if (type === 'site' || type === 'widget') {
+    if (!groupId || !item?.id) {
+      toast.warning('当前项目缺少必要信息，无法删除。');
+      ui.announce('当前项目缺少必要信息，无法删除');
+      ui.closeContextMenu();
+      return;
+    }
+
     deleteTarget.value = {
       type,
       groupId,
@@ -65,19 +112,57 @@ const openDeleteModal = () => {
 };
 
 const confirmDelete = () => {
-  if (!deleteTarget.value) {
+  const target = deleteTarget.value;
+  if (!target) {
     showDeleteModal.value = false;
     return;
   }
 
-  if (deleteTarget.value.type === 'site' || deleteTarget.value.type === 'widget') {
-    store.removeSite(deleteTarget.value.groupId, deleteTarget.value.siteId);
-  } else if (deleteTarget.value.type === 'group') {
-    store.removeGroup(deleteTarget.value.groupId);
+  let snapshot: DeleteSnapshot | null = null;
+
+  if (target.type === 'site' || target.type === 'widget') {
+    const group = store.config.layout.find((item: any) => item.id === target.groupId);
+    const index = group?.items.findIndex((item: any) => item.id === target.siteId) ?? -1;
+    const item = index >= 0 ? group?.items[index] : null;
+    if (group && item) {
+      snapshot = {
+        type: target.type,
+        groupId: target.groupId,
+        index,
+        item: cloneValue(item),
+        title: item.title || (target.type === 'widget' ? item.widgetType || '未命名组件' : '未命名'),
+      };
+      store.removeSite(target.groupId, target.siteId);
+    }
+  } else if (target.type === 'group') {
+    const index = store.config.layout.findIndex((group: any) => group.id === target.groupId);
+    const group = index >= 0 ? store.config.layout[index] : null;
+    if (group) {
+      snapshot = {
+        type: 'group',
+        index,
+        group: cloneValue(group),
+        title: group.title || '未命名分组',
+      };
+      store.removeGroup(target.groupId);
+    }
   }
 
   showDeleteModal.value = false;
   deleteTarget.value = null;
+
+  if (snapshot) {
+    void store.saveConfig();
+    const label = snapshot.type === 'group' ? '分组' : snapshot.type === 'widget' ? '组件' : '网站';
+    toast.warning(`已移除${label}「${snapshot.title}」。`, {
+      duration: 6000,
+      action: {
+        label: '撤销',
+        handler: () => restoreDeleted(snapshot),
+      },
+    });
+    ui.announce(`已移除${label}${snapshot.title}，可在通知中选择撤销`);
+  }
 };
 
 const cancelDelete = () => {
@@ -231,7 +316,7 @@ const handleOpenDevTools = () => {
 const deleteTitle = computed(() => '确认删除？');
 const deleteMessage = computed(() => {
   const t = deleteTarget.value?.type === 'group' ? '分组' : deleteTarget.value?.type === 'widget' ? '组件' : '图标';
-  return ['删除后无法恢复，', `确定要移除这个${t}吗？`];
+  return ['确认后会先移出当前列表，', `你可以在通知中点击撤销恢复这个${t}。`];
 });
 
 const handleClickOutside = (event: Event) => {

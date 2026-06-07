@@ -70,8 +70,7 @@ export const parseBookmarkContent = (htmlContent: string): ImportResult => {
             totalCount: bookmarkCount
         };
 
-    } catch (e) {
-        console.error('Bookmark parsing failed:', e);
+    } catch {
         return {success: false, groups: [], totalCount: 0, message: '文件解析发生错误'};
     }
 };

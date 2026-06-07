@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref, nextTick, onMounted, computed} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
+import {fetchWithRetry} from '../../../shared/utils/network';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
@@ -454,7 +455,7 @@ const handleAi = async (args: string[]) => {
 
     const contextToSend = aiContext.value.slice(-6);
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`},
       body: JSON.stringify({
@@ -465,6 +466,13 @@ const handleAi = async (args: string[]) => {
         ],
         stream: true
       })
+    }, {
+      timeoutMs: 30000,
+      retries: 1,
+      retryDelayMs: 800,
+      maxRetryDelayMs: 3000,
+      metricName: 'terminal.ai.stream',
+      fallbackName: 'terminal.ai.unavailable',
     });
 
     if (!response.ok) throw new Error(`API Error: ${response.status}`);

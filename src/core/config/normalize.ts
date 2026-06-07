@@ -146,6 +146,8 @@ function normalizeProviderStats(value: any): Partial<Record<SiteIconProvider, Si
 // 核心修改：同时处理 Site 和 Widget 的清洗逻辑
 function normalizeItem(rawItem: any): SiteItem {
     const kind = (rawItem?.kind === 'widget' || rawItem?.kind === 'site') ? rawItem.kind : 'site';
+    const w = kind === 'widget' ? clamp(rawItem?.w, 1, 4, 2) : 1;
+    const h = kind === 'widget' ? clamp(rawItem?.h, 1, 4, 2) : 1;
 
     const item: SiteItem = {
         id: String(rawItem?.id ?? Date.now()),
@@ -157,8 +159,8 @@ function normalizeItem(rawItem: any): SiteItem {
         icon: rawItem?.icon,
 
         kind,
-        w: Number(rawItem?.w) || (kind === 'widget' ? 2 : 1),
-        h: Number(rawItem?.h) || (kind === 'widget' ? 2 : 1),
+        w,
+        h,
 
         //  站点扩展字段要保留
         remark: typeof rawItem?.remark === 'string' ? rawItem.remark : '',

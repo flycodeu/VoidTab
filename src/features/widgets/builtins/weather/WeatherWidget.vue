@@ -7,9 +7,12 @@ import {
 } from "@phosphor-icons/vue";
 //  1. 引入统一存储
 import {tempStorage} from '../../../../core/storage/tempStorage';
+import {fetchJsonWithRetry} from '../../../../shared/utils/network';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const WeatherDetailModal = defineAsyncComponent(() => import("./WeatherDetailModal.vue"));
 const props = defineProps<{ item: SiteItem }>();
+const toast = useToast();
 
 
 // ================= 配置 =================
@@ -35,6 +38,12 @@ const weatherCodeMap: Record<number, { icon: any; label: string; bgClass: string
   99: {icon: PhLightning, label: "雷雨", bgClass: "bg-gradient-to-br from-purple-500 to-indigo-600"},
 };
 
+type ReverseGeocodeResponse = {
+  city?: string;
+  locality?: string;
+  principalSubdivision?: string;
+};
+
 const getWInfo = (code: number) => {
   if (code >= 51 && code <= 67)
     return {icon: PhCloudRain, label: "雨", bgClass: "bg-gradient-to-br from-blue-600 to-blue-800"};
@@ -43,23 +52,32 @@ const getWInfo = (code: number) => {
   return weatherCodeMap[code] || weatherCodeMap[0];
 };
 
-async function fetchJson(url: string, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {signal: controller.signal});
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    return await res.json();
-  } finally {
-    clearTimeout(t);
-  }
+async function fetchJson<T = any>(
+    url: string,
+    timeoutMs = 8000,
+    metricName = 'weather.api',
+    fallbackData?: () => T | undefined,
+    fallbackName?: string
+) {
+  return await fetchJsonWithRetry<T>(url, {cache: 'no-store'}, {
+    timeoutMs,
+    retries: 2,
+    retryDelayMs: 450,
+    maxRetryDelayMs: 3500,
+    metricName,
+    fallbackName,
+    fallbackData: fallbackData ? () => fallbackData() : undefined,
+  });
 }
 
-async function reverseGeocode(lat: number, lon: number) {
+async function reverseGeocode(lat: number, lon: number, fallbackCity?: string) {
   try {
-    const j = await fetchJson(
+    const j = await fetchJson<ReverseGeocodeResponse>(
         `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`,
-        6000
+        6000,
+        'weather.reverseGeocode',
+        () => fallbackCity ? {city: fallbackCity} : undefined,
+        'weather.cityCache'
     );
     const city = j.city || j.locality || j.principalSubdivision;
     if (city) return String(city).replace("市", "").replace("区", "");
@@ -74,7 +92,6 @@ const fetchData = async () => {
   //  2. 优先尝试从统一缓存读取 (即使定位还没完成，先显示上次缓存的位置)
   const cache = tempStorage.get('weather');
   if (cache && tempStorage.isValid(cache.ts, CACHE_TIME)) {
-    console.log('[Weather] Hit unified cache');
     weatherData.value = cache.data;
     locationName.value = cache.city || "未知位置";
     isLoading.value = false;
@@ -99,14 +116,29 @@ const fetchData = async () => {
   }
 
   try {
+    const cachedWeather = cache?.data;
     const results = await Promise.allSettled([
       fetchJson(
           `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&hourly=temperature_2m,weather_code&timezone=auto`,
-          10000
+          10000,
+          'weather.forecast',
+          () => cachedWeather?.current ? {
+            current: cachedWeather.current,
+            daily: cachedWeather.daily,
+            hourly: cachedWeather.hourly,
+            __fallback: true,
+          } : undefined,
+          'weather.cache.forecast'
       ),
       fetchJson(
           `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi`,
-          10000
+          10000,
+          'weather.airQuality',
+          () => cachedWeather ? {
+            current: {us_aqi: cachedWeather.aqi ?? 50},
+            __fallback: true,
+          } : undefined,
+          'weather.cache.airQuality'
       ),
     ]);
 
@@ -115,7 +147,7 @@ const fetchData = async () => {
 
     if (!wJson?.current) throw new Error("weather api failed");
 
-    const cityName = await reverseGeocode(lat, lon);
+    const cityName = await reverseGeocode(lat, lon, cache?.city);
     locationName.value = cityName;
 
     const info = getWInfo(wJson.current.weather_code);
@@ -129,15 +161,22 @@ const fetchData = async () => {
     weatherData.value = payload;
 
     //  3. 写入统一缓存
-    tempStorage.set('weather', {
+    const usedFallbackData = Boolean(wJson.__fallback || airJson?.__fallback);
+    if (!usedFallbackData) tempStorage.set('weather', {
       data: payload,
       city: cityName,
       ts: Date.now()
     });
 
-  } catch (e) {
-    console.error("Weather Fetch Error", e);
-    locationName.value = "网络错误";
+  } catch {
+    if (cache?.data) {
+      weatherData.value = cache.data;
+      locationName.value = cache.city || "离线缓存";
+      toast.warning('天气更新失败，已使用离线缓存');
+    } else {
+      locationName.value = "网络错误";
+      toast.error('天气数据加载失败，请稍后重试');
+    }
   } finally {
     isLoading.value = false;
   }

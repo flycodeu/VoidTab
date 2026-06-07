@@ -5,6 +5,8 @@ import {
   PhX, PhBroom, PhBracketsCurly, PhClipboardText,
   PhArrowsLeftRight, PhPaintBucket
 } from '@phosphor-icons/vue';
+import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
+import {useToast} from '../../../../shared/composables/useToast';
 
 defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
@@ -13,6 +15,7 @@ const emit = defineEmits(['close']);
 import { useConfigStore } from '../../../../stores/useConfigStore';
 
 const store = useConfigStore();
+const toast = useToast();
 const content = computed<string>({
   get: () => store.config.runtime.terminal_buffer.buffer,
   set: (v) => (store.config.runtime.terminal_buffer.buffer = v),
@@ -24,6 +27,7 @@ const currentTheme = computed<string>({
 });
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const statusMsg = ref('READY');
+const showClearConfirm = ref(false);
 
 // === 主题定义 ===
 const themes = [
@@ -80,16 +84,26 @@ const toggleBase64 = () => {
 
 // 3. 复制全部
 const copyAll = async () => {
-  await navigator.clipboard.writeText(content.value);
-  showStatus('COPIED ALL');
+  try {
+    await navigator.clipboard.writeText(content.value);
+    showStatus('COPIED ALL');
+    toast.success('缓冲区内容已复制');
+  } catch {
+    showStatus('ERR: COPY FAIL');
+    toast.error('复制失败，请检查浏览器权限');
+  }
 };
 
 // 4. 清空
 const clearAll = () => {
-  if (confirm('Clear buffer? This cannot be undone.')) {
-    content.value = '';
-    showStatus('BUFFER CLEARED');
-  }
+  showClearConfirm.value = true;
+};
+
+const confirmClearAll = () => {
+  showClearConfirm.value = false;
+  content.value = '';
+  showStatus('BUFFER CLEARED');
+  toast.success('缓冲区已清空');
 };
 
 // === 键盘交互逻辑 ===
@@ -219,6 +233,17 @@ onMounted(() => {
       </div>
     </div>
   </Transition>
+
+  <ConfirmDialog
+      :show="showClearConfirm"
+      title="清空缓冲区？"
+      :message="['这会删除当前缓冲区内容。', '此操作不可撤销。']"
+      confirmText="确认清空"
+      cancelText="取消"
+      :danger="true"
+      @confirm="confirmClearAll"
+      @cancel="showClearConfirm = false"
+  />
 </template>
 
 <style scoped>

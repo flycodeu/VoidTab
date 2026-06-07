@@ -24,6 +24,7 @@ export interface SiteItem {
 
 
     remark?: string;          // 备注文字
+    tags?: string[];
     createdAt?: number;       // 可选：创建时间（便于排序/管理）
 
     // --- 组件字段 ---

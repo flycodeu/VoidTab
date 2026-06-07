@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useConfigStore } from '../../../../stores/useConfigStore.ts';
-import * as PhIcons from '@phosphor-icons/vue';
 import { PhTrash } from '@phosphor-icons/vue';
+import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 
 const store = useConfigStore();
 const newEngineForm = ref({ name: '', url: '' });
@@ -39,7 +39,7 @@ const handleAddEngine = () => {
           class="flex items-center justify-between p-3 rounded-xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)]"
       >
         <div class="flex items-center gap-2">
-          <component :is="(PhIcons as any)['Ph' + eng.icon] || PhIcons.PhGlobe" size="18" class="text-[var(--accent-color)]"/>
+          <component :is="resolvePhosphorIcon(eng.icon, 'Globe')" size="18" class="text-[var(--accent-color)]"/>
           <span class="text-sm font-bold ml-2">{{ eng.name }}</span>
         </div>
 

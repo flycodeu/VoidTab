@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
-import * as PhIcons from '@phosphor-icons/vue';
 import {PhMagnifyingGlass, PhWarningCircle} from '@phosphor-icons/vue';
+import {resolvePhosphorIcon} from '../../icons/phosphorIconMap';
 
 const props = defineProps<{
   modelValue: string;
@@ -13,6 +13,10 @@ const emit = defineEmits<{
 }>();
 
 const searchQuery = ref('');
+const idSuffix = Math.random().toString(36).slice(2);
+const pickerLabelId = `icon-picker-label-${idSuffix}`;
+const searchInputId = `icon-picker-search-${idSuffix}`;
+const iconResultsId = `icon-picker-results-${idSuffix}`;
 
 const filteredIcons = computed(() => {
   const query = searchQuery.value.toLowerCase().trim();
@@ -21,31 +25,37 @@ const filteredIcons = computed(() => {
 });
 
 const getIconComp = (name: string) => {
-  const compName = 'Ph' + name;
-  return (PhIcons as any)[compName] || PhIcons.PhQuestion;
+  return resolvePhosphorIcon(name, 'Question');
 };
 </script>
 
 <template>
-  <div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="flex flex-col h-full gap-3 overflow-hidden" role="group" :aria-labelledby="pickerLabelId">
+    <span :id="pickerLabelId" class="sr-only">选择分类图标</span>
 
     <div class="flex-shrink-0 relative group pt-1">
       <div class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] mt-0.5 pointer-events-none">
-        <PhMagnifyingGlass size="14" weight="bold"/>
+        <PhMagnifyingGlass size="14" weight="bold" aria-hidden="true"/>
       </div>
       <input
+          :id="searchInputId"
           v-model="searchQuery"
           type="text"
           placeholder="搜索图标..."
+          aria-label="搜索分类图标"
+          :aria-controls="iconResultsId"
+          autocomplete="off"
           class="w-full bg-black/5 dark:bg-white/5 border border-transparent focus:border-[var(--accent-color)] rounded-xl py-2.5 pl-9 pr-3 text-xs outline-none transition-all placeholder:text-[var(--text-tertiary)]"
           style="color: var(--modal-text);"
       />
     </div>
 
     <div
+        :id="iconResultsId"
         class="flex-1 overflow-y-auto min-h-0 custom-scrollbar pr-2 border border-black/5 dark:border-white/5 rounded-xl p-2 bg-black/[0.02] dark:bg-white/[0.02]">
       <div class="grid grid-cols-7 gap-2">
         <button
+            type="button"
             v-for="icon in filteredIcons"
             :key="icon"
             @click="emit('update:modelValue', icon)"
@@ -56,13 +66,15 @@ const getIconComp = (name: string) => {
               : 'border-transparent text-[var(--text-secondary)] hover:bg-black/10 dark:hover:bg-white/10 hover:scale-110'
           ]"
             :title="icon"
+            :aria-label="modelValue === icon ? `当前图标：${icon}` : `选择图标：${icon}`"
+            :aria-pressed="modelValue === icon"
         >
-          <component :is="getIconComp(icon)" size="24" :weight="modelValue === icon ? 'fill' : 'duotone'"/>
+          <component :is="getIconComp(icon)" size="24" :weight="modelValue === icon ? 'fill' : 'duotone'" aria-hidden="true"/>
         </button>
 
-        <div v-if="filteredIcons.length === 0" class="col-span-7 py-10 flex flex-col items-center opacity-50 gap-2">
-          <PhWarningCircle size="24"/>
-          <span class="text-xs">未找到 "{ searchQuery }"</span>
+        <div v-if="filteredIcons.length === 0" class="col-span-7 py-10 flex flex-col items-center opacity-50 gap-2" role="status">
+          <PhWarningCircle size="24" aria-hidden="true"/>
+          <span class="text-xs">未找到 "{{ searchQuery }}"</span>
         </div>
       </div>
     </div>

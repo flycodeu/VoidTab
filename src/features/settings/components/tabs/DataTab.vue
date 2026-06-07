@@ -16,8 +16,10 @@ import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
+const toast = useToast();
 const fileInput = ref<HTMLInputElement | null>(null);
 const bookmarkInput = ref<HTMLInputElement | null>(null);
 
@@ -30,6 +32,8 @@ const opResult = ref<{ success: boolean; msg: string } | null>(null);
 
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
+  if (success) toast.success(msg);
+  else toast.error(msg);
   setTimeout(() => {
     opResult.value = null;
   }, 3000);
@@ -61,9 +65,8 @@ const handleExportHtml = () => {
     setTimeout(() => URL.revokeObjectURL(url), 0);
 
     showFeedback(true, '已导出浏览器书签 HTML（可在 Edge/Chrome 导入）');
-  } catch (e) {
-    console.error(e);
-    showFeedback(false, '导出 HTML 失败');
+  } catch {
+    showFeedback(false, '导出 HTML 失败，请稍后重试');
   }
 };
 
@@ -86,8 +89,7 @@ const handleImport = (e: Event) => {
       pendingData.value = raw;
       showConfirm.value = true;
 
-    } catch (err) {
-      console.error(err);
+    } catch {
       showFeedback(false, '导入失败：文件格式不正确');
     }
   };
@@ -128,8 +130,7 @@ const executeImport = () => {
 
     showFeedback(true, '配置导入成功');
 
-  } catch (e) {
-    console.error(e);
+  } catch {
     showFeedback(false, '导入时发生未知错误');
   }
 };
@@ -191,9 +192,8 @@ const executeResetAll = async () => {
 
     // ✅ 强制刷新，确保所有页面/Pinia状态/缓存都回到干净状态
     location.reload();
-  } catch (e) {
-    console.error(e);
-    showFeedback(false, '恢复默认设置失败，请查看控制台日志');
+  } catch {
+    showFeedback(false, '恢复默认设置失败，请稍后重试');
   }
 };
 </script>
