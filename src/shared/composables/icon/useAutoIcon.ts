@@ -95,6 +95,8 @@ export function useAutoIcon(options: {
         const result = await resolveAndCacheSiteIcon(url, runtime, {
             fastFirst: true,
             fastTimeoutMs: 700,
+            timeoutMs: options.timeoutMs,
+            resolveTimeoutMs: Math.max(900, Math.min(1800, Number(options.timeoutMs ?? 1800))),
         });
 
         if (token !== resolveToken) {

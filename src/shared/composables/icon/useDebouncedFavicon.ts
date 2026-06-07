@@ -104,6 +104,7 @@ export function useDebouncedFavicon(
             fastFirst: true,
             fastTimeoutMs: Math.min(900, Number(options?.timeoutMs ?? 1200)),
             timeoutMs: options?.timeoutMs,
+            resolveTimeoutMs: Math.max(900, Math.min(1800, Number(options?.timeoutMs ?? 1600))),
             minEdgePx: options?.minEdgePx,
         });
 
@@ -124,24 +125,40 @@ export function useDebouncedFavicon(
     const loadFromBrowserCandidates = async (url: string, token: number) => {
         const fastCandidates = getFastIconCandidates(url);
         const fullCandidates = getIconCandidates(url);
-        const candidates = [...fastCandidates, ...fullCandidates.filter((x) => !fastCandidates.includes(x))];
+        const candidates = [...fastCandidates, ...fullCandidates.filter((x) => !fastCandidates.includes(x))].slice(0, 10);
         const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
         const timeoutMs = Math.max(300, Number(options?.timeoutMs ?? 1600));
+        const deadlineAt = Date.now() + Math.max(1800, timeoutMs * 4);
+        let bestLowQualityUrl = '';
+        let bestLowQualityEdge = 0;
 
         void warmBrowserIconCache(url, {fastFirst: true, limit: 4, timeoutMs: Math.min(1200, timeoutMs)});
 
         for (const candidate of candidates) {
             if (token !== runToken) return;
+            const remainingMs = Math.max(0, deadlineAt - Date.now());
+            if (remainingMs < 250) break;
 
-            const loaded = await probeCandidateIcon(candidate, timeoutMs);
+            const loaded = await probeCandidateIcon(candidate, Math.min(timeoutMs, remainingMs));
             if (token !== runToken) return;
             if (!loaded) continue;
 
             const edge = Math.min(loaded.width, loaded.height);
             const lowQuality = edge > 0 && edge < minEdge;
-            if (lowQuality && candidate !== candidates[candidates.length - 1]) continue;
+            if (lowQuality) {
+                if (edge > bestLowQualityEdge) {
+                    bestLowQualityEdge = edge;
+                    bestLowQualityUrl = loaded.url;
+                }
+                continue;
+            }
 
             setFaviconUrl(loaded.url, false);
+            return;
+        }
+
+        if (bestLowQualityUrl) {
+            setFaviconUrl(bestLowQualityUrl, false);
             return;
         }
 

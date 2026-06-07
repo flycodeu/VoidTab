@@ -11,7 +11,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 6;
+export const SITE_ICON_CACHE_VERSION = 7;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -35,6 +35,7 @@ export type SiteIconResolveOptions = {
     ttlMs?: number;
     retryMs?: number;
     timeoutMs?: number;
+    resolveTimeoutMs?: number;
     minEdgePx?: number;
     fastFirst?: boolean;
     fastTimeoutMs?: number;
@@ -57,10 +58,12 @@ type SiteIconCacheAsset = {
 };
 
 const SITE_ICON_MEMORY_MAX_ENTRIES = 512;
+const SITE_ICON_RESOLVE_SOFT_TIMEOUT_MS = 1800;
 const siteIconMemoryCache = new Map<string, SiteIconCacheAsset>();
 const siteIconResolveInflight = new Map<string, Promise<SiteIconCacheAsset | null>>();
 const siteIconBlobFetchInflight = new Map<string, Promise<Blob | null>>();
 const siteIconBackgroundRefreshQueued = new Set<string>();
+const SITE_ICON_RESOLVE_TIMED_OUT = Symbol('SITE_ICON_RESOLVE_TIMED_OUT');
 
 function toRuntimeProvider(provider: IconProvider): SiteIconProvider {
     return provider;
@@ -300,6 +303,34 @@ function releaseSiteIconResultObjectUrl(result: SiteIconResult | null | undefine
     if (result?.objectUrl && result.url.startsWith('blob:')) {
         URL.revokeObjectURL(result.url);
     }
+}
+
+async function waitForSiteIconAsset(
+    promise: Promise<SiteIconCacheAsset | null>,
+    timeoutMs: number
+): Promise<SiteIconCacheAsset | null | typeof SITE_ICON_RESOLVE_TIMED_OUT> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return await promise;
+
+    return await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = globalThis.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(SITE_ICON_RESOLVE_TIMED_OUT);
+        }, Math.max(300, Math.round(timeoutMs)));
+
+        promise.then((value) => {
+            if (settled) return;
+            settled = true;
+            globalThis.clearTimeout(timer);
+            resolve(value);
+        }).catch((error) => {
+            if (settled) return;
+            settled = true;
+            globalThis.clearTimeout(timer);
+            reject(error);
+        });
+    });
 }
 
 export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
@@ -715,7 +746,18 @@ export async function resolveAndCacheSiteIcon(
         }).catch(() => null);
     }
 
-    const asset = await inflight;
+    const resolveTimeoutRaw = Number(options?.resolveTimeoutMs ?? SITE_ICON_RESOLVE_SOFT_TIMEOUT_MS);
+    let asset: SiteIconCacheAsset | null | typeof SITE_ICON_RESOLVE_TIMED_OUT;
+    try {
+        asset = await waitForSiteIconAsset(inflight, resolveTimeoutRaw);
+    } catch {
+        return cached;
+    }
+
+    if (asset === SITE_ICON_RESOLVE_TIMED_OUT) {
+        return cached;
+    }
+
     if (!asset) {
         return cached;
     }
@@ -826,6 +868,8 @@ async function resolveAndCacheSiteIconAsset(
     if (fastFirst) {
         const fastProbe = await probeFastIconCandidate(rawUrl, {
             timeoutMs: fastTimeoutMs,
+            totalTimeoutMs: Math.max(900, fastTimeoutMs * 3),
+            maxCandidates: 8,
             minEdgePx,
             skipProviders,
         });
@@ -837,6 +881,8 @@ async function resolveAndCacheSiteIconAsset(
 
     const probe = await probeBestIconCandidate(rawUrl, {
         timeoutMs: slowTimeoutMs,
+        totalTimeoutMs: Math.max(1800, slowTimeoutMs * 4),
+        maxCandidates: 18,
         minEdgePx,
         skipProviders,
     });
@@ -867,6 +913,7 @@ function scheduleBackgroundSiteIconRefresh(
             forceRefresh: true,
             fastFirst: false,
             backgroundUpgrade: false,
+            resolveTimeoutMs: 0,
         })
             .then((result) => releaseSiteIconResultObjectUrl(result))
             .catch(() => null)

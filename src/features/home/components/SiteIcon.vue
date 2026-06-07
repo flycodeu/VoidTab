@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, watch} from 'vue';
+import {computed, onUnmounted, ref, watch} from 'vue';
 import {PhGlobe} from '@phosphor-icons/vue';
 import type {SiteItem, BookmarkDensity} from '../../../core/config/types.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
@@ -23,8 +23,33 @@ const emit = defineEmits<{
   (e: 'fallback'): void;
 }>();
 
+const imageLoaded = ref(false);
+let imageFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearImageFallbackTimer = () => {
+  if (!imageFallbackTimer) return;
+  clearTimeout(imageFallbackTimer);
+  imageFallbackTimer = null;
+};
+
+const startImageFallbackTimer = () => {
+  clearImageFallbackTimer();
+  imageLoaded.value = false;
+  if (!props.isAuto || props.hasError || !props.autoIconUrl) return;
+  if (props.priority !== 'high') return;
+
+  imageFallbackTimer = setTimeout(() => {
+    if (!imageLoaded.value && props.isAuto && !props.hasError && props.autoIconUrl) {
+      emit('fallback');
+    }
+  }, 2200);
+};
+
 const bg = computed(() => {
-  if ((props.item.iconType === 'text' || props.hasError) && props.item.bgColor === '#ffffff') {
+  const usesFallbackSurface = props.item.iconType === 'text'
+      || props.hasError
+      || (props.isAuto && !imageLoaded.value);
+  if (usesFallbackSurface && props.item.bgColor === '#ffffff') {
     return '#475569';
   }
   return props.item.bgColor || '#3b82f6';
@@ -66,12 +91,25 @@ const dynamicFontSize = computed(() => {
   return baseSize * 0.5;
 });
 const shouldShowText = computed(() => {
-  return props.item.iconType === 'text' || (props.isAuto && (props.hasError || !props.autoIconUrl));
+  return props.item.iconType === 'text'
+      || (props.isAuto && (props.hasError || !props.autoIconUrl || !imageLoaded.value));
 });
 
-const isImageMode = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);
+const hasAutoImage = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);
+const isImageMode = computed(() => hasAutoImage.value && imageLoaded.value);
 const imageLoading = computed(() => props.priority === 'high' ? 'eager' : 'lazy');
 const imageFetchPriority = computed(() => props.priority === 'high' ? 'high' : 'low');
+
+const handleImageLoad = () => {
+  imageLoaded.value = true;
+  clearImageFallbackTimer();
+  emit('loaded');
+};
+
+const handleImageError = () => {
+  clearImageFallbackTimer();
+  emit('fallback');
+};
 
 watch(
   () => props.autoIconUrl,
@@ -81,6 +119,16 @@ watch(
   },
   {immediate: true}
 );
+
+watch(
+  () => [props.autoIconUrl, props.hasError, props.isAuto],
+  startImageFallbackTimer,
+  {immediate: true}
+);
+
+onUnmounted(() => {
+  clearImageFallbackTimer();
+});
 </script>
 
 <template>
@@ -94,23 +142,23 @@ watch(
     }"
   >
     <img
-        v-if="isAuto && !hasError && !!autoIconUrl"
+        v-if="hasAutoImage"
         :key="autoIconUrl"
         :src="autoIconUrl"
-        class="w-full h-full object-cover"
+        class="absolute inset-0 w-full h-full object-cover"
         :loading="imageLoading"
         decoding="async"
         :fetchpriority="imageFetchPriority"
         referrerpolicy="no-referrer"
         draggable="false"
-        @load="emit('loaded')"
-        @error="emit('fallback')"
+        @load="handleImageLoad"
+        @error="handleImageError"
         alt="icon"
     />
 
     <span
         v-if="shouldShowText"
-        class="font-bold select-none leading-none flex items-center justify-center text-center px-0.5"
+        class="relative z-10 font-bold select-none leading-none flex items-center justify-center text-center px-0.5"
         :style="{
           fontSize: dynamicFontSize + 'px',
           maxWidth: '96%',           /* 稍微放宽一点宽度限制 */

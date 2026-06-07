@@ -19,11 +19,13 @@ const props = defineProps<{
 
 const store = useConfigStore();
 const imgError = ref(false);
+const imageLoaded = ref(false);
 const iconSource = ref('');
 const iconSourceIsObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
 const sourceMode = ref<'auto' | 'none'>('none');
+let imageFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 const normalizedType = computed<'auto' | 'text' | 'icon'>(() => {
   const type = props.item.iconType;
   if (type === 'text' || type === 'icon') return type;
@@ -41,6 +43,24 @@ const setIconSource = (value: string, isObjectUrl = false) => {
   releaseIconObjectUrl();
   iconSource.value = value;
   iconSourceIsObjectUrl.value = isObjectUrl;
+};
+
+const clearImageFallbackTimer = () => {
+  if (!imageFallbackTimer) return;
+  clearTimeout(imageFallbackTimer);
+  imageFallbackTimer = null;
+};
+
+const startImageFallbackTimer = () => {
+  clearImageFallbackTimer();
+  imageLoaded.value = false;
+  if (normalizedType.value !== 'auto' || imgError.value || !iconSource.value) return;
+
+  imageFallbackTimer = setTimeout(() => {
+    if (!imageLoaded.value && normalizedType.value === 'auto' && iconSource.value && !imgError.value) {
+      handleImgError();
+    }
+  }, 2200);
 };
 
 const loadAutoIcon = async (forceRefresh = false) => {
@@ -93,9 +113,11 @@ const displayMode = computed(() => {
   if (type === 'text') return 'text';
   if (type === 'icon') return 'icon';
 
-  if (!imgError.value && iconSource.value) return 'image';
+  if (!imgError.value && iconSource.value && imageLoaded.value) return 'image';
   return 'text';
 });
+
+const hasAutoImage = computed(() => normalizedType.value === 'auto' && !imgError.value && !!iconSource.value);
 
 const phosphorComp = computed(() => {
   if (displayMode.value !== 'icon') return null;
@@ -103,7 +125,11 @@ const phosphorComp = computed(() => {
   return resolvePhosphorIcon(String(rawName), 'Globe');
 });
 
-const avatarBg = computed(() => props.item.bgColor || '#3b82f6');
+const avatarBg = computed(() => {
+  const color = props.item.bgColor || '#3b82f6';
+  if (displayMode.value === 'text' && color === '#ffffff') return '#475569';
+  return color;
+});
 
 const avatarText = computed(() => {
   if (normalizedType.value === 'text' && props.item.iconValue) {
@@ -115,6 +141,7 @@ const avatarText = computed(() => {
 });
 
 const handleImgError = () => {
+  clearImageFallbackTimer();
   if (normalizedType.value !== 'auto') {
     imgError.value = true;
     return;
@@ -132,7 +159,19 @@ const handleImgError = () => {
   imgError.value = true;
 };
 
+const handleImgLoad = () => {
+  imageLoaded.value = true;
+  clearImageFallbackTimer();
+};
+
+watch(
+    () => [iconSource.value, imgError.value, normalizedType.value],
+    startImageFallbackTimer,
+    {immediate: true}
+);
+
 onUnmounted(() => {
+  clearImageFallbackTimer();
   releaseIconObjectUrl();
 });
 </script>
@@ -143,16 +182,17 @@ onUnmounted(() => {
       :class="displayMode === 'image' ? 'bg-transparent shadow-none' : 'bg-white/10 shadow-inner'"
   >
     <img
-        v-if="displayMode === 'image' && iconSource"
+        v-if="hasAutoImage"
         :src="iconSource"
+        @load="handleImgLoad"
         @error="handleImgError"
-        class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+        class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         loading="lazy"
         :alt="item.title"
     />
 
     <div
-        v-else-if="displayMode === 'icon'"
+        v-if="displayMode === 'icon'"
         class="w-full h-full flex items-center justify-center text-white shadow-lg transition-transform duration-300 group-hover:scale-105"
         :style="{ backgroundColor: item.bgColor || '#3b82f6' }"
     >
@@ -160,7 +200,7 @@ onUnmounted(() => {
     </div>
 
     <div
-        v-else
+        v-else-if="displayMode === 'text'"
         class="w-full h-full flex items-center justify-center text-white shadow-lg transition-transform duration-300 group-hover:scale-105"
         :style="{ backgroundColor: avatarBg }"
     >

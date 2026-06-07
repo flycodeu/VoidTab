@@ -33,6 +33,8 @@ const isObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
 const iconSourceMode = ref<"auto" | "none">("none");
+let deferredResolveTimer: ReturnType<typeof setTimeout> | null = null;
+let deferredResolveAttempts = 0;
 
 const revokeObjectUrl = () => {
   if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
@@ -45,6 +47,23 @@ const setAutoIconUrl = (url: string, objectUrl: boolean) => {
   revokeObjectUrl();
   autoIconUrl.value = url;
   isObjectUrl.value = objectUrl;
+};
+
+const clearDeferredResolveTimer = () => {
+  if (!deferredResolveTimer) return;
+  clearTimeout(deferredResolveTimer);
+  deferredResolveTimer = null;
+};
+
+const scheduleDeferredResolveRetry = (token: number) => {
+  if (deferredResolveAttempts >= 2) return;
+  deferredResolveAttempts += 1;
+  clearDeferredResolveTimer();
+  deferredResolveTimer = setTimeout(() => {
+    deferredResolveTimer = null;
+    if (token !== resolveToken.value || !isAuto.value || autoIconUrl.value) return;
+    void resolveAutoIcon(false);
+  }, 1800 * deferredResolveAttempts);
 };
 
 const resolveAutoIcon = async (forceRefresh = false) => {
@@ -77,9 +96,11 @@ const resolveAutoIcon = async (forceRefresh = false) => {
     iconSourceMode.value = "none";
     setAutoIconUrl("", false);
     hasLoadError.value = true;
+    if (!forceRefresh) scheduleDeferredResolveRetry(token);
     return;
   }
 
+  clearDeferredResolveTimer();
   hasLoadError.value = false;
   iconSourceMode.value = "auto";
   setAutoIconUrl(result.url, !!result.objectUrl);
@@ -90,20 +111,28 @@ watch(
     () => {
       hasLoadError.value = false;
       hasTriedForceRefresh.value = false;
+      deferredResolveAttempts = 0;
+      clearDeferredResolveTimer();
       void resolveAutoIcon(false);
     },
     {immediate: true}
 );
 
+const getFallbackText = () => {
+  const iconText = String(props.item.iconValue || "").trim();
+  if (normalizedIconType.value === "text" && iconText) return iconText.substring(0, 4);
+
+  const title = String(props.item.title || "").trim();
+  const source = title || domain.value || String(props.item.url || "").trim() || "A";
+  if (/[\u4e00-\u9fa5]/.test(source)) return source.substring(0, 2);
+
+  const clean = source.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
+  return clean.substring(0, 4).toUpperCase() || source.substring(0, 2).toUpperCase() || "A";
+};
+
 const displayText = computed(() => {
-  if (normalizedIconType.value === "text" || (isAuto.value && hasLoadError.value)) {
-    if (props.item.iconValue?.length) return props.item.iconValue.substring(0, 4);
-    const clean = (props.item.title || "")
-        .trim()
-        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, "");
-    return clean.substring(0, 4).toUpperCase() || (props.item.title || "A").substring(0, 2);
-  }
-  return "";
+  if (normalizedIconType.value === "icon") return "";
+  return getFallbackText();
 });
 
 const handleFallback = () => {
@@ -256,6 +285,7 @@ onMounted(() => {
 onUnmounted(() => {
   ro?.disconnect();
   ro = null;
+  clearDeferredResolveTimer();
   revokeObjectUrl();
 });
 

@@ -5,7 +5,7 @@ import {useConfigStore} from '../../../../stores/useConfigStore';
 import {idbGetBlob} from '../../../../core/storage/photoIdb';
 import SiteListModal from './SiteListModal.vue';
 import {PhGear, PhFolderNotch, PhArrowUpRight} from '@phosphor-icons/vue';
-import {resolveAndCacheSiteIcon} from '../../../../shared/utils/siteIconCache.ts';
+import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../../../../shared/utils/siteIconCache.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
@@ -112,6 +112,8 @@ const blobCache = ref<Record<string, string>>({});
 const ownedObjectUrls = new Set<string>();
 const mainIconLoadFailed = ref(false);
 const folderImgErrorMap = ref<Record<number, boolean>>({});
+let defaultSiteLoadToken = 0;
+let folderLoadToken = 0;
 
 const rememberObjectUrl = (url: string) => {
   if (url.startsWith('blob:')) ownedObjectUrls.add(url);
@@ -144,7 +146,12 @@ const getIconSrc = async (item: any) => {
   if (item.iconType === 'auto' && item.url) {
     const key = `auto:${item.url}`;
     if (blobCache.value[key]) return blobCache.value[key];
-    const resolved = await resolveAndCacheSiteIcon(item.url, store.config.runtime);
+    const resolved = await resolveAndCacheSiteIcon(item.url, store.config.runtime, {
+      fastFirst: true,
+      fastTimeoutMs: 650,
+      timeoutMs: 1200,
+      resolveTimeoutMs: 1400,
+    });
     if (resolved?.url) {
       blobCache.value[key] = resolved.url;
       if (resolved.objectUrl) rememberObjectUrl(resolved.url);
@@ -155,30 +162,42 @@ const getIconSrc = async (item: any) => {
 };
 
 watch(() => defaultSite.value, async (site) => {
+  const token = ++defaultSiteLoadToken;
   mainIconLoadFailed.value = false;
-  if (site) iconUrl.value = await getIconSrc(site) || '';
-  else iconUrl.value = '';
+  iconUrl.value = '';
+  if (!site) return;
+  const src = await getIconSrc(site);
+  if (token === defaultSiteLoadToken) iconUrl.value = src || '';
 }, {immediate: true, deep: true});
 
 // Folder preview
 const folderIcons = ref<Array<{ type: 'img' | 'text'; val: string; fallback: string }>>([]);
 watch(() => activeGroup.value?.items, async (items) => {
+  const token = ++folderLoadToken;
   folderImgErrorMap.value = {};
   if (!items) {
     folderIcons.value = [];
     return;
   }
   const limited = items.slice(0, 9);
+  folderIcons.value = limited.map(i => {
+    const fallback = getFallbackText(i);
+    return {type: 'text' as const, val: fallback, fallback};
+  });
   const promises = limited.map(async i => {
     const fallback = getFallbackText(i);
     if (i.iconType === 'text') return {type: 'text' as const, val: fallback, fallback};
     const src = await getIconSrc(i);
     return src ? {type: 'img' as const, val: src, fallback} : {type: 'text' as const, val: fallback, fallback};
   });
-  folderIcons.value = await Promise.all(promises);
+  const nextIcons = await Promise.all(promises);
+  if (token === folderLoadToken) folderIcons.value = nextIcons;
 }, {immediate: true, deep: true});
 
 const handleMainIconError = () => {
+  if (defaultSite.value?.iconType === 'auto' && defaultSite.value.url) {
+    markSiteIconMiss(defaultSite.value.url, store.config.runtime, {error: 'img_error', preserveExisting: true});
+  }
   mainIconLoadFailed.value = true;
 };
 

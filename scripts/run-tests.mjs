@@ -40,6 +40,17 @@ test('manifest uses least-privilege host permissions', async () => {
   assert.ok(manifest.host_permissions.includes('https://api.open-meteo.com/*'));
 });
 
+test('favicon probing avoids extension fetch false negatives', async () => {
+  const icon = await read('src/shared/utils/icon.ts');
+  const cache = await read('src/shared/utils/siteIconCache.ts');
+
+  assert.match(icon, /canUseBrowserFaviconApi/);
+  assert.match(icon, /permissions\.includes\('favicon'\)/);
+  assert.doesNotMatch(icon, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
+  assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v2'/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*7/);
+});
+
 test('AI markdown rendering is sanitized before v-html', async () => {
   const panel = await read('src/features/ai/components/AiChatPanel.vue');
   assert.match(panel, /import DOMPurify from 'dompurify'/);

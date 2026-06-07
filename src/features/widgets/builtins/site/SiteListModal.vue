@@ -15,6 +15,12 @@ const emit = defineEmits(['close']);
 
 const store = useConfigStore();
 const runtime = store.config.runtime;
+const AUTO_ICON_PREVIEW_OPTIONS = {
+  fastFirst: true,
+  fastTimeoutMs: 650,
+  timeoutMs: 1200,
+  resolveTimeoutMs: 1400,
+} as const;
 
 // 1) Initialize data and fallback
 if (!runtime.siteList) runtime.siteList = {groups: {}, widgets: {}};
@@ -155,7 +161,7 @@ watch(() => [form.iconType, form.iconValue, form.url], async () => {
       setPreviewSrc('');
       return;
     }
-    const resolved = await resolveAndCacheSiteIcon(form.url, store.config.runtime);
+    const resolved = await resolveAndCacheSiteIcon(form.url, store.config.runtime, AUTO_ICON_PREVIEW_OPTIONS);
     if (token !== previewToken.value) {
       if (resolved?.objectUrl && resolved.url.startsWith('blob:')) URL.revokeObjectURL(resolved.url);
       return;
@@ -192,7 +198,7 @@ const resolveListPreview = async (item: SiteListEntry): Promise<string> => {
     return url;
   }
   if (item.iconType === 'auto' && item.url) {
-    const resolved = await resolveAndCacheSiteIcon(item.url, store.config.runtime);
+    const resolved = await resolveAndCacheSiteIcon(item.url, store.config.runtime, AUTO_ICON_PREVIEW_OPTIONS);
     if (!resolved?.url) return '';
     if (resolved.objectUrl) rememberListObjectUrl(resolved.url);
     return resolved.url;
@@ -238,7 +244,11 @@ async function autoFetchIcon() {
   try {
     form.iconType = 'auto';
     form.iconValue = '';
-    const resolved = await resolveAndCacheSiteIcon(form.url, store.config.runtime, {forceRefresh: true});
+    const resolved = await resolveAndCacheSiteIcon(form.url, store.config.runtime, {
+      ...AUTO_ICON_PREVIEW_OPTIONS,
+      forceRefresh: true,
+      resolveTimeoutMs: 2600,
+    });
     if (!resolved?.url) {
       fetchError.value = '未找到可用图标';
     }

@@ -43,6 +43,8 @@ type ProviderFailureStat = {
 
 type ProbeOptions = {
     timeoutMs?: number;
+    totalTimeoutMs?: number;
+    maxCandidates?: number;
     minEdgePx?: number;
     skipProviders?: Iterable<IconProvider>;
     declaredTimeoutMs?: number;
@@ -51,9 +53,9 @@ type ProbeOptions = {
 const CANDIDATE_FAIL_RETRY_MS = 30 * 60 * 1000;
 const CANDIDATE_OK_TTL_MS = 10 * 60 * 1000;
 const PERSISTENT_FAIL_TTL_MS = 24 * 60 * 60 * 1000;
-const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v1';
+const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v2';
 const PERSISTENT_FAIL_MAX_ENTRIES = 1200;
-const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v1';
+const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v2';
 const FAILURE_STATS_MAX_PATH_ENTRIES = 1200;
 const candidateHealthCache = new Map<string, CandidateHealthCacheEntry>();
 const persistentFailCache = new Map<string, PersistentFailEntry>();
@@ -353,6 +355,20 @@ export function isExtensionContext(): boolean {
     return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 }
 
+function canUseBrowserFaviconApi(): boolean {
+    if (!isExtensionContext()) return false;
+    try {
+        const manifest = chrome.runtime?.getManifest?.() as any;
+        const permissions = [
+            ...(Array.isArray(manifest?.permissions) ? manifest.permissions : []),
+            ...(Array.isArray(manifest?.optional_permissions) ? manifest.optional_permissions : []),
+        ];
+        return permissions.includes('favicon');
+    } catch {
+        return false;
+    }
+}
+
 export function getEffectiveMinEdgePx(base = ICON_MIN_EDGE_PX): number {
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     if (dpr >= 2) return Math.max(base, RETINA_ICON_MIN_EDGE_PX);
@@ -410,6 +426,10 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
     for (const domain of domains) {
         candidates.push(
             {
+                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
+                provider: 'cn_favicon',
+            },
+            {
                 url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
                 provider: 'google_s2',
             },
@@ -420,10 +440,6 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
             {
                 url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
                 provider: 'duckduckgo',
-            },
-            {
-                url: `https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`,
-                provider: 'cn_favicon',
             },
         );
     }
@@ -444,7 +460,9 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
 
     if (inExtension) {
         // Extension: prefer browser favicon first, then presets, then third-party, then site origin.
-        candidates.push(...buildExtensionCandidates(parsed.href));
+        if (canUseBrowserFaviconApi()) {
+            candidates.push(...buildExtensionCandidates(parsed.href));
+        }
         pushPresetCandidate(candidates, host, rootDomain);
         if (!privateOrLocal) {
             candidates.push(...buildExternalCandidates(thirdPartyDomains));
@@ -478,7 +496,9 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
 
     if (inExtension) {
         // Fast path (Extension): browser favicon first, then preset, then third-party, then site origin.
-        candidates.push(...buildExtensionCandidates(parsed.href));
+        if (canUseBrowserFaviconApi()) {
+            candidates.push(...buildExtensionCandidates(parsed.href));
+        }
         pushPresetCandidate(candidates, host, rootDomain);
         if (!privateOrLocal) {
             candidates.push(...buildExternalCandidates(thirdPartyDomains));
@@ -604,10 +624,8 @@ function canPrevalidateUrl(url: string): boolean {
         const parsed = new URL(url, window.location.origin);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
 
-        // In extension context cross-origin fetch is allowed by host permissions.
-        if (isExtensionContext()) return true;
-
-        // In web/dev mode only prevalidate same-origin to avoid CORS false negatives.
+        // Only prevalidate same-origin. Extension pages often can render cross-origin
+        // favicons as images but cannot fetch them without host permissions.
         return parsed.origin === window.location.origin;
     } catch {
         return false;
@@ -817,6 +835,8 @@ export async function probeBestIconCandidate(
     ]);
     return probeBestIconCandidateFromCandidates(candidates, {
         timeoutMs: options?.timeoutMs,
+        totalTimeoutMs: options?.totalTimeoutMs,
+        maxCandidates: options?.maxCandidates,
         minEdgePx: minEdge,
         skipProviders: options?.skipProviders,
     });
@@ -828,8 +848,11 @@ export async function probeFastIconCandidate(
 ): Promise<IconProbeResult | null> {
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const candidates = getFastIconCandidatesWithProviders(rawUrl);
+    const timeoutMs = options?.timeoutMs ?? 800;
     return probeBestIconCandidateFromCandidates(candidates, {
-        timeoutMs: options?.timeoutMs,
+        timeoutMs,
+        totalTimeoutMs: options?.totalTimeoutMs ?? Math.max(900, timeoutMs * 3),
+        maxCandidates: options?.maxCandidates ?? 8,
         minEdgePx: minEdge,
         skipProviders: options?.skipProviders,
     });
@@ -842,18 +865,35 @@ async function probeBestIconCandidateFromCandidates(
     if (!candidates.length) return null;
     const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
     const skipped = new Set<IconProvider>(options?.skipProviders ? Array.from(options.skipProviders) : []);
+    const perCandidateTimeoutMs = Math.max(300, Number(options?.timeoutMs ?? 2500));
+    const totalTimeoutRaw = Number(options?.totalTimeoutMs ?? 0);
+    const deadlineAt = Number.isFinite(totalTimeoutRaw) && totalTimeoutRaw > 0
+        ? Date.now() + Math.max(300, totalTimeoutRaw)
+        : 0;
+    const maxCandidatesRaw = Number(options?.maxCandidates ?? candidates.length);
+    const maxCandidates = Number.isFinite(maxCandidatesRaw)
+        ? Math.max(1, Math.min(candidates.length, Math.round(maxCandidatesRaw)))
+        : candidates.length;
+    const effectiveCandidates = candidates.slice(0, maxCandidates);
+    let bestLowQuality: IconProbeResult | null = null;
 
-    for (const candidate of candidates) {
+    for (const candidate of effectiveCandidates) {
+        if (deadlineAt && Date.now() >= deadlineAt) break;
         if (skipped.has(candidate.provider)) continue;
         const cached = getCachedHealth(candidate.url);
         if (cached && !cached.ok) continue;
 
+        const remainingMs = deadlineAt ? Math.max(0, deadlineAt - Date.now()) : perCandidateTimeoutMs;
+        if (deadlineAt && remainingMs < 250) break;
+        const timeoutMs = Math.max(250, Math.min(perCandidateTimeoutMs, remainingMs));
+
         if (shouldPrevalidateCandidate(candidate) && !cached?.ok) {
-            const prevalidated = await prevalidateCandidateUrl(candidate, Math.min(1500, options?.timeoutMs ?? 2500));
+            const prevalidated = await prevalidateCandidateUrl(candidate, Math.min(1200, timeoutMs));
             if (!prevalidated) continue;
         }
 
-        const size = await probeImage(candidate.url, options?.timeoutMs ?? 2500);
+        if (deadlineAt && Date.now() >= deadlineAt) break;
+        const size = await probeImage(candidate.url, timeoutMs);
         if (!size) {
             rememberCandidateFailure(candidate);
             continue;
@@ -874,9 +914,12 @@ async function probeBestIconCandidateFromCandidates(
         };
 
         if (!lowQuality) return result;
+        if (!bestLowQuality || result.qualityScore > bestLowQuality.qualityScore) {
+            bestLowQuality = result;
+        }
     }
 
-    return null;
+    return bestLowQuality;
 }
 
 export function getIconFailureStatsSnapshot(): {
