@@ -30,6 +30,7 @@ import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
 import {useToast} from './shared/composables/useToast';
 import {useBoundaryGroupWheel} from './shared/composables/useBoundaryGroupWheel';
 import type {SidebarPosition} from './core/config/types.ts';
+import {isExtensionContext} from './shared/utils/icon.ts';
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -193,6 +194,7 @@ const scheduleBackgroundIconRefresh = () => {
   const run = () => {
     iconRefreshIdleId = null;
     iconRefreshTimer = null;
+    if (!isExtensionContext()) return;
     void store.refreshAutoSiteIconsBatch({maxDomains: 48});
   };
 

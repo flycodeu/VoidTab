@@ -51,9 +51,75 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /canUseBrowserFaviconApi/);
   assert.match(icon, /permissions\.includes\('favicon'\)/);
   assert.doesNotMatch(icon, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
-  assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v2'/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*8/);
+  assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v3'/);
+  assert.match(icon, /createProbeImageObjectUrl/);
+  assert.match(icon, /FETCHABLE_ICON_PROBE_HOSTS/);
+  assert.match(icon, /probeIconCandidateBatch/);
+  assert.match(icon, /parallelism: options\?\.parallelism/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*12/);
   assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
+});
+
+test('auto site icons preserve legacy direct icon sources', async () => {
+  const icon = await read('src/shared/utils/icon.ts');
+  const card = await read('src/features/home/components/GlassCard.vue');
+
+  assert.match(icon, /resolveDirectIconUrl/);
+  assert.match(icon, /getInstantAutoIconUrl/);
+  assert.match(icon, /canUseDirectIconInstantly/);
+  assert.match(icon, /parsed\.protocol === 'chrome-extension:'/);
+  assert.match(icon, /parsed\.pathname\.startsWith\('\/_favicon\/'\)/);
+  assert.match(icon, /if \(raw\.startsWith\('blob:'\)\) return ''/);
+  assert.match(card, /getDirectIconFallbackUrl\(props\.item\.icon,\s*props\.item\.iconValue,\s*props\.item\.url\)/);
+  assert.match(card, /getInstantAutoIconUrl\(props\.item\.url,\s*props\.item\.icon,\s*props\.item\.iconValue\)/);
+  assert.match(card, /directIconErrorUrl/);
+  assert.match(card, /canUseDirectIconUrl\(\)/);
+});
+
+test('web auto icons avoid CORP-blocked direct site favicons', async () => {
+  const icon = await read('src/shared/utils/icon.ts');
+  const preloader = await read('src/shared/utils/iconPreloader.ts');
+  const cache = await read('src/shared/utils/siteIconCache.ts');
+  const siteIcon = await read('src/features/home/components/SiteIcon.vue');
+
+  assert.match(icon, /return getFastIconCandidates\(url\)\[0\] \|\| ''/);
+  assert.doesNotMatch(icon, /getFastIconCandidates\(url\)\[0\] \|\| explicitDirect \|\| legacyDirect/);
+  assert.match(icon, /first_party_proxy/);
+  assert.match(icon, /buildFirstPartyProxyCandidates/);
+  assert.match(icon, /!proxyCandidates\.length/);
+  assert.match(icon, /candidate\.provider !== 'first_party_proxy'/);
+  assert.match(siteIcon, /url\.includes\('\/api\/favicon'\) \? 5200 : 1600/);
+  assert.match(icon, /if \(privateOrLocal\) \{\s*candidates\.push\(\.\.\.buildSiteOriginCandidates\(origin\)\);/);
+  assert.match(preloader, /if \(isExtensionContext\(\)\) return true/);
+  assert.match(preloader, /return false/);
+  assert.match(cache, /staleDisplayOnlyDirectSite/);
+  assert.match(cache, /!isThirdPartyFaviconSource\(source\)/);
+});
+
+test('favicon proxy is available in web and dev builds', async () => {
+  const icon = await read('src/shared/utils/icon.ts');
+  const vite = await read('vite.config.ts');
+  const handler = await read('api/favicon.js');
+  const core = await read('api/favicon-core.js');
+
+  assert.match(icon, /new URL\('\/api\/favicon',\s*window\.location\.origin\)/);
+  assert.match(vite, /createFaviconApiDevPlugin/);
+  assert.match(vite, /fetchFaviconProxyPayload\(url\.searchParams\.get\('url'\)\)/);
+  assert.match(handler, /fetchFaviconProxyPayload\(rawUrl\)/);
+  assert.match(core, /getDeclaredCandidates/);
+  assert.match(core, /buildProviderCandidates/);
+  assert.match(core, /assertPublicHttpUrl/);
+});
+
+test('sidebar active group has stable scroll target', async () => {
+  const sidebar = await read('src/features/navigation/components/SideBar.vue');
+  const button = await read('src/features/navigation/components/sidebar/SidebarGroupButton.vue');
+
+  assert.match(sidebar, /scrollActiveGroupIntoView/);
+  assert.match(sidebar, /\[data-group-id\]/);
+  assert.match(sidebar, /host\.scrollTo\(\{top: targetTop,\s*behavior\}\)/);
+  assert.match(sidebar, /host\.scrollTo\(\{left: targetLeft,\s*behavior\}\)/);
+  assert.match(button, /:data-group-id="group\.id"/);
 });
 
 test('AI markdown rendering is sanitized before v-html', async () => {
@@ -177,6 +243,7 @@ test('main wheel navigation switches groups only at scroll boundaries', async ()
   assert.match(app, /groupWheel\.unmount\(\)/);
   assert.match(app, /resetMainScroll/);
   assert.match(app, /scheduleBackgroundIconRefresh/);
+  assert.match(app, /if \(!isExtensionContext\(\)\) return/);
   assert.match(app, /refreshAutoSiteIconsBatch\(\{maxDomains:\s*48\}\)/);
   assert.match(home, /data-wheel-boundary-switch/);
   assert.match(home, /data-wheel-lock/);
@@ -225,7 +292,7 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     assert.equal(normalized.layout[0].items[1].w, 4);
     assert.equal(normalized.layout[0].items[1].h, 1);
     assert.equal(normalized.runtime.siteIcons.records['example.com'].cacheMode, 'miss');
-    assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'unknown');
+    assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'google_s2');
   `);
 });
 

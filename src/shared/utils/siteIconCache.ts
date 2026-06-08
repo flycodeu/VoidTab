@@ -11,7 +11,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 8;
+export const SITE_ICON_CACHE_VERSION = 12;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -70,15 +70,26 @@ function toRuntimeProvider(provider: IconProvider): SiteIconProvider {
 }
 
 function isExternalProvider(provider: SiteIconProvider | IconProvider | undefined): boolean {
-    return provider === 'google_s2' || provider === 'duckduckgo' || provider === 'yandex';
+    return provider === 'first_party_proxy'
+        || provider === 'google_s2'
+        || provider === 'duckduckgo'
+        || provider === 'yandex'
+        || provider === 'cn_favicon'
+        || provider === 'icon_horse'
+        || provider === 'favicon_im'
+        || provider === 'unavatar';
 }
 
 function isKnownProvider(provider: any): provider is SiteIconProvider {
     return provider === 'browser_favicon'
+        || provider === 'first_party_proxy'
         || provider === 'cn_favicon'
         || provider === 'google_s2'
         || provider === 'yandex'
         || provider === 'duckduckgo'
+        || provider === 'icon_horse'
+        || provider === 'favicon_im'
+        || provider === 'unavatar'
         || provider === 'site_manifest'
         || provider === 'site_favicon'
         || provider === 'preset'
@@ -86,9 +97,10 @@ function isKnownProvider(provider: any): provider is SiteIconProvider {
 }
 
 function isThirdPartyFaviconSource(source: string): boolean {
-    return source.includes('api.iowen.cn/favicon/')
+    return source.includes('/api/favicon')
+        || source.includes('api.iowen.cn/favicon/')
         || source.includes('google.com/s2/favicons')
-        || source.includes('t2.gstatic.com/faviconV2')
+        || source.includes('t2.gstatic.com/faviconv2')
         || source.includes('duckduckgo.com/ip3/')
         || source.includes('favicon.yandex.net/favicon/')
         || source.includes('favicon.im/')
@@ -375,8 +387,36 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
             const mode = getRecordCacheMode(rec);
             const source = String(rec.source || '').toLowerCase();
             let provider = (rec.provider || 'unknown') as SiteIconProvider;
+            if (provider === 'unknown' && source.includes('/api/favicon')) {
+                provider = 'first_party_proxy';
+                rec.provider = provider;
+            }
             if (provider === 'unknown' && source.includes('api.iowen.cn/favicon/')) {
                 provider = 'cn_favicon';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && (source.includes('t2.gstatic.com/faviconv2') || source.includes('google.com/s2/favicons'))) {
+                provider = 'google_s2';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && source.includes('duckduckgo.com/ip3/')) {
+                provider = 'duckduckgo';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && source.includes('favicon.yandex.net/favicon/')) {
+                provider = 'yandex';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && source.includes('icon.horse/icon/')) {
+                provider = 'icon_horse';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && source.includes('favicon.im/')) {
+                provider = 'favicon_im';
+                rec.provider = provider;
+            }
+            if (provider === 'unknown' && source.includes('unavatar.io/')) {
+                provider = 'unavatar';
                 rec.provider = provider;
             }
             const poisonedBrowserScheme = source.startsWith('chrome://') || source.startsWith('edge://');
@@ -384,6 +424,13 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
             const poisonedFailedExternal = mode === 'url'
                 && isExternalProvider(provider)
                 && (rec.lastError === 'img_error' || rec.lastError === 'probe_failed');
+            const staleDisplayOnlyRemote = mode === 'url'
+                && rec.lastError === 'display_only'
+                && (isExternalProvider(provider) || provider === 'unknown');
+            const staleDisplayOnlyDirectSite = mode === 'url'
+                && rec.lastError === 'display_only'
+                && provider !== 'preset'
+                && !isThirdPartyFaviconSource(source);
             const retryAfter = Number(rec.retryAfter || 0);
             const longRetryLock = Number.isFinite(retryAfter) && retryAfter > now + SITE_ICON_MIGRATION_MAX_RETRY_LOCK_MS;
             const poisonedMiss = mode === 'miss'
@@ -392,7 +439,15 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
                 && provider === 'unknown'
                 && isThirdPartyFaviconSource(source);
 
-            if (poisonedBrowserScheme || poisonedBrowserUrl || poisonedFailedExternal || poisonedMiss || poisonedUnknownThirdParty) {
+            if (
+                poisonedBrowserScheme
+                || poisonedBrowserUrl
+                || poisonedFailedExternal
+                || staleDisplayOnlyRemote
+                || staleDisplayOnlyDirectSite
+                || poisonedMiss
+                || poisonedUnknownThirdParty
+            ) {
                 delete runtime.siteIcons.records[domain];
                 forgetSiteIconMemoryAsset(domain);
                 continue;
@@ -407,6 +462,7 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
             }
         }
         runtime.siteIcons.version = SITE_ICON_CACHE_VERSION;
+        runtime.siteIcons.lastBatchRefreshAt = 0;
     }
 }
 
@@ -811,8 +867,8 @@ async function resolveAndCacheSiteIconAsset(
         ? Math.max(400, Number(options?.timeoutMs))
         : 1200;
     const fastFirst = options?.fastFirst ?? true;
-    const fastTimeoutMsRaw = Number(options?.fastTimeoutMs ?? 800);
-    const fastTimeoutMs = Number.isFinite(fastTimeoutMsRaw) ? Math.max(300, fastTimeoutMsRaw) : 800;
+    const fastTimeoutMsRaw = Number(options?.fastTimeoutMs ?? 900);
+    const fastTimeoutMs = Number.isFinite(fastTimeoutMsRaw) ? Math.max(300, fastTimeoutMsRaw) : 900;
     const minEdgePx = options?.minEdgePx ?? getEffectiveMinEdgePx(ICON_MIN_EDGE_PX);
     const now = Date.now();
     const record = runtime.siteIcons.records[domain];
@@ -896,6 +952,7 @@ async function resolveAndCacheSiteIconAsset(
             maxCandidates: 8,
             minEdgePx,
             skipProviders,
+            parallelism: isExtensionContext() ? 2 : 3,
         });
 
         if (fastProbe) {
@@ -909,6 +966,7 @@ async function resolveAndCacheSiteIconAsset(
         maxCandidates: 18,
         minEdgePx,
         skipProviders,
+        parallelism: isExtensionContext() ? 2 : 3,
     });
 
     if (!probe) {

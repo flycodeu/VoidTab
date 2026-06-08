@@ -76,10 +76,14 @@ function isInternalUrl(url: any) {
 
 const SITE_ICON_PROVIDER_SET = new Set<SiteIconProvider>([
     'browser_favicon',
+    'first_party_proxy',
     'cn_favicon',
     'google_s2',
     'yandex',
     'duckduckgo',
+    'icon_horse',
+    'favicon_im',
+    'unavatar',
     'site_manifest',
     'site_favicon',
     'preset',
@@ -90,7 +94,14 @@ function normalizeSiteIconProvider(provider: any, source: string): SiteIconProvi
     if (typeof provider === 'string' && SITE_ICON_PROVIDER_SET.has(provider as SiteIconProvider)) {
         return provider as SiteIconProvider;
     }
+    if (source.includes('/api/favicon')) return 'first_party_proxy';
     if (source.includes('api.iowen.cn/favicon/')) return 'cn_favicon';
+    if (source.includes('t2.gstatic.com/faviconv2') || source.includes('google.com/s2/favicons')) return 'google_s2';
+    if (source.includes('duckduckgo.com/ip3/')) return 'duckduckgo';
+    if (source.includes('favicon.yandex.net/favicon/')) return 'yandex';
+    if (source.includes('icon.horse/icon/')) return 'icon_horse';
+    if (source.includes('favicon.im/')) return 'favicon_im';
+    if (source.includes('unavatar.io/')) return 'unavatar';
     return 'unknown';
 }
 

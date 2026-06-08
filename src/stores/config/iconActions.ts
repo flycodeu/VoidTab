@@ -1,6 +1,6 @@
 import type {Ref} from 'vue';
 import type {Config} from '../../core/config/types';
-import {extractSiteDomain} from '../../shared/utils/icon';
+import {extractSiteDomain, isExtensionContext} from '../../shared/utils/icon';
 import {ensureSiteIconRuntime, resolveAndCacheSiteIcon} from '../../shared/utils/siteIconCache';
 import {measurePerformanceAsync} from '../../shared/utils/performance';
 
@@ -56,7 +56,7 @@ export const createIconActions = (
                 .sort((a, b) => Number(failedDomains.has(b.domain)) - Number(failedDomains.has(a.domain)))
                 .slice(0, maxDomains)
                 .map((x) => x.url);
-            const concurrency = 6;
+            const concurrency = isExtensionContext() ? 6 : 3;
 
             for (let i = 0; i < targets.length; i += concurrency) {
                 const chunk = targets.slice(i, i + concurrency);

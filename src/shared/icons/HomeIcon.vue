@@ -2,6 +2,7 @@
 import {computed, onUnmounted, ref, watch} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore.ts';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../utils/siteIconCache.ts';
+import {getDirectIconFallbackUrl, getInstantAutoIconUrl} from '../utils/icon.ts';
 import {resolvePhosphorIcon} from './phosphorIconMap';
 
 const props = defineProps<{
@@ -24,6 +25,7 @@ const iconSource = ref('');
 const iconSourceIsObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
+const directIconErrorUrl = ref('');
 const sourceMode = ref<'auto' | 'none'>('none');
 let imageFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 const normalizedType = computed<'auto' | 'text' | 'icon'>(() => {
@@ -51,6 +53,19 @@ const clearImageFallbackTimer = () => {
   imageFallbackTimer = null;
 };
 
+const getImageFallbackDelayMs = (url: string) => {
+  return url.includes('/api/favicon') ? 5200 : 1600;
+};
+
+const directIconUrl = computed(() => {
+  return getDirectIconFallbackUrl(props.item.icon, props.item.iconValue, props.item.url);
+});
+
+const canUseDirectIconUrl = () => {
+  const direct = directIconUrl.value;
+  return !!direct && direct !== directIconErrorUrl.value;
+};
+
 const startImageFallbackTimer = () => {
   clearImageFallbackTimer();
   imageLoaded.value = false;
@@ -60,7 +75,7 @@ const startImageFallbackTimer = () => {
     if (!imageLoaded.value && normalizedType.value === 'auto' && iconSource.value && !imgError.value) {
       handleImgError();
     }
-  }, 2200);
+  }, getImageFallbackDelayMs(iconSource.value));
 };
 
 const loadAutoIcon = async (forceRefresh = false) => {
@@ -78,10 +93,20 @@ const loadAutoIcon = async (forceRefresh = false) => {
   }
 
   const token = ++resolveToken.value;
+  if (!forceRefresh && !iconSource.value) {
+    const instantUrl = getInstantAutoIconUrl(props.item.url, props.item.icon, props.item.iconValue);
+    if (instantUrl && instantUrl !== directIconErrorUrl.value) {
+      imgError.value = false;
+      sourceMode.value = 'auto';
+      setIconSource(instantUrl, false);
+    }
+  }
+
   const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
     forceRefresh,
     fastFirst: true,
-    fastTimeoutMs: 700,
+    fastTimeoutMs: 900,
+    timeoutMs: 1400,
   });
   if (token !== resolveToken.value) {
     if (result?.objectUrl && result.url.startsWith('blob:')) URL.revokeObjectURL(result.url);
@@ -89,8 +114,13 @@ const loadAutoIcon = async (forceRefresh = false) => {
   }
 
   if (!result?.url) {
-    sourceMode.value = 'none';
-    setIconSource('', false);
+    if (canUseDirectIconUrl()) {
+      sourceMode.value = 'auto';
+      setIconSource(directIconUrl.value, false);
+    } else {
+      sourceMode.value = 'none';
+      setIconSource('', false);
+    }
     return;
   }
 
@@ -99,10 +129,11 @@ const loadAutoIcon = async (forceRefresh = false) => {
 };
 
 watch(
-    () => [props.item.url, props.item.iconType],
+    () => [props.item.url, props.item.iconType, props.item.icon, props.item.iconValue],
     () => {
       imgError.value = false;
       hasTriedForceRefresh.value = false;
+      directIconErrorUrl.value = '';
       void loadAutoIcon(false);
     },
     {deep: true, immediate: true}
@@ -148,6 +179,9 @@ const handleImgError = () => {
   }
 
   if (sourceMode.value === 'auto' && props.item.url && !!iconSource.value) {
+    if (directIconUrl.value && iconSource.value === directIconUrl.value) {
+      directIconErrorUrl.value = directIconUrl.value;
+    }
     markSiteIconMiss(props.item.url, store.config.runtime, {error: 'img_error', preserveExisting: true});
     if (!hasTriedForceRefresh.value) {
       hasTriedForceRefresh.value = true;
@@ -188,6 +222,8 @@ onUnmounted(() => {
         @error="handleImgError"
         class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         loading="lazy"
+        decoding="async"
+        referrerpolicy="no-referrer"
         :alt="item.title"
     />
 

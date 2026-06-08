@@ -21,6 +21,7 @@ import {PhPlus, PhSquaresFour, PhTrash, PhX} from "@phosphor-icons/vue";
 import {useVisibleGroups} from "../composables/useVisibleGroups.ts";
 import {useToast} from "../../../shared/composables/useToast.ts";
 import {queueSiteIconPreload, type SiteIconPreloadHandle} from "../../../shared/utils/iconPreloader.ts";
+import {isExtensionContext} from "../../../shared/utils/icon.ts";
 
 // Types
 import type {GroupSortKey} from "../../../core/config/types.ts";
@@ -261,32 +262,33 @@ const scheduleIconPreloadBatches = useDebounceFn(() => {
   const runtime = store.config.runtime;
   if (!runtime) return;
 
+  const inExtension = isExtensionContext();
   const currentGroup = activeGroupData.value;
-  const currentUrls = collectAutoIconUrls(currentGroup ? [currentGroup] : [], PRELOAD_CURRENT_GROUP_LIMIT);
+  const currentUrls = collectAutoIconUrls(currentGroup ? [currentGroup] : [], inExtension ? PRELOAD_CURRENT_GROUP_LIMIT : 12);
   if (currentUrls.length) {
     primaryIconPreload = queueSiteIconPreload(currentUrls, runtime, {
-      concurrency: isMobile.value ? 3 : 5,
+      concurrency: isMobile.value ? 2 : (inExtension ? 5 : 2),
       fastFirst: true,
-      fastTimeoutMs: 650,
+      fastTimeoutMs: 900,
       timeoutMs: 1400,
       browserWarm: true,
-      browserWarmLimit: 3,
+      browserWarmLimit: inExtension ? 3 : 2,
       backgroundUpgrade: false,
       idleTimeoutMs: 250,
     });
   }
 
-  const neighborUrls = collectAutoIconUrls(getNeighborGroups(), PRELOAD_NEIGHBOR_GROUP_LIMIT);
+  const neighborUrls = collectAutoIconUrls(getNeighborGroups(), inExtension ? PRELOAD_NEIGHBOR_GROUP_LIMIT : 4);
   if (neighborUrls.length) {
     secondaryIconPreload = queueSiteIconPreload(neighborUrls, runtime, {
-      concurrency: 2,
+      concurrency: inExtension ? 2 : 1,
       fastFirst: true,
-      fastTimeoutMs: 850,
+      fastTimeoutMs: 1000,
       timeoutMs: 1800,
       browserWarm: true,
-      browserWarmLimit: 2,
+      browserWarmLimit: inExtension ? 2 : 1,
       backgroundUpgrade: false,
-      idleTimeoutMs: 1600,
+      idleTimeoutMs: inExtension ? 1600 : 5000,
     });
   }
 }, 250, {maxWait: 1000});

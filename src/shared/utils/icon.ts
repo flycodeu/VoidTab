@@ -2,10 +2,14 @@ import {fetchWithRetry} from './network';
 
 export type IconProvider =
     | 'browser_favicon'
+    | 'first_party_proxy'
     | 'cn_favicon'
     | 'google_s2'
     | 'yandex'
     | 'duckduckgo'
+    | 'icon_horse'
+    | 'favicon_im'
+    | 'unavatar'
     | 'site_manifest'
     | 'site_favicon'
     | 'preset'
@@ -48,13 +52,14 @@ type ProbeOptions = {
     minEdgePx?: number;
     skipProviders?: Iterable<IconProvider>;
     declaredTimeoutMs?: number;
+    parallelism?: number;
 };
 
 const CANDIDATE_FAIL_RETRY_MS = 30 * 60 * 1000;
 const CANDIDATE_OK_TTL_MS = 10 * 60 * 1000;
 const PERSISTENT_FAIL_TTL_MS = 24 * 60 * 60 * 1000;
 const PERSISTENT_TRANSIENT_FAIL_TTL_MS = 30 * 60 * 1000;
-const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v2';
+const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v3';
 const PERSISTENT_FAIL_MAX_ENTRIES = 1200;
 const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v2';
 const FAILURE_STATS_MAX_PATH_ENTRIES = 1200;
@@ -315,10 +320,6 @@ function dedupe(candidates: IconCandidate[]): IconCandidate[] {
     return out;
 }
 
-function isExternalProvider(provider: IconProvider): boolean {
-    return provider === 'google_s2' || provider === 'duckduckgo' || provider === 'yandex';
-}
-
 function pushPresetCandidate(candidates: IconCandidate[], host: string, rootDomain: string) {
     if (host && PRESET_ICONS[host]) {
         candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
@@ -424,8 +425,129 @@ function buildExtensionCandidates(pageUrl: string): IconCandidate[] {
     ];
 }
 
+export function resolveDirectIconUrl(rawIcon: string | null | undefined, pageUrl?: string): string {
+    const raw = String(rawIcon || '').trim();
+    if (!raw || !isDirectIconSource(raw)) return '';
+
+    if (/^data:image\//i.test(raw)) return raw;
+    if (raw.startsWith('blob:')) return '';
+
+    const page = safeParseUrl(pageUrl || '');
+    const pageHref = page?.href || '';
+    const pageOrigin = page?.origin || '';
+    const browserFaviconForPage = (targetUrl: string) => {
+        const target = safeParseUrl(targetUrl);
+        if (!target || !isExtensionContext() || !canUseBrowserFaviconApi()) return '';
+        return buildExtensionCandidates(target.href)[0]?.url || '';
+    };
+
+    try {
+        const browserProtocol = typeof window !== 'undefined' ? window.location.protocol : 'https:';
+        const fallbackBase = pageOrigin || (typeof window !== 'undefined' ? window.location.href : 'https://voidtab.local/');
+        const normalizedRaw = raw.startsWith('//') ? `${browserProtocol}${raw}` : raw;
+        const parsed = new URL(normalizedRaw, fallbackBase);
+
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href;
+
+        if ((parsed.protocol === 'chrome-extension:' || parsed.protocol === 'moz-extension:') && parsed.pathname.startsWith('/_favicon/')) {
+            return browserFaviconForPage(parsed.searchParams.get('pageUrl') || pageHref);
+        }
+
+        if ((parsed.protocol === 'chrome:' || parsed.protocol === 'edge:') && parsed.href.includes('favicon')) {
+            return browserFaviconForPage(pageHref);
+        }
+    } catch {
+        if (pageOrigin) {
+            try {
+                return new URL(raw, pageOrigin).href;
+            } catch {
+                return '';
+            }
+        }
+    }
+
+    return '';
+}
+
+export function canUseDirectIconInstantly(resolvedUrl: string | null | undefined): boolean {
+    const raw = String(resolvedUrl || '').trim();
+    if (!raw) return false;
+    if (/^data:image\//i.test(raw)) return true;
+    if (typeof window === 'undefined') return false;
+
+    try {
+        const parsed = new URL(raw, window.location.href);
+        if (parsed.protocol === 'chrome-extension:' || parsed.protocol === 'moz-extension:') {
+            return parsed.pathname.startsWith('/_favicon/') || parsed.origin === window.location.origin;
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+        return parsed.origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
+export function getDirectIconFallbackUrl(
+    rawIcon: string | null | undefined,
+    rawIconValue: string | null | undefined,
+    pageUrl?: string
+): string {
+    const fromValue = resolveDirectIconUrl(rawIconValue, pageUrl);
+    if (canUseDirectIconInstantly(fromValue)) return fromValue;
+
+    const fromIcon = resolveDirectIconUrl(rawIcon, pageUrl);
+    if (canUseDirectIconInstantly(fromIcon)) return fromIcon;
+
+    return '';
+}
+
+export function getInstantAutoIconUrl(
+    pageUrl: string | null | undefined,
+    rawIcon: string | null | undefined,
+    rawIconValue: string | null | undefined
+): string {
+    const url = String(pageUrl || '').trim();
+    const explicitDirect = resolveDirectIconUrl(rawIconValue, url);
+    if (canUseDirectIconInstantly(explicitDirect)) return explicitDirect;
+
+    const legacyDirect = resolveDirectIconUrl(rawIcon, url);
+    if (canUseDirectIconInstantly(legacyDirect)) return legacyDirect;
+
+    return getFastIconCandidates(url)[0] || '';
+}
+
+function canUseFirstPartyFaviconProxy(): boolean {
+    if (typeof window === 'undefined') return false;
+    if (isExtensionContext()) return false;
+    return window.location.protocol === 'http:' || window.location.protocol === 'https:';
+}
+
+function buildFirstPartyProxyCandidates(pageUrl: string): IconCandidate[] {
+    if (!canUseFirstPartyFaviconProxy()) return [];
+    try {
+        const proxy = new URL('/api/favicon', window.location.origin);
+        proxy.searchParams.set('url', pageUrl);
+        proxy.searchParams.set('size', '256');
+        return [{url: proxy.toString(), provider: 'first_party_proxy'}];
+    } catch {
+        return [];
+    }
+}
+
 function buildExternalCandidates(domains: string[]): IconCandidate[] {
     const candidates: IconCandidate[] = [];
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=256`,
+            provider: 'google_s2',
+        });
+    }
+    for (const domain of domains) {
+        candidates.push({
+            url: `https://icon.horse/icon/${encodeURIComponent(domain)}`,
+            provider: 'icon_horse',
+        });
+    }
     for (const domain of domains) {
         candidates.push({
             url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
@@ -452,32 +574,20 @@ function buildExternalCandidates(domains: string[]): IconCandidate[] {
     }
     for (const domain of domains) {
         candidates.push({
-            url: `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=256`,
-            provider: 'google_s2',
+            url: `https://favicon.im/${encodeURIComponent(domain)}?larger=true`,
+            provider: 'favicon_im',
         });
     }
     for (const domain of domains) {
         candidates.push({
-            url: `https://favicon.im/${encodeURIComponent(domain)}?larger=true`,
-            provider: 'unknown',
+            url: `https://unavatar.io/${encodeURIComponent(domain)}`,
+            provider: 'unavatar',
         });
     }
     for (const domain of domains) {
         candidates.push({
             url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`,
             provider: 'google_s2',
-        });
-    }
-    for (const domain of domains) {
-        candidates.push({
-            url: `https://unavatar.io/${encodeURIComponent(domain)}`,
-            provider: 'unknown',
-        });
-    }
-    for (const domain of domains) {
-        candidates.push({
-            url: `https://icon.horse/icon/${encodeURIComponent(domain)}`,
-            provider: 'unknown',
         });
     }
     return candidates;
@@ -509,12 +619,17 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         return dedupe(candidates);
     }
 
-    // Web/dev: use presets first, then third-party sources to avoid CORP-blocked site icons.
+    // Web/dev: use the same-origin proxy first, then presets/third-party sources
+    // to avoid Tracking Prevention and CORP/ORB blocked direct site icons.
+    const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
+    candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal) {
+    if (!privateOrLocal && !proxyCandidates.length) {
         candidates.push(...buildExternalCandidates(thirdPartyDomains));
     }
-    candidates.push(...buildSiteOriginCandidates(origin));
+    if (privateOrLocal) {
+        candidates.push(...buildSiteOriginCandidates(origin));
+    }
 
     return dedupe(candidates);
 }
@@ -545,12 +660,17 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
         return dedupe(candidates);
     }
 
-    // Fast path (Web): preset first, then third-party, then site origin.
+    // Fast path (Web): same-origin proxy first, then preset/third-party.
+    // Public site-origin favicons are often blocked by CORP/ORB when embedded from the web app.
+    const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
+    candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal) {
+    if (!privateOrLocal && !proxyCandidates.length) {
         candidates.push(...buildExternalCandidates(thirdPartyDomains));
     }
-    candidates.push(...buildSiteOriginCandidates(origin));
+    if (privateOrLocal) {
+        candidates.push(...buildSiteOriginCandidates(origin));
+    }
 
     return dedupe(candidates);
 }
@@ -563,7 +683,49 @@ export function getFastIconCandidates(rawUrl: string): string[] {
     return getFastIconCandidatesWithProviders(rawUrl).map((x) => x.url);
 }
 
+const FETCHABLE_ICON_PROBE_HOSTS = new Set([
+    'api.iowen.cn',
+    'www.google.com',
+    't2.gstatic.com',
+    'icons.duckduckgo.com',
+    'favicon.yandex.net',
+    'favicon.im',
+    'icon.horse',
+    'unavatar.io',
+]);
+
+function canFetchProbeImageBlob(url: string): boolean {
+    if (!isExtensionContext()) return false;
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'https:' && FETCHABLE_ICON_PROBE_HOSTS.has(parsed.hostname.toLowerCase());
+    } catch {
+        return false;
+    }
+}
+
+async function createProbeImageObjectUrl(url: string, timeoutMs: number): Promise<string> {
+    if (!canFetchProbeImageBlob(url)) return '';
+    try {
+        const resp = await fetchWithRetry(url, {
+            cache: 'force-cache',
+            credentials: 'omit',
+        }, {
+            timeoutMs,
+            retries: 0,
+            metricName: 'icon.probe.blob',
+        });
+        if (!resp.ok) return '';
+        const blob = await resp.blob();
+        if (!blob || blob.size <= 0) return '';
+        return URL.createObjectURL(blob);
+    } catch {
+        return '';
+    }
+}
+
 async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: number; height: number } | null> {
+    const objectUrl = await createProbeImageObjectUrl(url, timeoutMs);
     return await new Promise((resolve) => {
         const img = new Image();
         let settled = false;
@@ -574,6 +736,7 @@ async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: numbe
             clearTimeout(timer);
             img.onload = null;
             img.onerror = null;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
             resolve(value);
         };
 
@@ -588,7 +751,7 @@ async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: numbe
         img.onerror = () => finish(null);
         img.decoding = 'async';
         img.referrerPolicy = 'no-referrer';
-        img.src = url;
+        img.src = objectUrl || url;
     });
 }
 
@@ -650,8 +813,8 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<str
 }
 
 function shouldPrevalidateCandidate(candidate: IconCandidate): boolean {
-    // Browser favicon is extension internal and preset is curated; skip extra precheck.
-    if (candidate.provider === 'browser_favicon' || candidate.provider === 'preset') return false;
+    // Browser favicon/proxy are image endpoints and preset is curated; skip extra precheck.
+    if (candidate.provider === 'browser_favicon' || candidate.provider === 'first_party_proxy' || candidate.provider === 'preset') return false;
     return true;
 }
 
@@ -842,33 +1005,25 @@ export async function probeBestIconCandidate(
     const siteOriginCandidates = baseCandidates.filter((x) => x.provider === 'site_favicon' || x.provider === 'site_manifest');
     const browserCandidates = baseCandidates.filter((x) => x.provider === 'browser_favicon');
     const presetCandidates = baseCandidates.filter((x) => x.provider === 'preset');
-    const cnFallbackCandidates = baseCandidates.filter((x) => x.provider === 'cn_favicon');
-    const externalCandidates = baseCandidates.filter((x) => isExternalProvider(x.provider));
-    const unknownCandidates = baseCandidates.filter(
+    const remoteCandidates = baseCandidates.filter(
         (x) =>
             x.provider !== 'site_favicon'
             && x.provider !== 'site_manifest'
             && x.provider !== 'browser_favicon'
             && x.provider !== 'preset'
-            && x.provider !== 'cn_favicon'
-            && !isExternalProvider(x.provider)
     );
     const declaredCandidates = await getDeclaredIconCandidates(rawUrl, options?.declaredTimeoutMs ?? 1800);
     const inExtension = isExtensionContext();
     const candidates = dedupe(inExtension ? [
         ...browserCandidates,
         ...presetCandidates,
-        ...cnFallbackCandidates,
-        ...externalCandidates,
+        ...remoteCandidates,
         ...declaredCandidates,
         ...siteOriginCandidates,
-        ...unknownCandidates,
     ] : [
-        ...externalCandidates,
         ...presetCandidates,
-        ...cnFallbackCandidates,
+        ...remoteCandidates,
         ...siteOriginCandidates,
-        ...unknownCandidates,
     ]);
     return probeBestIconCandidateFromCandidates(candidates, {
         timeoutMs: options?.timeoutMs,
@@ -876,6 +1031,7 @@ export async function probeBestIconCandidate(
         maxCandidates: options?.maxCandidates,
         minEdgePx: minEdge,
         skipProviders: options?.skipProviders,
+        parallelism: options?.parallelism ?? (inExtension ? 2 : 3),
     });
 }
 
@@ -892,6 +1048,102 @@ export async function probeFastIconCandidate(
         maxCandidates: options?.maxCandidates ?? 8,
         minEdgePx: minEdge,
         skipProviders: options?.skipProviders,
+        parallelism: options?.parallelism ?? (isExtensionContext() ? 2 : 3),
+    });
+}
+
+async function probeSingleIconCandidate(
+    candidate: IconCandidate,
+    options: {
+        minEdge: number;
+        skipped: Set<IconProvider>;
+        perCandidateTimeoutMs: number;
+        deadlineAt: number;
+    }
+): Promise<IconProbeResult | null> {
+    if (options.deadlineAt && Date.now() >= options.deadlineAt) return null;
+    if (options.skipped.has(candidate.provider)) return null;
+
+    const cached = getCachedHealth(candidate.url);
+    if (cached && !cached.ok) return null;
+
+    const remainingMs = options.deadlineAt
+        ? Math.max(0, options.deadlineAt - Date.now())
+        : options.perCandidateTimeoutMs;
+    if (options.deadlineAt && remainingMs < 250) return null;
+
+    const timeoutMs = Math.max(250, Math.min(options.perCandidateTimeoutMs, remainingMs));
+
+    if (shouldPrevalidateCandidate(candidate) && !cached?.ok) {
+        const prevalidated = await prevalidateCandidateUrl(candidate, Math.min(1200, timeoutMs));
+        if (!prevalidated) return null;
+    }
+
+    if (options.deadlineAt && Date.now() >= options.deadlineAt) return null;
+    const size = await probeImage(candidate.url, timeoutMs);
+    if (!size) {
+        if (candidate.provider !== 'first_party_proxy') {
+            rememberCandidateFailure(candidate);
+        }
+        return null;
+    }
+
+    rememberCandidateSuccess(candidate);
+
+    const edge = Math.min(size.width, size.height);
+    return {
+        url: candidate.url,
+        source: candidate.url,
+        provider: candidate.provider,
+        width: size.width,
+        height: size.height,
+        lowQuality: edge < options.minEdge,
+        qualityScore: edge,
+    };
+}
+
+function probeIconCandidateBatch(
+    batch: IconCandidate[],
+    options: {
+        minEdge: number;
+        skipped: Set<IconProvider>;
+        perCandidateTimeoutMs: number;
+        deadlineAt: number;
+    }
+): Promise<{ highQuality: IconProbeResult | null; lowQuality: IconProbeResult[] }> {
+    return new Promise((resolve) => {
+        if (!batch.length) {
+            resolve({highQuality: null, lowQuality: []});
+            return;
+        }
+
+        let pending = batch.length;
+        let settled = false;
+        const lowQuality: IconProbeResult[] = [];
+        const finishOne = () => {
+            pending -= 1;
+            if (!settled && pending <= 0) {
+                settled = true;
+                resolve({highQuality: null, lowQuality});
+            }
+        };
+
+        for (const candidate of batch) {
+            void probeSingleIconCandidate(candidate, options)
+                .then((result) => {
+                    if (settled) return;
+                    if (result && !result.lowQuality) {
+                        settled = true;
+                        resolve({highQuality: result, lowQuality});
+                        return;
+                    }
+                    if (result) lowQuality.push(result);
+                    finishOne();
+                })
+                .catch(() => {
+                    if (!settled) finishOne();
+                });
+        }
     });
 }
 
@@ -912,47 +1164,27 @@ async function probeBestIconCandidateFromCandidates(
         ? Math.max(1, Math.min(candidates.length, Math.round(maxCandidatesRaw)))
         : candidates.length;
     const effectiveCandidates = candidates.slice(0, maxCandidates);
+    const parallelismRaw = Number(options?.parallelism ?? 1);
+    const parallelism = Number.isFinite(parallelismRaw)
+        ? Math.max(1, Math.min(4, Math.round(parallelismRaw)))
+        : 1;
     let bestLowQuality: IconProbeResult | null = null;
 
-    for (const candidate of effectiveCandidates) {
+    for (let i = 0; i < effectiveCandidates.length; i += parallelism) {
         if (deadlineAt && Date.now() >= deadlineAt) break;
-        if (skipped.has(candidate.provider)) continue;
-        const cached = getCachedHealth(candidate.url);
-        if (cached && !cached.ok) continue;
+        const batch = effectiveCandidates.slice(i, i + parallelism);
+        const result = await probeIconCandidateBatch(batch, {
+            minEdge,
+            skipped,
+            perCandidateTimeoutMs,
+            deadlineAt,
+        });
 
-        const remainingMs = deadlineAt ? Math.max(0, deadlineAt - Date.now()) : perCandidateTimeoutMs;
-        if (deadlineAt && remainingMs < 250) break;
-        const timeoutMs = Math.max(250, Math.min(perCandidateTimeoutMs, remainingMs));
-
-        if (shouldPrevalidateCandidate(candidate) && !cached?.ok) {
-            const prevalidated = await prevalidateCandidateUrl(candidate, Math.min(1200, timeoutMs));
-            if (!prevalidated) continue;
-        }
-
-        if (deadlineAt && Date.now() >= deadlineAt) break;
-        const size = await probeImage(candidate.url, timeoutMs);
-        if (!size) {
-            rememberCandidateFailure(candidate);
-            continue;
-        }
-
-        rememberCandidateSuccess(candidate);
-
-        const edge = Math.min(size.width, size.height);
-        const lowQuality = edge < minEdge;
-        const result: IconProbeResult = {
-            url: candidate.url,
-            source: candidate.url,
-            provider: candidate.provider,
-            width: size.width,
-            height: size.height,
-            lowQuality,
-            qualityScore: edge,
-        };
-
-        if (!lowQuality) return result;
-        if (!bestLowQuality || result.qualityScore > bestLowQuality.qualityScore) {
-            bestLowQuality = result;
+        if (result.highQuality) return result.highQuality;
+        for (const lowQuality of result.lowQuality) {
+            if (!bestLowQuality || lowQuality.qualityScore > bestLowQuality.qualityScore) {
+                bestLowQuality = lowQuality;
+            }
         }
     }
 

@@ -165,10 +165,14 @@ export type SiteStateMap = Record<string, { lastVisited: number; count: number }
 
 export type SiteIconProvider =
     | 'browser_favicon'
+    | 'first_party_proxy'
     | 'cn_favicon'
     | 'google_s2'
     | 'yandex'
     | 'duckduckgo'
+    | 'icon_horse'
+    | 'favicon_im'
+    | 'unavatar'
     | 'site_manifest'
     | 'site_favicon'
     | 'preset'

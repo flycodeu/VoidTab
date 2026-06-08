@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import {fetchStockPayload, parseStockSymbols} from './api/stock-core.js'
+import {fetchFaviconProxyPayload} from './api/favicon-core.js'
 
 const getNodePackageName = (id: string) => {
     const normalizedId = id.replace(/\\/g, '/')
@@ -105,12 +106,53 @@ const createStockApiDevPlugin = () => ({
     },
 })
 
+const createFaviconApiDevPlugin = () => ({
+    name: 'voidtab-favicon-api-dev',
+    configureServer(server: any) {
+        server.middlewares.use('/api/favicon', async (req: any, res: any) => {
+            const url = new URL(req.url || '/', 'http://localhost')
+
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+            if (req.method === 'OPTIONS') {
+                res.statusCode = 204
+                res.end()
+                return
+            }
+
+            if (req.method !== 'GET') {
+                res.statusCode = 405
+                res.setHeader('Content-Type', 'application/json; charset=utf-8')
+                res.end(JSON.stringify({error: 'Method not allowed'}))
+                return
+            }
+
+            try {
+                const payload = await fetchFaviconProxyPayload(url.searchParams.get('url'))
+                res.statusCode = 200
+                res.setHeader('Content-Type', payload.contentType)
+                res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800')
+                res.setHeader('X-VoidTab-Favicon-Source', payload.source)
+                res.end(payload.body)
+            } catch (error: any) {
+                res.statusCode = error?.statusCode || 502
+                res.setHeader('Content-Type', 'application/json; charset=utf-8')
+                res.end(JSON.stringify({
+                    error: error instanceof Error ? error.message : 'Favicon unavailable',
+                }))
+            }
+        })
+    },
+})
+
 export default defineConfig(({ mode }) => {
     // mode === 'ext' 时才把 background 作为入口构建
     const isExt = mode === 'ext'
 
     return {
-        plugins: [vue(), createStockApiDevPlugin()],
+        plugins: [vue(), createStockApiDevPlugin(), createFaviconApiDevPlugin()],
         base: './',
 
         server: {

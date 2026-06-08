@@ -6,6 +6,7 @@ import {idbGetBlob} from '../../../../core/storage/photoIdb';
 import SiteListModal from './SiteListModal.vue';
 import {PhGear, PhFolderNotch, PhArrowUpRight} from '@phosphor-icons/vue';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../../../../shared/utils/siteIconCache.ts';
+import {getInstantAutoIconUrl} from '../../../../shared/utils/icon.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
@@ -129,6 +130,7 @@ const getFallbackText = (item: any): string => {
 };
 
 const defaultFallbackText = computed(() => defaultSite.value ? getFallbackText(defaultSite.value) : '?');
+const autoIconCacheKey = (url: string) => `auto:${url}`;
 
 const getIconSrc = async (item: any) => {
   if (item.iconType === 'text') return null;
@@ -144,13 +146,28 @@ const getIconSrc = async (item: any) => {
     }
   }
   if (item.iconType === 'auto' && item.url) {
-    const key = `auto:${item.url}`;
+    const key = autoIconCacheKey(item.url);
     if (blobCache.value[key]) return blobCache.value[key];
+    const instantUrl = getInstantAutoIconUrl(item.url, item.icon, item.iconValue);
+    if (instantUrl) {
+      void resolveAndCacheSiteIcon(item.url, store.config.runtime, {
+        fastFirst: true,
+        fastTimeoutMs: 900,
+        timeoutMs: 1400,
+        resolveTimeoutMs: 1600,
+      }).then((resolved) => {
+        if (!resolved?.url || resolved.url === instantUrl) return;
+        blobCache.value[key] = resolved.url;
+        if (resolved.objectUrl) rememberObjectUrl(resolved.url);
+      }).catch(() => null);
+      return instantUrl;
+    }
+
     const resolved = await resolveAndCacheSiteIcon(item.url, store.config.runtime, {
       fastFirst: true,
-      fastTimeoutMs: 650,
-      timeoutMs: 1200,
-      resolveTimeoutMs: 1400,
+      fastTimeoutMs: 900,
+      timeoutMs: 1400,
+      resolveTimeoutMs: 1600,
     });
     if (resolved?.url) {
       blobCache.value[key] = resolved.url;
@@ -197,6 +214,7 @@ watch(() => activeGroup.value?.items, async (items) => {
 const handleMainIconError = () => {
   if (defaultSite.value?.iconType === 'auto' && defaultSite.value.url) {
     markSiteIconMiss(defaultSite.value.url, store.config.runtime, {error: 'img_error', preserveExisting: true});
+    delete blobCache.value[autoIconCacheKey(defaultSite.value.url)];
   }
   mainIconLoadFailed.value = true;
 };

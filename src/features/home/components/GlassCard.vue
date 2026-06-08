@@ -5,7 +5,7 @@ import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
-import {getFastIconCandidates} from "../../../shared/utils/icon.ts";
+import {getDirectIconFallbackUrl, getInstantAutoIconUrl} from "../../../shared/utils/icon.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -33,6 +33,7 @@ const autoIconUrl = ref("");
 const isObjectUrl = ref(false);
 const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
+const directIconErrorUrl = ref("");
 const iconSourceMode = ref<"auto" | "none">("none");
 let deferredResolveTimer: ReturnType<typeof setTimeout> | null = null;
 let deferredResolveAttempts = 0;
@@ -54,6 +55,15 @@ const clearDeferredResolveTimer = () => {
   if (!deferredResolveTimer) return;
   clearTimeout(deferredResolveTimer);
   deferredResolveTimer = null;
+};
+
+const directIconUrl = computed(() => {
+  return getDirectIconFallbackUrl(props.item.icon, props.item.iconValue, props.item.url);
+});
+
+const canUseDirectIconUrl = () => {
+  const direct = directIconUrl.value;
+  return !!direct && direct !== directIconErrorUrl.value;
 };
 
 const scheduleDeferredResolveRetry = (token: number) => {
@@ -83,8 +93,8 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 
   const token = ++resolveToken.value;
   if (!forceRefresh && !autoIconUrl.value) {
-    const instantUrl = getFastIconCandidates(props.item.url)[0];
-    if (instantUrl) {
+    const instantUrl = getInstantAutoIconUrl(props.item.url, props.item.icon, props.item.iconValue);
+    if (instantUrl && instantUrl !== directIconErrorUrl.value) {
       hasLoadError.value = false;
       iconSourceMode.value = "auto";
       setAutoIconUrl(instantUrl, false);
@@ -94,7 +104,8 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
     forceRefresh,
     fastFirst: true,
-    fastTimeoutMs: 700,
+    fastTimeoutMs: 900,
+    timeoutMs: 1400,
   });
 
   if (token !== resolveToken.value) {
@@ -103,9 +114,15 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   }
 
   if (!result?.url) {
-    iconSourceMode.value = "none";
-    setAutoIconUrl("", false);
-    hasLoadError.value = true;
+    if (canUseDirectIconUrl()) {
+      iconSourceMode.value = "auto";
+      setAutoIconUrl(directIconUrl.value, false);
+      hasLoadError.value = false;
+    } else {
+      iconSourceMode.value = "none";
+      setAutoIconUrl("", false);
+      hasLoadError.value = true;
+    }
     if (!forceRefresh) scheduleDeferredResolveRetry(token);
     return;
   }
@@ -117,10 +134,11 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 };
 
 watch(
-    () => [props.item.url, props.item.iconType],
+    () => [props.item.url, props.item.iconType, props.item.icon, props.item.iconValue],
     () => {
       hasLoadError.value = false;
       hasTriedForceRefresh.value = false;
+      directIconErrorUrl.value = "";
       deferredResolveAttempts = 0;
       clearDeferredResolveTimer();
       void resolveAutoIcon(false);
@@ -149,6 +167,10 @@ const handleFallback = () => {
   if (!isAuto.value) {
     hasLoadError.value = true;
     return;
+  }
+
+  if (directIconUrl.value && autoIconUrl.value === directIconUrl.value) {
+    directIconErrorUrl.value = directIconUrl.value;
   }
 
   if (iconSourceMode.value === "auto" && props.item.url && !!autoIconUrl.value) {

@@ -32,6 +32,10 @@ const clearImageFallbackTimer = () => {
   imageFallbackTimer = null;
 };
 
+const getImageFallbackDelayMs = (url: string) => {
+  return url.includes('/api/favicon') ? 5200 : 1600;
+};
+
 const startImageFallbackTimer = () => {
   clearImageFallbackTimer();
   imageLoaded.value = false;
@@ -42,7 +46,7 @@ const startImageFallbackTimer = () => {
     if (!imageLoaded.value && props.isAuto && !props.hasError && props.autoIconUrl) {
       emit('fallback');
     }
-  }, 2200);
+  }, getImageFallbackDelayMs(props.autoIconUrl));
 };
 
 const bg = computed(() => {

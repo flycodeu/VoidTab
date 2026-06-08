@@ -51,18 +51,61 @@ const sidebarOrientation = computed(() => isHorizontal.value ? 'horizontal' : 'v
 
 /** 滚动定位 */
 const listRef = ref<HTMLElement | null>(null);
+let activeScrollRaf: number | null = null;
+
+const clampScroll = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const getActiveScrollBehavior = (): ScrollBehavior => {
+  if (typeof window === 'undefined') return 'auto';
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth';
+};
+
+const findGroupButtonEl = (host: HTMLElement, id: string) => {
+  return Array.from(host.querySelectorAll<HTMLElement>('[data-group-id]'))
+      .find((el) => el.dataset.groupId === id) || null;
+};
+
+const scrollActiveGroupIntoView = (id: string) => {
+  if (activeScrollRaf != null) cancelAnimationFrame(activeScrollRaf);
+  activeScrollRaf = requestAnimationFrame(() => {
+    activeScrollRaf = null;
+
+    const host = listRef.value;
+    if (!host) return;
+
+    const el = findGroupButtonEl(host, id);
+    if (!el) return;
+
+    const hostRect = host.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const behavior = getActiveScrollBehavior();
+
+    if (isHorizontal.value) {
+      const currentCenter = elRect.left - hostRect.left + host.scrollLeft + elRect.width / 2;
+      const targetLeft = clampScroll(
+          currentCenter - host.clientWidth / 2,
+          0,
+          Math.max(0, host.scrollWidth - host.clientWidth)
+      );
+      host.scrollTo({left: targetLeft, behavior});
+      return;
+    }
+
+    const currentCenter = elRect.top - hostRect.top + host.scrollTop + elRect.height / 2;
+    const targetTop = clampScroll(
+        currentCenter - host.clientHeight / 2,
+        0,
+        Math.max(0, host.scrollHeight - host.clientHeight)
+    );
+    host.scrollTo({top: targetTop, behavior});
+  });
+};
+
 watch(
-    () => props.activeGroupId,
-    async (id) => {
+    () => [props.activeGroupId, sidebarPos.value, store.config.layout.length],
+    async ([id]) => {
       await nextTick();
-      const host = listRef.value;
-      if (!host) return;
-      const el = host.querySelector(`[data-group-id="${id}"]`) as HTMLElement | null;
-      el?.scrollIntoView({
-        block: isHorizontal.value ? 'nearest' : 'nearest',
-        inline: isHorizontal.value ? 'center' : 'nearest',
-        behavior: 'smooth',
-      });
+      scrollActiveGroupIntoView(String(id || ''));
     },
     {immediate: true}
 );
@@ -189,6 +232,8 @@ const onGroupSortEnd = () => {
 };
 
 onBeforeUnmount(() => {
+  if (activeScrollRaf != null) cancelAnimationFrame(activeScrollRaf);
+  activeScrollRaf = null;
   ui.setGroupSorting(false);
   unbindSortingWheel();
 });
@@ -256,6 +301,7 @@ onBeforeUnmount(() => {
               <SidebarGroupButton
                   v-for="group in store.config.layout"
                   :key="group.id"
+                  :data-group-id="group.id"
                   :class="[
                   'group-sort-handle',
                   'sidebar-group-btn',

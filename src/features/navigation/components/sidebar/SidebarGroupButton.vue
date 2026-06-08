@@ -82,6 +82,7 @@ const dynamicClasses = computed(() => {
       :aria-label="groupButtonLabel"
       :aria-current="active ? 'page' : undefined"
       :aria-describedby="showDropHint ? dropHintId : undefined"
+      :data-group-id="group.id"
       :class="dynamicClasses"
       :style="buttonStyle"
   >
@@ -219,15 +220,33 @@ const dynamicClasses = computed(() => {
 }
 
 .icon {
-  transition: transform 0.16s ease;
+  transform-origin: center;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), filter 0.18s ease;
+  will-change: transform;
+}
+
+.sg-btn.is-active .icon {
+  transform: scale(1.18);
 }
 
 .sg-btn:hover .icon {
-  transform: scale(1.08);
+  transform: scale(1.16);
+}
+
+.sg-btn.is-active:hover .icon {
+  transform: scale(1.28);
+}
+
+.sg-btn.is-horizontal.is-active .icon {
+  transform: scale(1.16);
 }
 
 .sg-btn.is-horizontal:hover .icon {
-  transform: scale(1.2);
+  transform: scale(1.22);
+}
+
+.sg-btn.is-horizontal.is-active:hover .icon {
+  transform: scale(1.30);
 }
 
 .icon-glow {
