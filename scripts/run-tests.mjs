@@ -187,6 +187,59 @@ test('MainGrid debounces resize and ResizeObserver recalculation', async () => {
   assert.match(grid, /new ResizeObserver\(\(\) => recalcGridDebounced\(\)\)/);
 });
 
+test('delete snapshots clone serializable config data without structuredClone', async () => {
+  const contextMenu = await read('src/features/context-menu/components/ContextMenu.vue');
+  const grid = await read('src/features/home/components/MainGrid.vue');
+
+  assert.match(contextMenu, /cloneConfigSnapshot/);
+  assert.match(grid, /cloneConfigSnapshot/);
+  assert.doesNotMatch(contextMenu, /structuredClone/);
+  assert.doesNotMatch(grid, /structuredClone/);
+
+  await runBundledTypeScript('config-snapshot', `
+    import assert from 'node:assert/strict';
+    import {reactive} from 'vue';
+    import {cloneConfigSnapshot} from '../../../src/shared/utils/configSnapshot.ts';
+
+    class RuntimeOnly {
+      value = 'skip me';
+    }
+
+    const item = reactive({
+      id: 'widget-1',
+      kind: 'widget',
+      widgetType: 'clock',
+      title: 'Clock',
+      w: 2,
+      h: 1,
+      widgetConfig: {
+        enabled: true,
+        nested: { label: 'keep' },
+        runtimeOnly: new RuntimeOnly(),
+        onClick() {},
+      },
+    });
+    item.widgetConfig.self = item.widgetConfig;
+
+    const snapshot = cloneConfigSnapshot(item);
+
+    assert.deepEqual(snapshot, {
+      id: 'widget-1',
+      kind: 'widget',
+      widgetType: 'clock',
+      title: 'Clock',
+      w: 2,
+      h: 1,
+      widgetConfig: {
+        enabled: true,
+        nested: { label: 'keep' },
+      },
+    });
+    assert.notEqual(snapshot, item);
+    assert.notEqual(snapshot.widgetConfig, item.widgetConfig);
+  `);
+});
+
 test('primary dialogs provide focus traps and dialog semantics', async () => {
   const focusTrap = await read('src/shared/composables/useFocusTrap.ts');
   const confirm = await read('src/shared/ui/dialogs/ConfirmDialog.vue');

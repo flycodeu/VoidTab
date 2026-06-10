@@ -22,6 +22,7 @@ import {useVisibleGroups} from "../composables/useVisibleGroups.ts";
 import {useToast} from "../../../shared/composables/useToast.ts";
 import {queueSiteIconPreload, type SiteIconPreloadHandle} from "../../../shared/utils/iconPreloader.ts";
 import {isExtensionContext} from "../../../shared/utils/icon.ts";
+import {cloneConfigSnapshot} from "../../../shared/utils/configSnapshot.ts";
 
 // Types
 import type {GroupSortKey} from "../../../core/config/types.ts";
@@ -532,10 +533,7 @@ const findGroupById = (groupId: string) => {
   return (store.config.layout as LayoutGroup[]).find((group) => group.id === groupId);
 };
 
-const cloneLayoutItem = (item: LayoutItem) => {
-  if (typeof structuredClone === "function") return structuredClone(item);
-  return JSON.parse(JSON.stringify(item));
-};
+const cloneLayoutItem = (item: LayoutItem) => cloneConfigSnapshot(item);
 
 const cancelDelete = () => {
   deleteDialogOpen.value = false;

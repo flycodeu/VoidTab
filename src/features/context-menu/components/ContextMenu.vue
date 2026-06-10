@@ -3,6 +3,7 @@ import {computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref, nex
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useToast} from '../../../shared/composables/useToast.ts';
+import {cloneConfigSnapshot} from '../../../shared/utils/configSnapshot.ts';
 
 // 组件
 import ContextMenuPanel from './ContextMenuPanel.vue';
@@ -44,11 +45,6 @@ type DeleteSnapshot =
     | { type: 'site' | 'widget'; groupId: string; index: number; item: any; title: string }
     | { type: 'group'; index: number; group: any; title: string };
 
-const cloneValue = <T,>(value: T): T => {
-  if (typeof structuredClone === 'function') return structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
-};
-
 const restoreDeleted = (snapshot: DeleteSnapshot) => {
   if (snapshot.type === 'group') {
     if (store.config.layout.some((group: any) => group.id === snapshot.group.id)) {
@@ -56,7 +52,7 @@ const restoreDeleted = (snapshot: DeleteSnapshot) => {
       return;
     }
     const index = Math.max(0, Math.min(snapshot.index, store.config.layout.length));
-    store.config.layout.splice(index, 0, cloneValue(snapshot.group));
+    store.config.layout.splice(index, 0, cloneConfigSnapshot(snapshot.group));
     void store.saveConfig();
     toast.success(`已恢复分组「${snapshot.title}」。`);
     ui.announce(`已恢复分组${snapshot.title}`);
@@ -74,7 +70,7 @@ const restoreDeleted = (snapshot: DeleteSnapshot) => {
     return;
   }
   const index = Math.max(0, Math.min(snapshot.index, group.items.length));
-  group.items.splice(index, 0, cloneValue(snapshot.item));
+  group.items.splice(index, 0, cloneConfigSnapshot(snapshot.item));
   void store.saveConfig();
   toast.success(`已恢复「${snapshot.title}」。`);
   ui.announce(`已恢复${snapshot.type === 'widget' ? '组件' : '网站'}${snapshot.title}`);
@@ -130,7 +126,7 @@ const confirmDelete = () => {
         type: target.type,
         groupId: target.groupId,
         index,
-        item: cloneValue(item),
+        item: cloneConfigSnapshot(item),
         title: item.title || (target.type === 'widget' ? item.widgetType || '未命名组件' : '未命名'),
       };
       store.removeSite(target.groupId, target.siteId);
@@ -142,7 +138,7 @@ const confirmDelete = () => {
       snapshot = {
         type: 'group',
         index,
-        group: cloneValue(group),
+        group: cloneConfigSnapshot(group),
         title: group.title || '未命名分组',
       };
       store.removeGroup(target.groupId);
