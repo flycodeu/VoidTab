@@ -3,6 +3,7 @@ import {computed, ref, watch} from 'vue';
 import {PhX, PhWarningCircle, PhCheck} from '@phosphor-icons/vue';
 import IconPicker from './IconPicker.vue';
 import {useFocusTrap} from '../../composables/useFocusTrap';
+import {useEscapeClose} from '../../composables/useEscapeClose';
 import {resolvePhosphorIcon} from '../../icons/phosphorIconMap';
 
 type GroupForm = {
@@ -36,6 +37,7 @@ const themeColorLabelId = `group-dialog-theme-color-${idSuffix}`;
 const customHexInputId = `group-dialog-custom-hex-${idSuffix}`;
 const isDialogActive = computed(() => props.show);
 useFocusTrap(dialogRef, isDialogActive);
+useEscapeClose(isDialogActive, () => emit('close'));
 
 const presetColors = [
   {fg: '#3b82f6'}, {fg: '#8b5cf6'}, {fg: '#ec4899'}, {fg: '#ef4444'},

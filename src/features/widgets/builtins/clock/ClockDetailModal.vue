@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import {ref, onMounted, onUnmounted} from 'vue';
 import {PhCornersOut, PhCornersIn, PhX} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const isFullscreen = ref(false);
 

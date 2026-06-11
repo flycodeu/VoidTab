@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref} from 'vue';
 import {PhX, PhPlus, PhTrash} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{
   show: boolean;
@@ -8,6 +9,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close', 'save']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const localConfig = ref(JSON.parse(JSON.stringify(props.config)));
 const newSymbol = ref('');

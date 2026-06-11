@@ -8,10 +8,12 @@ import {
 import {tempStorage} from '../../../../core/storage/tempStorage';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean; initialTrends: any[] }>();
 const emit = defineEmits(['close', 'refresh']);
 const toast = useToast();
+useEscapeClose(() => props.show, () => emit('close'));
 
 const currentTrends = ref(props.initialTrends);
 const isLocalLoading = ref(false);

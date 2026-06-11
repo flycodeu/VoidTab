@@ -2,6 +2,7 @@
 import {computed, nextTick, onMounted, ref} from 'vue';
 import {PhBookOpen, PhUploadSimple, PhX} from '@phosphor-icons/vue';
 import {idbGetBlob, idbSetBlob} from '../../../../core/storage/photoIdb';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 type NovelMeta = {
   title: string;
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'updated'): void;
 }>();
+useEscapeClose(() => props.show, () => emit('close'));
 
 const storageKey = computed(() => `voidtab:novel-reader:${props.itemId}`);
 const blobKey = computed(() => `novel:${props.itemId}`);

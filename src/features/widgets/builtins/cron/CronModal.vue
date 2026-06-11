@@ -7,9 +7,11 @@ import {
 } from '@phosphor-icons/vue';
 import cronstrue from 'cronstrue/i18n';
 import parser from 'cron-parser';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 import {useConfigStore} from '../../../../stores/useConfigStore';
 

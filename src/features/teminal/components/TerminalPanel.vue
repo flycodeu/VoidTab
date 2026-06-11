@@ -2,9 +2,11 @@
 import {ref, nextTick, onMounted, computed} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
 import {fetchWithRetry} from '../../../shared/utils/network';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
+useEscapeClose(true, () => emit('close'));
 
 // === DOM Refs ===
 const inputRef = ref<HTMLInputElement | null>(null);

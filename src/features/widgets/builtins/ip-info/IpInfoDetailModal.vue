@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import {PhArrowClockwise, PhGlobeHemisphereEast, PhX} from '@phosphor-icons/vue';
 import type {IpInfo} from './ipInfoData';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{
   show: boolean;
@@ -14,6 +15,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'refresh'): void;
 }>();
+useEscapeClose(() => props.show, () => emit('close'));
 
 const fields = computed(() => [
   {label: '公网 IP', value: props.info?.ip || '--'},

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted} from 'vue';
 import {PhX, PhWind, PhDrop, PhSun, PhThermometer, PhCalendarBlank,PhMapPin} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{
   show: boolean;
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 onMounted(() => {
   if (props.show) document.body.style.overflow = 'hidden';

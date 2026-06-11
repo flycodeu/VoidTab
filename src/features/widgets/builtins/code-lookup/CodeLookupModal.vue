@@ -2,12 +2,14 @@
 import {computed, ref, watch} from 'vue';
 import {PhIdentificationCard, PhMagnifyingGlass, PhX} from '@phosphor-icons/vue';
 import {geoCodeRecords, getTypeLabel, searchGeoCodes, type GeoCodeRecord} from './geoCodes';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean; initialQuery: string }>();
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'update:query', value: string): void;
 }>();
+useEscapeClose(() => props.show, () => emit('close'));
 
 const query = ref(props.initialQuery || '');
 const activeType = ref<'all' | GeoCodeRecord['type']>('all');

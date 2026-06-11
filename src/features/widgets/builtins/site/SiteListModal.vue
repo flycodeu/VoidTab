@@ -9,9 +9,11 @@ import {
   PhPaintBrush, PhCheck, PhEye
 } from '@phosphor-icons/vue';
 import {resolveAndCacheSiteIcon} from '../../../../shared/utils/siteIconCache.ts';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean; widgetId: string }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const store = useConfigStore();
 const runtime = store.config.runtime;

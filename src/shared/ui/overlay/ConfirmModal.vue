@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {PhWarning} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../composables/useEscapeClose';
 
-defineProps<{
+const props = defineProps<{
   show: boolean;
   title?: string;
   description?: string;
@@ -14,6 +15,8 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'confirm'): void;
 }>();
+
+useEscapeClose(() => props.show, () => emit('close'));
 </script>
 
 <template>

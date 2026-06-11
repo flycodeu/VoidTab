@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
 import {useFocusTrap} from '../../composables/useFocusTrap';
+import {useEscapeClose} from '../../composables/useEscapeClose';
 
 type Message = string | string[];
 
@@ -24,6 +25,7 @@ const isActive = computed(() => props.show);
 const titleId = `confirm-dialog-title-${Math.random().toString(36).slice(2)}`;
 const messageId = `confirm-dialog-message-${Math.random().toString(36).slice(2)}`;
 useFocusTrap(dialogRef, isActive);
+useEscapeClose(isActive, () => emit('cancel'));
 
 const onBackdrop = () => {
   if (props.closeOnBackdrop === false) return;

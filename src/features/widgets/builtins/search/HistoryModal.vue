@@ -10,11 +10,13 @@ import {
 import MarkdownIt from 'markdown-it';
 import {fetchWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const md = new MarkdownIt({html: true});
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const store = useHistoryStore();
 const config = useConfigStore();

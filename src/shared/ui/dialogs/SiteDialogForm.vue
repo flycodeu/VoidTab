@@ -4,6 +4,7 @@ import { PhX, PhGlobe, PhSpinner, PhCaretDown, PhCaretUp, PhNotePencil } from '@
 import ColorPicker from './ColorPicker.vue';
 import { getSmartInitials } from '../../utils/initials.ts';
 import {useFocusTrap} from '../../composables/useFocusTrap';
+import {useEscapeClose} from '../../composables/useEscapeClose';
 import {resolvePhosphorIcon} from '../../icons/phosphorIconMap';
 
 type IconMode = 'auto' | 'text' | 'icon';
@@ -63,6 +64,7 @@ const remarkInputId = `site-dialog-remark-${idSuffix}`;
 const dialogRef = ref<HTMLElement | null>(null);
 const isDialogActive = computed(() => props.show);
 useFocusTrap(dialogRef, isDialogActive);
+useEscapeClose(isDialogActive, () => emit('close'));
 
 const setField = <K extends keyof SiteForm>(k: K, v: SiteForm[K]) => {
   emit('update:modelValue', { ...props.modelValue, [k]: v });

@@ -27,12 +27,14 @@ import python from 'highlight.js/lib/languages/python';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import 'highlight.js/styles/atom-one-dark.css';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{
   isOpen: boolean;
   initialQuery?: string;
 }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.isOpen, () => emit('close'));
 
 const configStore = useConfigStore();
 const aiStore = useAiStore();

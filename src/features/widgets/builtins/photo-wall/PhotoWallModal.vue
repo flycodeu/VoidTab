@@ -7,9 +7,11 @@ import type {PhotoRef} from '../../../../core/config/types';
 import {
   PhX, PhPlus, PhTrash, PhStar, PhLinkSimple, PhUploadSimple, PhImages, PhCheckCircle,PhWarningCircle
 } from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean; widgetId: string }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const store = useConfigStore();
 const saveDebounced = useDebounceFn(() => store.saveConfig?.(), 300);

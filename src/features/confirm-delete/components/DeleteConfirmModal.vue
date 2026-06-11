@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {PhTrash} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
-defineProps<{
+const props = defineProps<{
   show: boolean;
   targetType: 'site' | 'group';
 }>();
@@ -10,6 +11,8 @@ const emit = defineEmits<{
   (e: 'cancel'): void;
   (e: 'confirm'): void;
 }>();
+
+useEscapeClose(() => props.show, () => emit('cancel'));
 </script>
 
 <template>

@@ -7,9 +7,11 @@ import {
 } from '@phosphor-icons/vue';
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 // === 核心状态 ===
 import { useConfigStore } from '../../../../stores/useConfigStore';

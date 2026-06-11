@@ -12,7 +12,7 @@ import {
   PhSkull
 } from '@phosphor-icons/vue';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
 
 // =====================================================
@@ -1789,9 +1789,18 @@ const rerolls = ref(3);
 const keys = {w: false, a: false, s: false, d: false};
 
 const handleKey = (e: KeyboardEvent, isDown: boolean) => {
+  if (!props.show) return;
+
   const k = e.key.toLowerCase();
-  if (k in keys) keys[k as keyof typeof keys] = isDown;
-  if (isDown && e.key === 'Escape') handleEsc();
+  if (k in keys) {
+    e.preventDefault();
+    keys[k as keyof typeof keys] = isDown;
+  }
+
+  if (isDown && e.key === 'Escape') {
+    e.preventDefault();
+    handleEsc();
+  }
 };
 
 const handleEsc = () => {
@@ -1915,13 +1924,16 @@ const closeGame = () => {
   emit('close');
 };
 
+const handleKeyDown = (e: KeyboardEvent) => handleKey(e, true);
+const handleKeyUp = (e: KeyboardEvent) => handleKey(e, false);
+
 onMounted(() => {
-  window.addEventListener('keydown', (e) => handleKey(e, true));
-  window.addEventListener('keyup', (e) => handleKey(e, false));
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
 });
 onUnmounted(() => {
-  window.removeEventListener('keydown', (e) => handleKey(e, true));
-  window.removeEventListener('keyup', (e) => handleKey(e, false));
+  window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('keyup', handleKeyUp);
   cancelAnimationFrame(animId);
 });
 </script>

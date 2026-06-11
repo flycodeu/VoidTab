@@ -2,9 +2,11 @@
 import {computed, ref, onBeforeUnmount} from 'vue';
 import {Solar, SolarUtil, HolidayUtil} from 'lunar-typescript';
 import {PhX, PhCaretLeft, PhCaretRight, PhArrowsOut, PhArrowsIn} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const selectedDate = ref(new Date());
 const panelDate = ref(new Date());

@@ -14,9 +14,11 @@ import {
   PhBrowsers
 } from '@phosphor-icons/vue';
 import type {SystemStats} from '../../../../core/system/systemStats';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean; stats: SystemStats | null }>();
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 // ---------------- 数据处理 ----------------
 

@@ -25,6 +25,7 @@ import SearchTab from './tabs/SearchTab.vue';
 import SyncTab from './tabs/SyncTab.vue';
 import ThemeTab from './tabs/ThemeTab.vue';
 import {useFocusTrap} from '../../../shared/composables/useFocusTrap';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
@@ -32,6 +33,7 @@ const store = useConfigStore();
 const dialogRef = ref<HTMLElement | null>(null);
 const isDialogActive = computed(() => props.show);
 useFocusTrap(dialogRef, isDialogActive);
+useEscapeClose(isDialogActive, () => emit('close'));
 
 const settingsTitle = '\u8bbe\u7f6e';
 const closeTitle = '\u5173\u95ed (Esc)';

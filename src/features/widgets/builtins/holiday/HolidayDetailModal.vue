@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import {useNow, useDateFormat} from '@vueuse/core';
 import {PhX, PhCalendarBlank, PhCheckCircle, PhHourglass} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 // 定义接口，确保类型安全
 interface Holiday {
@@ -18,6 +19,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close']);
+useEscapeClose(() => props.show, () => emit('close'));
 const now = useNow();
 const currentYear = new Date().getFullYear();
 

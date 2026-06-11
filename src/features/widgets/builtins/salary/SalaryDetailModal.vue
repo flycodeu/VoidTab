@@ -4,6 +4,7 @@ import {
   PhX, PhCoin, PhCalendarCheck, PhCalculator,
   PhSmiley, PhMoney
 } from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{
   show: boolean;
@@ -12,6 +13,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(['close', 'save']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 // 本地编辑状态
 const editConfig = ref({...props.config});

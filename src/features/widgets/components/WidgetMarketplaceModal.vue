@@ -2,6 +2,7 @@
 import {ref, computed} from 'vue';
 import {widgetRegistry} from '../../../core/registry/widgets.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 import {
   PhX,
   PhMagnifyingGlass,
@@ -13,8 +14,9 @@ import {
   PhPlus, PhCoffee
 } from '@phosphor-icons/vue';
 
-defineProps<{ show: boolean }>();
+const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close', 'select']);
+useEscapeClose(() => props.show, () => emit('close'));
 
 const searchQuery = ref('');
 const activeCategory = ref('all');

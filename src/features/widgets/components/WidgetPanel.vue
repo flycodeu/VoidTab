@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import {PhX, PhSquaresFour} from '@phosphor-icons/vue';
+import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
-defineProps<{ isOpen: boolean }>();
+const props = defineProps<{ isOpen: boolean }>();
 const emit = defineEmits(['close']);
 
+useEscapeClose(() => props.isOpen, () => emit('close'));
 </script>
 
 <template>

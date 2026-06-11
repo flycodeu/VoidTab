@@ -7,9 +7,11 @@ import {
 } from '@phosphor-icons/vue'
 import {useConfigStore} from '../../../../stores/useConfigStore'
 import {useToast} from '../../../../shared/composables/useToast'
+import {useEscapeClose} from '../../../../shared/composables/useEscapeClose'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits(['close'])
+useEscapeClose(() => props.show, () => emit('close'))
 
 const store = useConfigStore()
 const toast = useToast()
