@@ -3,25 +3,18 @@ import {computed} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 import MiniHomePreview from './preview/MiniHomePreview.vue';
 import {PhRows, PhSquaresFour, PhGridFour, PhTextT, PhCube} from '@phosphor-icons/vue';
+import {applyIconDensityPreset} from '../../../../core/theme/densityPresets';
+import type {BookmarkDensity} from '../../../../core/config/types';
 
 const store = useConfigStore();
 
-/**
- * 密度切换：不强行覆盖用户的开关
- * - compact：推荐关闭名称（仅当当前为开启时才关闭）
- */
-const setDensity = (val: 'compact' | 'normal' | 'comfortable') => {
-  store.config.theme.density = val;
-
-  if (val === 'compact') {
-    if (store.config.theme.showIconName) store.config.theme.showIconName = false;
-    if (store.config.theme.showWidgetName) store.config.theme.showWidgetName = false;
-  }
+const setDensity = (val: BookmarkDensity) => {
+  applyIconDensityPreset(store.config.theme, val);
+  void store.saveConfig();
 };
 
 const densityLabel = computed(() => store.config.theme.density || 'normal');
 
-// 统一 label 高度逻辑（保持你的算法）
 const labelH = computed(() => {
   const show = store.config.theme.showIconName || store.config.theme.showWidgetName;
   if (!show) return 0;
@@ -29,11 +22,6 @@ const labelH = computed(() => {
   return Math.max(18, Math.ceil(textSize * 1.35 + 6));
 });
 
-/**
- * ✅ 预览强制刷新 key
- * 很多预览组件内部用 canvas/计算布局，只在 mounted 时跑一次
- * 用 key 可以确保在关键配置变更时重建组件，达到“实时预览”
- */
 const previewKey = computed(() => {
   const t = store.config.theme;
   return [
@@ -132,7 +120,7 @@ const previewKey = computed(() => {
       </div>
 
       <div class="text-[11px] opacity-60 leading-relaxed">
-        紧凑模式会<strong>建议</strong>隐藏名称以获得更高密度（不会强制覆盖你的选择）。
+        密度会同步调整图标尺寸、圆角、网格间距、文字大小和名称显示。
       </div>
     </div>
 

@@ -23,6 +23,7 @@ import LayoutTab from './tabs/LayoutTab.vue';
 import PrivacyTab from './tabs/PrivacyTab.vue';
 import SearchTab from './tabs/SearchTab.vue';
 import SyncTab from './tabs/SyncTab.vue';
+import TemplateTab from './tabs/TemplateTab.vue';
 import ThemeTab from './tabs/ThemeTab.vue';
 import {useFocusTrap} from '../../../shared/composables/useFocusTrap';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
@@ -39,6 +40,7 @@ const settingsTitle = '\u8bbe\u7f6e';
 const closeTitle = '\u5173\u95ed (Esc)';
 
 const menuItems = [
+  {id: 'template', label: '\u6a21\u677f', icon: PhMagicWand},
   {id: 'icon', label: '\u56fe\u6807', icon: PhSquaresFour},
   {id: 'layout', label: '\u5e03\u5c40', icon: PhFrameCorners},
   {id: 'theme', label: '\u4e3b\u9898', icon: PhImage},
@@ -51,9 +53,10 @@ const menuItems = [
 ] as const;
 
 type TabType = typeof menuItems[number]['id'];
-const settingsTab = ref<TabType>('icon');
+const settingsTab = ref<TabType>('template');
 
 const tabMap: Record<TabType, any> = {
+  template: TemplateTab,
   icon: IconTab,
   layout: LayoutTab,
   theme: ThemeTab,
@@ -208,13 +211,6 @@ const onSettingsTabKeydown = (event: KeyboardEvent, id: TabType) => {
           >
             <h2 id="settings-dialog-title" class="text-lg font-bold flex items-center gap-2">
               {{ settingsTitle }}：{{ activeMenuLabel }}
-              <span
-                class="text-xs font-normal opacity-40 px-2 py-0.5 rounded-full hidden sm:inline-block"
-                style="background-color: var(--settings-panel); color: var(--settings-text);"
-                aria-hidden="true"
-              >
-                Console
-              </span>
             </h2>
 
             <button

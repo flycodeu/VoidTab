@@ -19,9 +19,6 @@ const props = defineProps<{
   priority?: 'high' | 'low';
 }>();
 
-/** ---------------------------
- * icon / fallback
- * -------------------------- */
 const hasLoadError = ref(false);
 const normalizedIconType = computed(() => {
   const t = props.item.iconType;
@@ -186,16 +183,8 @@ const handleFallback = () => {
 };
 const handleImgLoad = () => (hasLoadError.value = false);
 
-/** ---------------------------
- * layout mode
- * -------------------------- */
 const mode = computed(() => (store.config.theme as any).siteLayoutMode || "icon");
 
-/**
- * 你现在配置里没有 tags，所以只保留：
- * - showRemark / showDomain
- * - w/h (用于 2×1 / 3×1)
- */
 const cardCfg = computed(() => {
   const def = {showRemark: true, showDomain: true, w: 2, h: 1};
   return (store.config.theme as any).siteCard
@@ -206,9 +195,6 @@ const cardCfg = computed(() => {
 const iconSize = computed(() => Number(store.config.theme.iconSize || 72));
 const cardRadius = computed(() => Number(store.config.theme.radius || 16));
 
-/** ---------------------------
- * domain / remark
- * -------------------------- */
 const domain = computed(() => {
   const raw = String(props.item.url || "");
   if (!raw) return "";
@@ -229,7 +215,6 @@ const handleClick = (e: MouseEvent) => {
   }
 };
 
-/** icon 模式 label 高度 */
 const labelH = computed(() => {
   if (!store.config.theme.showIconName) return 0;
   const textSize = Number(store.config.theme.iconTextSize || 12);
@@ -241,9 +226,6 @@ const iconContainerStyle = computed(() => ({
   height: `${iconSize.value}px`,
 }));
 
-/** =========================
- * 自适应密度：按占位规格（1x1 / 2x1 / 3x1）和宽度双重计算
- * ========================= */
 type DensityMode = "wide" | "compact" | "tiny";
 type CardLayoutMode = "1x1" | "2x1" | "3x1" | "other";
 const densityMode = ref<DensityMode>("wide");
@@ -321,7 +303,6 @@ onUnmounted(() => {
   revokeObjectUrl();
 });
 
-/**  布局跨度变化 / 模式变化时，强制重新测量 */
 watch(
     () => [mode.value, cardCfg.value.w, cardCfg.value.h, cardSpanW.value, cardSpanH.value],
     () => {
@@ -329,9 +310,6 @@ watch(
     }
 );
 
-/** ---------------------------
- * card icon size / spacing
- * -------------------------- */
 const cardIconSize = computed(() => {
   if (cardLayoutMode.value === "1x1") {
     if (densityMode.value === "tiny") return 34;
@@ -377,10 +355,6 @@ const showRemarkRow = computed(() => {
   return true;
 });
 
-/**
- * 可选策略：tiny 时隐藏 domain，把空间留给 remark（推荐）
- * 这样 2×1 超窄时：标题 + 备注，不遮盖
- */
 const showDomainRow = computed(() => {
   if (!cardCfg.value.showDomain || !domain.value) return false;
   if (cardLayoutMode.value === "1x1") return false;
@@ -391,7 +365,6 @@ const showDomainRow = computed(() => {
 </script>
 
 <template>
-  <!-- 卡片布局 -->
   <a
       v-if="mode === 'card'"
       ref="cardEl"
@@ -405,7 +378,6 @@ const showDomainRow = computed(() => {
   >
     <div class="card-shell w-full h-full min-w-0 min-h-0" :style="{ borderRadius: cardRadius + 'px' }">
       <div class="card-inner w-full h-full min-w-0 min-h-0">
-        <!-- Left -->
         <div class="card-left">
           <SiteIcon
               :item="item"
@@ -423,9 +395,7 @@ const showDomainRow = computed(() => {
           />
         </div>
 
-        <!-- Right -->
         <div class="card-right min-w-0">
-          <!-- Title -->
           <div class="row row1 min-w-0">
             <div class="title truncate">
               {{ item.title || "未命名" }}
@@ -433,12 +403,10 @@ const showDomainRow = computed(() => {
             <div v-if="showDot" class="dot" aria-hidden="true"></div>
           </div>
 
-          <!-- Domain -->
           <div v-if="showDomainRow" class="row row2 truncate">
             {{ domain }}
           </div>
 
-          <!-- Remark -->
           <div class="row row3 min-w-0">
             <div v-if="showRemarkRow" class="sub truncate">
               {{ remarkText }}
@@ -450,7 +418,6 @@ const showDomainRow = computed(() => {
     </div>
   </a>
 
-  <!-- 图标布局（保持原逻辑） -->
   <a
       v-else
       :href="item.url"
@@ -511,17 +478,20 @@ const showDomainRow = computed(() => {
 }
 
 .card-shell {
+  position: relative;
   height: 100%;
   width: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 
-  border: 1px solid rgba(var(--overlay-rgb), 0.22);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10) inset,
-  0 12px 28px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(var(--overlay-rgb), 0.28);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset,
+  0 10px 22px rgba(15, 23, 42, 0.12);
 
-  background: rgba(var(--overlay-rgb), 0.14);
+  background:
+      linear-gradient(180deg, rgba(var(--overlay-rgb), 0.22), rgba(var(--overlay-rgb), 0.12)),
+      rgba(var(--overlay-rgb), 0.10);
 
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
@@ -532,18 +502,31 @@ const showDomainRow = computed(() => {
   background 0.18s ease;
 }
 
-.site-card:hover .card-shell {
-  transform: translateY(-2px);
-  border-color: rgba(var(--accent-color-rgb), 0.30);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10) inset,
-  0 0 0 1px rgba(var(--accent-color-rgb), 0.16),
-  0 14px 34px rgba(0, 0, 0, 0.10),
-  0 8px 22px rgba(var(--accent-color-rgb), 0.10);
-  background: rgba(var(--overlay-rgb), 0.16);
+.card-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(var(--accent-color-rgb), 0.16), transparent 38%);
+  opacity: 0.42;
 }
 
-/* 别用 align-items:center，否则高度小会“上下裁切感”更明显 */
+.site-card:hover .card-shell {
+  transform: translateY(-2px);
+  border-color: rgba(var(--accent-color-rgb), 0.42);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.20) inset,
+  0 0 0 1px rgba(var(--accent-color-rgb), 0.14),
+  0 16px 34px rgba(15, 23, 42, 0.16),
+  0 8px 22px rgba(var(--accent-color-rgb), 0.12);
+  background:
+      linear-gradient(180deg, rgba(var(--overlay-rgb), 0.26), rgba(var(--overlay-rgb), 0.16)),
+      rgba(var(--overlay-rgb), 0.12);
+}
+
 .card-inner {
+  position: relative;
+  z-index: 1;
   height: 100%;
   width: 100%;
   min-width: 0;
@@ -630,8 +613,9 @@ const showDomainRow = computed(() => {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: rgba(var(--overlay-rgb), 0.28);
-  border: 1px solid rgba(var(--overlay-rgb), 0.18);
+  background: rgba(var(--accent-color-rgb), 0.72);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.24);
+  box-shadow: 0 0 0 3px rgba(var(--accent-color-rgb), 0.10);
 }
 
 .row2 {
@@ -662,7 +646,6 @@ const showDomainRow = computed(() => {
   white-space: nowrap;
 }
 
-/* 密度自适应：compact */
 .site-card[data-layout="2x1"][data-density="compact"] .card-inner,
 .site-card[data-layout="3x1"][data-density="compact"] .card-inner,
 .site-card[data-layout="other"][data-density="compact"] .card-inner {
@@ -690,7 +673,6 @@ const showDomainRow = computed(() => {
   opacity: 0.70;
 }
 
-/* tiny：更紧凑 */
 .site-card[data-layout="2x1"][data-density="tiny"] .card-inner,
 .site-card[data-layout="3x1"][data-density="tiny"] .card-inner,
 .site-card[data-layout="other"][data-density="tiny"] .card-inner {

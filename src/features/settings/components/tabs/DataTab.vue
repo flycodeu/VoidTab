@@ -15,6 +15,7 @@ import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
+import {mergeLocalSensitiveFields, stripSensitiveConfigForSync} from '../../../../core/config/sensitive.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 
@@ -43,10 +44,12 @@ const showFeedback = (success: boolean, msg: string) => {
 // 导出 JSON
 // ===============================
 const handleExport = () => {
+  const exportData = stripSensitiveConfigForSync(store.config);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(store.config, null, 2)], {type: 'application/json'}));
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], {type: 'application/json'}));
   a.download = `voidtab-backup.json`;
   a.click();
+  showFeedback(true, '已导出 JSON（不含 AI Key、WebDAV 密码和临时 Token）');
 };
 
 // 导出浏览器书签 HTML（只导出分组+网站）
@@ -104,7 +107,7 @@ const executeImport = () => {
 
   try {
     const raw = pendingData.value;
-    const next = normalizeConfig(migrateConfig(raw));
+    const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(raw)), store.config);
 
     // 保留 webdav 字段逻辑（不改变你原本行为）
     const cur = {...(store.config.sync as any)};
@@ -224,6 +227,10 @@ const executeResetAll = async () => {
           </button>
         </div>
       </div>
+
+      <p class="text-[11px] opacity-60 leading-relaxed">
+        JSON 备份会包含分组、站点、组件、主题和同步配置结构，但不会导出 AI Key、WebDAV 密码和临时 Token。
+      </p>
 
       <hr class="opacity-10"/>
 

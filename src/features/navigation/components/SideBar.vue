@@ -20,14 +20,12 @@ const emit = defineEmits<{
   (e: 'openGroupDialog'): void;
 }>();
 
-/** 右键菜单 */
 const handleGroupContextMenu = (e: MouseEvent, group: any) => {
   e.preventDefault();
   e.stopPropagation();
   ui.openContextMenu(e, group, 'group', group.id);
 };
 
-/** 拖拽逻辑 */
 const {handleDragEnter, handleDragLeave, handleDrop} = useSidebarDragHandlers({
   dragState: ui.dragState,
   getActiveGroupId: () => props.activeGroupId,
@@ -48,8 +46,8 @@ const sidebarPos = computed<SidebarPosition>(() => {
 
 const isHorizontal = computed(() => sidebarPos.value === 'top' || sidebarPos.value === 'bottom');
 const sidebarOrientation = computed(() => isHorizontal.value ? 'horizontal' : 'vertical');
+const shouldRenderSidebar = computed(() => !props.isFocusMode && store.config.theme.showSidebar !== false);
 
-/** 滚动定位 */
 const listRef = ref<HTMLElement | null>(null);
 let activeScrollRaf: number | null = null;
 
@@ -110,10 +108,9 @@ watch(
     {immediate: true}
 );
 
-/** 贴边样式 */
 const containerClass = computed(() => {
   if (sidebarPos.value === 'top') {
-    return 'fixed top-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pt-4';
+    return 'fixed top-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pt-3';
   }
   if (sidebarPos.value === 'bottom') {
     return 'fixed bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pb-4';
@@ -122,13 +119,13 @@ const containerClass = computed(() => {
 });
 
 const railClass = computed(() => {
-  if (sidebarPos.value === 'top' || sidebarPos.value === 'bottom') return 'rounded-[24px]';
+  if (sidebarPos.value === 'top' || sidebarPos.value === 'bottom') return 'rounded-[22px]';
   return sidebarPos.value === 'right' ? 'right-0 rounded-l-[24px]' : 'left-0 rounded-r-[24px]';
 });
 
 const railLayoutClass = computed(() => {
   return isHorizontal.value
-      ? 'hidden lg:flex pointer-events-auto h-[88px] flex-row items-center transition-all duration-300 overflow-visible sidebar-rail sidebar-rail--horizontal'
+      ? 'hidden lg:flex pointer-events-auto h-[64px] flex-row items-center transition-all duration-300 overflow-hidden sidebar-rail sidebar-rail--horizontal'
       : 'hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail';
 });
 
@@ -140,7 +137,7 @@ const brandBlockClass = computed(() => {
 
 const listShellClass = computed(() => {
   return isHorizontal.value
-      ? 'flex-1 min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center'
+      ? 'w-full min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center justify-center'
       : 'flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2';
 });
 
@@ -157,7 +154,7 @@ const draggableClass = computed(() => {
 
 const addButtonClass = computed(() => {
   return isHorizontal.value
-      ? 'w-12 h-12 shrink-0 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn'
+      ? 'w-11 h-11 shrink-0 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn'
       : 'w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn';
 });
 
@@ -174,24 +171,21 @@ const transitionName = computed(() => {
   return 'slide-fade';
 });
 
-/** 呼吸灯频率（秒） */
 const breathSeconds = computed<number>(() => {
   const raw = Number((store.config.theme as any).breathingDuration ?? 3);
   if (!Number.isFinite(raw)) return 3;
   return Math.min(12, Math.max(1, raw));
 });
 
-/** scoped 下也能用：用 style 喂 CSS 变量（动画用） */
 const railStyle = computed(() => {
   const gridMaxWidth = Number(store.config.theme.gridMaxWidth || 1600);
-  const horizontalMaxWidth = Math.max(1120, Math.min(1840, gridMaxWidth + 160));
+  const horizontalMaxWidth = Math.max(720, Math.min(1160, gridMaxWidth + 80));
   return {
     '--sidebar-breath-duration': `${breathSeconds.value}s`,
     '--sidebar-horizontal-max-width': `${horizontalMaxWidth}px`,
   } as Record<string, string>;
 });
 
-/** 拖拽排序逻辑 */
 const isGroupSorting = ref(false);
 const WHEEL_SPEED = 1.15;
 
@@ -241,7 +235,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-      v-if="!isFocusMode"
+      v-if="shouldRenderSidebar"
       :class="containerClass"
   >
     <transition :name="transitionName">
@@ -257,7 +251,7 @@ onBeforeUnmount(() => {
           role="navigation"
           aria-label="分组导航"
       >
-        <div :class="brandBlockClass">
+        <div v-if="!isHorizontal" :class="brandBlockClass">
           <div
               class="w-10 h-10 rounded-xl flex items-center justify-center ring-1 transition-transform hover:scale-110 sidebar-brand">
             <BrandLogo aria-hidden="true"/>
@@ -273,7 +267,7 @@ onBeforeUnmount(() => {
           </transition>
         </div>
 
-        <div :class="isHorizontal ? 'flex-1 h-full min-w-0 flex items-center overflow-visible' : 'flex-1 w-full flex flex-col overflow-hidden'">
+        <div :class="isHorizontal ? 'w-full h-full min-w-0 flex items-center overflow-visible' : 'flex-1 w-full flex flex-col overflow-hidden'">
           <div v-if="!isHorizontal" class="px-0 py-3 text-center">
             <span class="text-[10px] font-bold uppercase tracking-widest sidebar-muted">分组</span>
           </div>
@@ -333,7 +327,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div :class="footerClass">
+        <div v-if="!isHorizontal" :class="footerClass">
           <button
               type="button"
               @click="emit('openSettings')"
@@ -354,9 +348,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* ------------------------------ */
-/* Drag 状态                      */
-/* ------------------------------ */
 .group-ghost {
   opacity: 0.3;
   transform: scale(0.95);
@@ -372,9 +363,6 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 
-/* ===================================================================== */
-/* Sidebar Rail：玻璃底 + 贴边框呼吸灯（不外扩）                        */
-/* ===================================================================== */
 .sidebar-rail {
   position: relative;
   isolation: isolate;
@@ -391,8 +379,8 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-rail--horizontal {
-  width: min(var(--sidebar-horizontal-max-width, 1440px), calc(100vw - 48px));
-  min-width: min(1120px, calc(100vw - 48px));
+  width: min(var(--sidebar-horizontal-max-width, 960px), calc(100vw - 48px));
+  min-width: 0;
   transform-origin: center;
 }
 
@@ -402,27 +390,15 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ===================================================================== */
-/* 修改点 2: 新增 Neon Glow 效果 (对应 SearchBar.vue 的 effect-neon)      */
-/* 优先级设为最高 (!important)，覆盖原有的柔和阴影                        */
-/* ===================================================================== */
 .sidebar-rail.effect-neon {
-  /* 使用主题强调色作为边框 */
   border-color: var(--accent-color) !important;
 
-  /* 外部发光 + 内部辉光
-     注意：这里 box-shadow 的颜色使用了 accent-color
-  */
   box-shadow: 0 0 10px var(--accent-color),
   inset 0 0 5px rgba(255, 255, 255, 0.1) !important;
 
-  z-index: 50; /* 确保发光不被其他层级遮挡 */
+  z-index: 50;
 }
 
-/* Neon 模式下的特殊处理：
-   虽然开启了 Neon，但侧边栏贴着屏幕边缘的那一侧（border-left 或 right）
-   依然应该保持无边框，否则会在屏幕边缘出现一条奇怪的亮线。
-*/
 .sidebar-rail.effect-neon[data-side='left'] {
   border-left: none !important;
 }
@@ -437,12 +413,10 @@ onBeforeUnmount(() => {
 }
 
 
-/* rail hover 不染色 */
 .sidebar-rail:hover {
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
 }
 
-/* 贴边那侧不画边框（普通模式） */
 .sidebar-rail[data-side='left'] {
   border-left: none;
 }
@@ -464,7 +438,6 @@ onBeforeUnmount(() => {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
 }
 
-/* 顶部 Logo：中性玻璃 */
 .sidebar-brand {
   color: var(--sidebar-text);
   background: rgba(255, 255, 255, 0.10);
@@ -485,7 +458,6 @@ html.light .sidebar-brand:hover {
   background: rgba(0, 0, 0, 0.06);
 }
 
-/* footer */
 .sidebar-footer {
   background: var(--sidebar-footer);
   border-top: 1px solid var(--sidebar-divider);
@@ -497,7 +469,6 @@ html.light .sidebar-brand:hover {
   background: transparent;
 }
 
-/* 底部 icon btn：中性 hover */
 .sidebar-icon-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--sidebar-border);
@@ -519,10 +490,6 @@ html.light .sidebar-icon-btn:hover {
   background: rgba(0, 0, 0, 0.06);
 }
 
-/* ===================================================================== */
-/* 贴边框呼吸灯                                                        */
-/* ===================================================================== */
-
 .sidebar-rail::after {
   content: '';
   position: absolute;
@@ -532,9 +499,6 @@ html.light .sidebar-icon-btn:hover {
   opacity: 0;
 }
 
-/* 注意：如果 Neon 开启，呼吸灯的边框颜色动画可能会被 neon 的 !important 覆盖
-   这通常是预期的效果（Neon 模式更强烈），但内部辉光动画仍然会保留。
-*/
 .sidebar-rail.is-breathing[data-side='left'] {
   animation: rail-border-breath-left var(--sidebar-breath-duration, 3s) ease-in-out infinite;
 }
@@ -614,9 +578,6 @@ html.light .sidebar-icon-btn:hover {
   }
 }
 
-/* ===================================================================== */
-/* 分组按钮样式保持不变                                                 */
-/* ===================================================================== */
 :deep(.sidebar-group-btn) {
   background: transparent !important;
   border: 1px solid transparent !important;
@@ -631,11 +592,11 @@ html.light .sidebar-icon-btn:hover {
 }
 
 .sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn:hover) {
-  transform: translateY(6px) scale(1.16) !important;
+  transform: translateY(2px) scale(1.08) !important;
 }
 
 .sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn:hover) {
-  transform: translateY(-6px) scale(1.16) !important;
+  transform: translateY(-2px) scale(1.08) !important;
 }
 
 html.light :deep(.sidebar-group-btn:hover) {
@@ -652,19 +613,19 @@ html.light :deep(.sidebar-group-btn:hover) {
 }
 
 .sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn.is-active) {
-  transform: translateY(3px) scale(1.08) !important;
+  transform: translateY(1px) scale(1.04) !important;
 }
 
 .sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn.is-active) {
-  transform: translateY(-3px) scale(1.08) !important;
+  transform: translateY(-1px) scale(1.04) !important;
 }
 
 .sidebar-rail--horizontal[data-side='top'] :deep(.sidebar-group-btn.is-active:hover) {
-  transform: translateY(6px) scale(1.16) !important;
+  transform: translateY(2px) scale(1.08) !important;
 }
 
 .sidebar-rail--horizontal[data-side='bottom'] :deep(.sidebar-group-btn.is-active:hover) {
-  transform: translateY(-6px) scale(1.16) !important;
+  transform: translateY(-2px) scale(1.08) !important;
 }
 
 html.light :deep(.sidebar-group-btn.is-active) {
@@ -692,7 +653,6 @@ html.light :deep(.sidebar-group-btn:focus-visible) {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
 }
 
-/* 新建分组按钮 */
 .sidebar-add-btn {
   border: 1px dashed var(--sidebar-border);
   color: var(--sidebar-muted);
@@ -710,7 +670,6 @@ html.light .sidebar-add-btn:hover {
   background: rgba(0, 0, 0, 0.04);
 }
 
-/* 动效 */
 .slide-fade-enter-active,
 .slide-fade-leave-active {
   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);

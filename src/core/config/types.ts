@@ -1,22 +1,18 @@
-// src/core/config/types.ts
 import type {SyncProfile} from '../sync/types';
 
 export const CURRENT_CONFIG_VERSION = 4 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
-// 新增排序类型定义
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
 export type WidgetType = 'todo' | 'clock' | 'calendar' | 'weather' | 'system_monitor' | string;
 
 export interface SiteItem {
     id: string;
-    // --- 新增布局字段 ---
-    kind?: 'site' | 'widget'; // 默认为 site
-    w?: number; // 宽跨度 (1-4)
-    h?: number; // 高跨度 (1-4)
+    kind?: 'site' | 'widget';
+    w?: number;
+    h?: number;
 
-    // --- 站点字段 ---
-    title?: string; // 变为可选，因为 widget 可能不需要
+    title?: string;
     url?: string;
     icon?: string;
     iconType?: 'auto' | 'text' | 'icon';
@@ -24,11 +20,10 @@ export interface SiteItem {
     bgColor?: string;
 
 
-    remark?: string;          // 备注文字
+    remark?: string;
     tags?: string[];
-    createdAt?: number;       // 可选：创建时间（便于排序/管理）
+    createdAt?: number;
 
-    // --- 组件字段 ---
     widgetType?: WidgetType;
     widgetConfig?: Record<string, any>;
 }
@@ -39,8 +34,8 @@ export interface Group {
     icon: string;
     items: SiteItem[];
     sortKey?: GroupSortKey;
-    iconColor?: string;   // 图标颜色 (fg)
-    iconBgColor?: string; // 背景颜色 (bg)
+    iconColor?: string;
+    iconBgColor?: string;
 }
 
 export interface WidgetItem {
@@ -58,6 +53,7 @@ export interface ThemeConfig {
     mode: 'light' | 'dark' | 'system';
     accent: string;
     sidebarPos: SidebarPosition;
+    showSidebar: boolean;
     showTime: boolean;
     gridMaxWidth: number;
 
@@ -81,8 +77,8 @@ export interface ThemeConfig {
 
     density: BookmarkDensity;
 
-    showLogoText: boolean;   // 是否显示文字
-    customLogoText: string;  // 自定义文字内容 (例如 "VoidTab")
+    showLogoText: boolean;
+    customLogoText: string;
 
     showGroupCount: boolean;
 
@@ -93,34 +89,25 @@ export interface ThemeConfig {
 
     techFontFamily: 'default' | 'JetBrains Mono' | 'Fira Code' | 'Orbitron' | 'Space Grotesk' | 'Roboto Mono' | 'IBM Plex Sans' | 'Noto Sans SC';
 
-    breathingDuration: number; // 秒，例如 3.0
+    breathingDuration: number;
 
     siteLayoutMode: SiteLayoutMode;
     showAllGroupsInMain: boolean;
 
     siteCard: {
-        w: number;              // 卡片占几列（建议 2 或 3）
-        h: number;              // 卡片占几行（建议 2）
+        w: number;
+        h: number;
         showRemark: boolean;
-        showDomain: boolean;    // url 域名
+        showDomain: boolean;
     };
 
-    /**
-     * 可读性遮罩层：用于提升壁纸上 UI 的可读性
-     * - enabled: 是否启用遮罩层
-     * - mode: 自动/压暗/提亮
-     * - strength: 强度 0~100（建议默认 18~25）
-     * - blur: backdrop blur（0~12，默认 0）
-     * - desaturate: 降饱和 0~100（默认 0）
-     * - tint: 可选自定义遮罩色（如 '#000000' 或 '#ffffff'），一般不需要
-     */
     readability: {
         enabled: boolean;
         mode: 'auto' | 'darken' | 'lighten';
-        strength: number;      // 0~100
-        blur: number;          // 0~12
-        desaturate: number;    // 0~100
-        tint?: string;         // optional: '#000000' | '#ffffff' | 'rgba(...)'
+        strength: number;
+        blur: number;
+        desaturate: number;
+        tint?: string;
     };
 
 }
@@ -133,10 +120,9 @@ export interface SearchEngine {
 }
 
 export interface AiConfig {
-    // 移除 provider 枚举，改为通用配置
-    baseUrl: string;  // 新增：接口地址 (例如 https://api.deepseek.com)
+    baseUrl: string;
     apiKey: string;
-    model: string;    // 模型名称 (例如 deepseek-chat)
+    model: string;
     temperature: number;
     maxHistory: number;
 }
@@ -248,7 +234,6 @@ export type RuntimeConfig = {
 
     widgets: {
         merit: {
-            // widget id -> state
             value: Record<string, number>;
             sound: Record<string, boolean>;
         };
@@ -256,18 +241,16 @@ export type RuntimeConfig = {
 
     widgetState: Record<string, { meritCount: number; soundEnabled: boolean }>;
     photo: {
-        widgets: Record<string /* widgetId */, PhotoWidgetState>;
+        widgets: Record<string, PhotoWidgetState>;
     };
     siteList: {
-        // 全局数据池
         groups: Record<string, SiteListGroup>;
-        // 组件引用配置
         widgets: Record<string, SiteListWidgetRef>;
     };
     terminal: {
-        history: string[]; //   历史命令记录
-        theme: 'dark' | 'light' | 'hacker'; //   终端主题
-        isOpen: boolean; //   记录上次是否打开（可选）
+        history: string[];
+        theme: 'dark' | 'light' | 'hacker';
+        isOpen: boolean;
     };
 };
 
@@ -277,10 +260,8 @@ export interface SiteListEntry {
     title: string;
     desc?: string;
     url: string;
-    // 图标相关
     iconType?: 'auto' | 'text' | 'icon' | 'upload' | 'image';
-    iconValue: string; // 文字 / 图片URL / IDB Blob Key
-    // 特效相关
+    iconValue: string;
     enableFx: boolean;
     fxType?: 'ripple' | 'confetti' | 'shake' | string;
 }
@@ -288,8 +269,8 @@ export interface SiteListEntry {
 export interface SiteListGroup {
     id: string;
     name: string;
-    style: string; // 例如: 'glass', 'cyber', 'neon', 'minimal'
-    viewConfig: GroupViewConfig; // 新增显示控制
+    style: string;
+    viewConfig: GroupViewConfig;
     items: SiteListEntry[];
 }
 
@@ -300,11 +281,11 @@ export interface GroupViewConfig {
 }
 
 export interface SiteListWidgetRef {
-    groupId: string;    // 指向哪个数据源
-    defaultSiteId?: string; // 当前组件的默认快捷方式
+    groupId: string;
+    defaultSiteId?: string;
 }
 
 export interface SiteListWidgetState {
-    defaultId?: string; // 如果设置了，Widget 表现为该站点
+    defaultId?: string;
     items: SiteListEntry[];
 }

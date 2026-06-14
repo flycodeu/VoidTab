@@ -13,10 +13,10 @@ const props = defineProps<{
   activeGroupId: string;
   isEditMode: boolean;
   sidebarPos: SidebarPosition;
+  showSidebar: boolean;
 
-  // 来自 App.vue（由 MobileGroupNav emit）
-  mobileNarrow?: boolean; // true 表示屏幕很窄，需要保证至少一行 2 个
-  mobileWidth?: number;   // 可选，后续你要更精细判断可以用
+  mobileNarrow?: boolean;
+  mobileWidth?: number;
 }>();
 
 const emit = defineEmits<{
@@ -30,37 +30,27 @@ const emit = defineEmits<{
 const store = useConfigStore();
 const ui = useUiStore();
 
-/** =========================
- *   计算“最终站点卡片宽度”
- *  - 用户设置 (store.config.theme.siteCard.w) 可以是 2 或 3
- *  - 窄屏强制 <= 2（保证一行至少两个）
- *  ========================= */
 const userCardW = computed(() => {
   const w = Number((store.config.theme as any)?.siteCard?.w ?? 2);
-  return Number.isFinite(w) ? Math.max(1, Math.min(6, w)) : 2;
+  return Number.isFinite(w) ? Math.max(1, Math.min(4, Math.round(w))) : 2;
 });
 
 const effectiveCardW = computed(() => {
-  // 你也可以把阈值做得更智能：比如 mobileWidth < 420 强制 2
   const force2 = !!props.mobileNarrow;
   return force2 ? Math.min(userCardW.value, 2) : userCardW.value;
 });
 
 const userCardH = computed(() => {
   const h = Number((store.config.theme as any)?.siteCard?.h ?? 1);
-  return Number.isFinite(h) ? Math.max(1, Math.min(6, h)) : 1;
+  return Number.isFinite(h) ? Math.max(1, Math.min(4, Math.round(h))) : 1;
 });
 
-/** =========================
- *  1) 核心布局：动态计算顶部间距
- *  ========================= */
 const mainContainerClass = computed(() => {
   const base =
       'flex flex-col w-full h-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
-  // 分组栏留白 (仅普通模式)
   let sidebarOffset = '';
-  if (!props.isFocusMode) {
+  if (!props.isFocusMode && props.showSidebar) {
     if (props.sidebarPos === 'left') sidebarOffset = 'md:pl-28';
     else if (props.sidebarPos === 'right') sidebarOffset = 'md:pr-28';
     else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-36';
@@ -70,14 +60,11 @@ const mainContainerClass = computed(() => {
     const topSpacing = store.config.theme.showTime ? 'pt-[20vh]' : 'pt-[25vh]';
     return `${base} justify-start ${topSpacing} items-center ${sidebarOffset}`;
   } else {
-    const topSpacing = props.sidebarPos === 'top' ? 'pt-32 md:pt-32' : 'pt-24 md:pt-14';
+    const topSpacing = props.showSidebar && props.sidebarPos === 'top' ? 'pt-28 md:pt-28' : 'pt-24 md:pt-14';
     return `${base} justify-start ${topSpacing} ${sidebarOffset}`;
   }
 });
 
-/** =========================
- *  2) 搜索框容器
- *  ========================= */
 const searchWrapperClass = computed(() => {
   const base =
       'w-full flex justify-center px-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]';
@@ -208,7 +195,6 @@ watch(
       "
         @contextmenu.stop="handleGlobalContextMenu"
     >
-      <!--  把“最终卡片尺寸”传给 MainGrid -->
       <MainGrid
           v-if="!isFocusMode"
           :activeGroupId="activeGroupId"

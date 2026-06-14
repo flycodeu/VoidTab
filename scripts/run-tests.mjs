@@ -42,6 +42,8 @@ test('manifest enables favicon fallbacks without broad host permissions', async 
   assert.ok(manifest.host_permissions.includes('https://api.iowen.cn/*'));
   assert.ok(manifest.host_permissions.includes('https://t2.gstatic.com/*'));
   assert.ok(manifest.host_permissions.includes('https://icons.duckduckgo.com/*'));
+  assert.ok(manifest.host_permissions.includes('https://favicon.im/*'));
+  assert.ok(manifest.host_permissions.includes('https://unavatar.io/*'));
 });
 
 test('favicon probing avoids extension fetch false negatives', async () => {
@@ -51,12 +53,14 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /canUseBrowserFaviconApi/);
   assert.match(icon, /permissions\.includes\('favicon'\)/);
   assert.doesNotMatch(icon, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
-  assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v3'/);
+  assert.match(icon, /PERSISTENT_FAIL_STORAGE_KEY\s*=\s*'voidtab:icon_candidate_fail:v4'/);
   assert.match(icon, /createProbeImageObjectUrl/);
   assert.match(icon, /FETCHABLE_ICON_PROBE_HOSTS/);
   assert.match(icon, /probeIconCandidateBatch/);
   assert.match(icon, /parallelism: options\?\.parallelism/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*12/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*14/);
+  assert.match(icon, /'google\.com': 'https:\/\/www\.google\.com\/favicon\.ico'/);
+  assert.match(icon, /'notion\.so': 'https:\/\/www\.notion\.so\/images\/favicon\.ico'/);
   assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
 });
 
@@ -86,7 +90,7 @@ test('web auto icons avoid CORP-blocked direct site favicons', async () => {
   assert.doesNotMatch(icon, /getFastIconCandidates\(url\)\[0\] \|\| explicitDirect \|\| legacyDirect/);
   assert.match(icon, /first_party_proxy/);
   assert.match(icon, /buildFirstPartyProxyCandidates/);
-  assert.match(icon, /!proxyCandidates\.length/);
+  assert.match(icon, /buildExternalCandidates\(thirdPartyDomains,\s*\{webSafeOnly:\s*true\}\)/);
   assert.match(icon, /candidate\.provider !== 'first_party_proxy'/);
   assert.match(siteIcon, /url\.includes\('\/api\/favicon'\) \? 5200 : 1600/);
   assert.match(icon, /if \(privateOrLocal\) \{\s*candidates\.push\(\.\.\.buildSiteOriginCandidates\(origin\)\);/);
@@ -316,6 +320,7 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
       version: 0,
       sync: { provider: 'webdav', password: 'secret' },
       ai: { apiKey: 'api-secret', maxHistory: 6 },
+      theme: { showSidebar: false, sidebarPos: 'top' },
       layout: [{
         id: 'g1',
         title: 'Group',
@@ -340,6 +345,8 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     assert.equal(normalized.sync.password, 'secret');
     assert.equal(normalized.ai.apiKey, 'api-secret');
     assert.equal(normalized.ai.maxHistory, 6);
+    assert.equal(normalized.theme.showSidebar, false);
+    assert.equal(normalized.theme.sidebarPos, 'top');
     assert.equal(normalized.layout[0].items[0].iconType, 'text');
     assert.equal(normalized.layout[0].items[1].kind, 'widget');
     assert.equal(normalized.layout[0].items[1].w, 4);
@@ -347,6 +354,174 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     assert.equal(normalized.runtime.siteIcons.records['example.com'].cacheMode, 'miss');
     assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'google_s2');
   `);
+});
+
+test('sidebar visibility setting is normalized and wired through layout components', async () => {
+  const types = await read('src/core/config/types.ts');
+  const defaults = await read('src/core/config/default.ts');
+  const normalize = await read('src/core/config/normalize.ts');
+  const app = await read('src/App.vue');
+  const home = await read('src/features/home/components/HomeMain.vue');
+  const sidebar = await read('src/features/navigation/components/SideBar.vue');
+  const actions = await read('src/features/navigation/components/TopActions.vue');
+  const layoutTab = await read('src/features/settings/components/tabs/LayoutTab.vue');
+
+  assert.match(types, /showSidebar: boolean/);
+  assert.match(defaults, /showSidebar:\s*true/);
+  assert.match(defaults, /version:\s*14/);
+  assert.match(normalize, /showSidebar:\s*typeof input\.theme\?\.showSidebar === 'boolean'/);
+  assert.match(app, /showSidebarNav/);
+  assert.match(app, /:show="!isFocusMode && showSidebarNav"/);
+  assert.match(home, /showSidebar: boolean/);
+  assert.match(home, /props\.showSidebar/);
+  assert.match(sidebar, /shouldRenderSidebar/);
+  assert.match(actions, /showSidebar: boolean/);
+  assert.match(layoutTab, /显示分组栏/);
+  assert.match(layoutTab, /v-model="store\.config\.theme\.showSidebar"/);
+});
+
+test('icon density settings update concrete layout parameters', async () => {
+  const iconTab = await read('src/features/settings/components/tabs/IconTab.vue');
+
+  assert.match(iconTab, /applyIconDensityPreset/);
+  assert.doesNotMatch(iconTab, /store\.config\.theme\.density\s*=\s*val/);
+
+  await runBundledTypeScript('icon-density-presets', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {applyIconDensityPreset} from '../../../src/core/theme/densityPresets.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const config = clone(defaultConfig);
+
+    applyIconDensityPreset(config.theme, 'compact');
+    assert.equal(config.theme.density, 'compact');
+    assert.equal(config.theme.iconSize, 48);
+    assert.equal(config.theme.radius, 12);
+    assert.equal(config.theme.gap, 14);
+    assert.equal(config.theme.iconTextSize, 11);
+    assert.equal(config.theme.showIconName, false);
+    assert.equal(config.theme.showWidgetName, false);
+
+    applyIconDensityPreset(config.theme, 'normal');
+    assert.equal(config.theme.density, 'normal');
+    assert.equal(config.theme.iconSize, 60);
+    assert.equal(config.theme.radius, 16);
+    assert.equal(config.theme.gap, 24);
+    assert.equal(config.theme.iconTextSize, 12);
+    assert.equal(config.theme.showIconName, true);
+    assert.equal(config.theme.showWidgetName, true);
+
+    applyIconDensityPreset(config.theme, 'comfortable');
+    assert.equal(config.theme.density, 'comfortable');
+    assert.equal(config.theme.iconSize, 78);
+    assert.equal(config.theme.radius, 22);
+    assert.equal(config.theme.gap, 30);
+    assert.equal(config.theme.iconTextSize, 13);
+    assert.equal(config.theme.showIconName, true);
+    assert.equal(config.theme.showWidgetName, true);
+  `);
+});
+
+test('view templates never replace user groups or sites', async () => {
+  const templates = await read('src/core/templates/presets.ts');
+  const tab = await read('src/features/settings/components/tabs/TemplateTab.vue');
+
+  assert.doesNotMatch(templates, /applyTemplateStarterLayout/);
+  assert.doesNotMatch(templates, /starterLayoutId/);
+  assert.match(tab, /applyTemplatePreset/);
+  assert.doesNotMatch(tab, /使用初始布局|替换并应用|会被替换|初始布局/);
+  assert.match(templates, /历史常规/);
+
+  await runBundledTypeScript('view-template-preserves-layout', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {phosphorIconMap} from '../../../src/shared/icons/phosphorIconMap.ts';
+    import {applyTemplatePreset, buildTemplateLayout, templatePresets} from '../../../src/core/templates/presets.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const config = clone(defaultConfig);
+    config.layout.push({
+      id: 'user-group',
+      title: '用户自己的分组',
+      icon: 'Folder',
+      items: [{
+        id: 'user-site',
+        kind: 'site',
+        title: '用户网站',
+        url: 'https://example.com',
+        iconType: 'auto',
+        remark: '不要被模板覆盖',
+      }],
+    });
+
+    const layoutRef = config.layout;
+    const beforeLayout = clone(config.layout);
+
+    const ids = templatePresets.map((item) => item.id);
+    assert.ok(ids.includes('regular'));
+    assert.ok(ids.includes('compact'));
+    assert.ok(ids.includes('classic'));
+    assert.ok(templatePresets.every((item) => !('groups' in item)));
+    assert.ok(templatePresets.every((item) => !('starterLayoutId' in item)));
+    const registeredGroupIcons = new Set(Object.keys(phosphorIconMap));
+    for (const starterId of ['minimal', 'clean', 'office', 'developer', 'legacy']) {
+      for (const group of buildTemplateLayout(starterId)) {
+        assert.ok(registeredGroupIcons.has(group.icon), starterId + ' uses unregistered icon ' + group.icon);
+      }
+    }
+
+    for (const id of ids) {
+      applyTemplatePreset(config, id);
+      assert.equal(config.layout, layoutRef);
+      assert.deepEqual(config.layout, beforeLayout);
+    }
+
+    const legacyLayout = buildTemplateLayout('legacy');
+    assert.deepEqual(legacyLayout.map((group) => group.title), ['常用工具', '游戏', 'AI']);
+    assert.equal(legacyLayout[1].items.length, 8);
+    assert.equal(legacyLayout[2].items.length, 15);
+
+    applyTemplatePreset(config, 'firefox');
+    assert.equal(config.theme.siteLayoutMode, 'card');
+    assert.equal(config.theme.showSidebar, false);
+    assert.equal(config.theme.siteCard.w, 1);
+    assert.equal(config.theme.siteCard.h, 1);
+
+    applyTemplatePreset(config, 'compact');
+    assert.equal(config.layout, layoutRef);
+    assert.deepEqual(config.layout, beforeLayout);
+    assert.equal(config.theme.density, 'compact');
+    assert.equal(config.theme.iconSize, 48);
+
+    applyTemplatePreset(config, 'regular');
+    assert.equal(config.layout, layoutRef);
+    assert.deepEqual(config.layout, beforeLayout);
+    assert.equal(config.theme.density, 'normal');
+    assert.equal(config.theme.iconSize, 60);
+  `);
+});
+
+test('template cards and wallpaper media keep resource use bounded', async () => {
+  const tab = await read('src/features/settings/components/tabs/TemplateTab.vue');
+  const layer = await read('src/app/shell/WallpaperLayer.vue');
+  const storage = await read('src/core/wallpaper/storage.ts');
+
+  assert.match(tab, /class="template-grid"/);
+  assert.match(tab, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(tab, /'--preview-accent': 'var\(--accent-color\)'/);
+  assert.match(tab, /'--preview-accent-rgb': 'var\(--accent-color-rgb\)'/);
+
+  assert.match(storage, /REMOTE_IMAGE_MAX_BYTES/);
+  assert.match(storage, /REMOTE_IMAGE_MAX_ENTRIES/);
+  assert.match(storage, /getCachedRemoteImage/);
+  assert.match(storage, /cacheRemoteImage/);
+  assert.doesNotMatch(storage, /cacheRemoteVideo/);
+  assert.match(layer, /isRemoteHttpImage/);
+  assert.match(layer, /fetchRemoteImageToCache/);
+  assert.match(layer, /document\.addEventListener\('visibilitychange', syncVideoPlayback\)/);
+  assert.match(layer, /document\.hidden/);
+  assert.match(layer, /preload="metadata"/);
 });
 
 test('sensitive config helpers encrypt local secrets and keep sync payload clean', async () => {

@@ -30,10 +30,12 @@ export const createSiteActions = (
             iconBgColor: group.iconBgColor,
         };
         config.value.layout.push(nextGroup);
+        void saveConfig();
     };
 
     const removeGroup = (groupId: string) => {
         config.value.layout = config.value.layout.filter((group) => group.id !== groupId);
+        void saveConfig();
     };
 
     const updateGroup = (groupId: string, data: Partial<Group>) => {
@@ -109,6 +111,7 @@ export const createSiteActions = (
         const group = config.value.layout.find((item) => item.id === groupId);
         if (group) {
             group.items = group.items.filter((item) => item.id !== siteId);
+            void saveConfig();
         }
     };
 
@@ -116,6 +119,7 @@ export const createSiteActions = (
         const group = config.value.layout.find((item) => item.id === groupId);
         if (group) {
             group.items = newItems;
+            void saveConfig();
         }
     };
 
@@ -127,6 +131,7 @@ export const createSiteActions = (
             if (siteIndex > -1) {
                 const [site] = fromGroup.items.splice(siteIndex, 1);
                 toGroup.items.push(site);
+                void saveConfig();
             }
         }
     };

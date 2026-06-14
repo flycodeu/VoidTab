@@ -39,19 +39,15 @@ const groupButtonLabel = computed(() => {
   return `${props.active ? '当前分组' : '打开分组'}：${props.group.title}，${count.value} 个项目`;
 });
 
-// 是否有自定义颜色
 const hasCustomColor = computed(() => !!props.group.iconColor);
 
-// 获取安全颜色
 const safeColor = computed(() => props.group.iconColor || 'var(--accent-color)');
 
-//   自定义色：仅改变文本/图标颜色，不改变背景
 const buttonStyle = computed(() => {
   if (!hasCustomColor.value) return {};
   return {color: safeColor.value};
 });
 
-//   类名（不再用 bg-white/10 等固定色）
 const dynamicClasses = computed(() => {
   const cls: string[] = ['sg-btn'];
 
@@ -63,7 +59,6 @@ const dynamicClasses = computed(() => {
   if (props.showDropHint) cls.push('is-drop-hint');
   if (props.breathingLight && props.active) cls.push('animate-pulse');
 
-  // 默认（无自定义色）时，active 的文字用主题色
   if (props.active && !hasCustomColor.value) cls.push('text-accent');
   return cls;
 });
@@ -86,7 +81,6 @@ const dynamicClasses = computed(() => {
       :class="dynamicClasses"
       :style="buttonStyle"
   >
-    <!-- Edge 风格：左侧小指示条 -->
     <div
         v-if="active"
         class="active-indicator"
@@ -98,7 +92,7 @@ const dynamicClasses = computed(() => {
     <div class="relative">
       <component
           :is="IconComp"
-          :size="props.orientation === 'horizontal' ? 28 : 26"
+          :size="props.orientation === 'horizontal' ? 24 : 26"
           :weight="active ? 'fill' : 'duotone'"
           class="icon"
           :class="[(!hasCustomColor && active) ? 'icon-glow' : '']"
@@ -148,16 +142,15 @@ const dynamicClasses = computed(() => {
 
   transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
 
-  /*   更贴合 sidebar 面板（不受 body 文本变量影响） */
   color: var(--sidebar-text);
 }
 
 .sg-btn.is-horizontal {
-  width: 68px;
-  min-width: 68px;
-  height: 64px;
-  padding: 8px 6px;
-  gap: 4px;
+  width: 58px;
+  min-width: 58px;
+  height: 52px;
+  padding: 6px 5px;
+  gap: 3px;
   transform-origin: center bottom;
 }
 
@@ -268,7 +261,6 @@ const dynamicClasses = computed(() => {
   border: 1px solid rgba(127, 127, 127, 0.25);
   background: rgba(127, 127, 127, 0.22);
 
-  /*   角标文字也用 sidebar 文本 */
   color: var(--sidebar-text);
 
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
@@ -297,12 +289,11 @@ const dynamicClasses = computed(() => {
   text-overflow: ellipsis;
   transition: opacity 0.16s ease;
 
-  /*   弱文本跟随 sidebar muted */
   color: var(--sidebar-text);
 }
 
 .is-horizontal .title {
-  max-width: 64px;
+  max-width: 54px;
   font-size: 9px;
   margin-top: 0;
 }

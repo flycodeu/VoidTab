@@ -7,7 +7,6 @@ import {PhSpinner} from '@phosphor-icons/vue';
 import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
 import {PhWarning} from '@phosphor-icons/vue';
 
-// 基础组件
 import SideBar from './features/navigation/components/SideBar.vue';
 import ContextMenu from './features/context-menu/components/ContextMenu.vue';
 import WallpaperLayer from './app/shell/WallpaperLayer.vue';
@@ -16,7 +15,6 @@ import HomeMain from './features/home/components/HomeMain.vue';
 import MobileGroupNav from './features/navigation/components/MobileGroupNav.vue';
 import DeleteConfirmHost from './features/confirm-delete/components/DeleteConfirmHost.vue';
 
-// 异步加载弹窗
 const SettingsModal = defineAsyncComponent(() => import('./features/settings/components/SettingsModal.vue'));
 const WidgetPanel = defineAsyncComponent(() => import('./features/widgets/components/WidgetPanel.vue'));
 const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDialog.vue'));
@@ -46,8 +44,8 @@ const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
 const sidebarPositionCycle: SidebarPosition[] = ['left', 'right', 'top', 'bottom'];
 
-// 核心状态：终端模式是否开启
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
+const showSidebarNav = computed(() => store.config.theme.showSidebar !== false);
 
 const isFocusMode = computed({
   get: () => store.config.focusMode,
@@ -166,9 +164,6 @@ watch(
 
 const dialogLogic = useDialogs(store, ui);
 
-// ======================================================
-// 滚轮切换分组：主内容能滚时滚内容，到顶/到底后切组
-// ======================================================
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
@@ -214,28 +209,17 @@ const cancelBackgroundIconRefresh = () => {
   iconRefreshTimer = null;
 };
 
-// ======================================================
-// 修复：整理模式拖拽靠边自动滚动（使用 dragover 而不是 pointermove）
-// ======================================================
-
-/** 边缘触发范围（px） */
 const AUTO_SCROLL_MARGIN = 110;
-/** 基础速度（px/帧） */
 const AUTO_SCROLL_BASE_SPEED = 10;
-/** 最大速度（px/帧） */
 const AUTO_SCROLL_MAX_SPEED = 28;
 
 let autoScrollRaf: number | null = null;
 let lastPointerY = 0;
 
-/** 选择真正可滚动的主容器：
- * - 允许你在多个 data-main-scroll="1" 中选“真的能滚”的那个
- */
 function pickMainScrollEl(): HTMLElement | null {
   const list = Array.from(document.querySelectorAll('[data-main-scroll="1"]')) as HTMLElement[];
   if (!list.length) return null;
 
-  // 选 scrollHeight - clientHeight 最大的那个（最可能是主滚动容器）
   let best: HTMLElement | null = null;
   let bestDelta = 0;
 
@@ -250,15 +234,10 @@ function pickMainScrollEl(): HTMLElement | null {
   return best ?? list[0] ?? null;
 }
 
-/** 判断“现在是否在拖拽中”
- * - 不只依赖 ui.dragState（site/icon 拖拽可能不走这套）
- * - 兜底用 DOM class（Sortable/VueDraggable 常见）
- */
 function isAnyDraggingNow(): boolean {
   if (ui.dragState?.isDragging) return true;
   if (ui.isGroupSorting) return true;
 
-  // DOM 兜底（按你项目里出现过的 class）
   const hit =
       document.querySelector('.sortable-ghost') ||
       document.querySelector('.group-ghost') ||
@@ -270,7 +249,6 @@ function isAnyDraggingNow(): boolean {
   return !!hit;
 }
 
-/** auto-scroll 生效条件：只在整理模式拖拽时 */
 function canAutoScroll(): boolean {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
@@ -278,24 +256,20 @@ function canAutoScroll(): boolean {
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
   if (isTerminalOpen.value) return false;
 
-  // 拖拽中（不只看 ui.dragState）
   if (!isAnyDraggingNow()) return false;
 
   return true;
 }
 
-/** 根据靠近边缘程度计算速度（越靠近越快） */
 function calcSpeed(y: number): { dir: -1 | 0 | 1; speed: number } {
   const vh = window.innerHeight;
 
-  // 顶部
   if (y <= AUTO_SCROLL_MARGIN) {
     const k = Math.min(1, (AUTO_SCROLL_MARGIN - y) / AUTO_SCROLL_MARGIN);
     const speed = AUTO_SCROLL_BASE_SPEED + (AUTO_SCROLL_MAX_SPEED - AUTO_SCROLL_BASE_SPEED) * k;
     return {dir: -1, speed};
   }
 
-  // 底部
   if (y >= vh - AUTO_SCROLL_MARGIN) {
     const dist = vh - y;
     const k = Math.min(1, (AUTO_SCROLL_MARGIN - dist) / AUTO_SCROLL_MARGIN);
@@ -325,7 +299,6 @@ function autoScrollTick() {
 
   const {dir, speed} = calcSpeed(lastPointerY);
   if (dir === 0) {
-    // 在中间区域就停，但保持下一次 dragover 可以再启动
     stopAutoScroll();
     return;
   }
@@ -339,18 +312,15 @@ function ensureAutoScrollRunning() {
   autoScrollRaf = requestAnimationFrame(autoScrollTick);
 }
 
-/** 用 DragEvent 更新指针位置（拖拽时一定会触发） */
 function onDragOverForAutoScroll(e: DragEvent) {
   if (!e) return;
 
-  // 如果在自动滚动状态，阻止默认行为
   if (canAutoScroll()) {
     if (e.cancelable) {
       e.preventDefault();
     }
   }
 
-  // dragover 会持续触发，拿 clientY 更新即可
   lastPointerY = e.clientY || lastPointerY;
 
   if (!canAutoScroll()) return;
@@ -359,19 +329,14 @@ function onDragOverForAutoScroll(e: DragEvent) {
   if (dir !== 0) ensureAutoScrollRunning();
 }
 
-/** 兜底：有些实现仍会有 mousemove */
 function onMouseMoveForAutoScroll(e: MouseEvent) {
   lastPointerY = e.clientY || lastPointerY;
 }
 
-/** dragend/drop 时停止 */
 function onDragEndForAutoScroll() {
   stopAutoScroll();
 }
 
-// ======================================================
-// 终端
-// ======================================================
 const handleToggleTerminal = () => {
   if (!store.config.runtime.terminal) {
     store.config.runtime.terminal = {history: [], theme: 'dark', isOpen: false};
@@ -397,12 +362,10 @@ onMounted(async () => {
 
   groupWheel.mount();
 
-  // 核心：dragover 驱动自动滚动（最关键）
   window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: false});
   window.addEventListener('dragend', onDragEndForAutoScroll, {capture: true, passive: true});
   window.addEventListener('drop', onDragEndForAutoScroll, {capture: true, passive: true});
 
-  // 兜底：部分拖拽实现仍会有 mousemove
   window.addEventListener('mousemove', onMouseMoveForAutoScroll, {capture: true, passive: true});
 
   window.addEventListener('blur', onDragEndForAutoScroll);
@@ -423,12 +386,10 @@ onUnmounted(() => {
   groupScrollUnlockTimer = null;
 });
 
-// 处理事件：切换编辑模式
 const handleToggleEdit = () => {
   isGlobalEditMode.value = !isGlobalEditMode.value;
 };
 
-// 处理事件：配置组件
 const handleEditWidgetSettings = (item: any) => {
   showWidgetModal.value = true;
   const title = item?.title ? `「${item.title}」` : '该组件';
@@ -436,7 +397,6 @@ const handleEditWidgetSettings = (item: any) => {
   ui.announce(`已打开组件面板，可管理${item?.title || '该组件'}`);
 };
 
-// 移动端视口信息
 const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
   width: 0,
   isNarrow: false,
@@ -467,8 +427,7 @@ const tryOpenDevTools = () => {
       cancelable: true,
     } as any);
     window.dispatchEvent(evt);
-  } catch (e) {
-    // ignore
+  } catch {
   }
   handleOpenDevTools();
 };
@@ -517,6 +476,7 @@ const tryOpenDevTools = () => {
           <TopActions
               class="pointer-events-auto"
               :sidebarPos="store.config.theme.sidebarPos"
+              :showSidebar="showSidebarNav"
               :isFocusMode="isFocusMode"
               :isEditMode="isGlobalEditMode"
               @toggleSidebarPos="toggleSidebarPos"
@@ -529,6 +489,7 @@ const tryOpenDevTools = () => {
         </header>
 
         <SideBar
+            v-if="showSidebarNav"
             class="hidden lg:flex z-40"
             :activeGroupId="activeGroupId"
             :isFocusMode="isFocusMode"
@@ -544,6 +505,7 @@ const tryOpenDevTools = () => {
             :isEditMode="isGlobalEditMode"
             @update:isEditMode="isGlobalEditMode = $event"
             :sidebarPos="store.config.theme.sidebarPos"
+            :showSidebar="showSidebarNav"
             @openSettings="showSettings = true"
             @openGroupDialog="dialogLogic.openAddGroupDialog"
             @openWidgets="showWidgetModal = true"
@@ -563,7 +525,7 @@ const tryOpenDevTools = () => {
 
       <MobileGroupNav
           class="z-[70]"
-          :show="!isFocusMode"
+          :show="!isFocusMode && showSidebarNav"
           :groups="store.config.layout"
           :activeGroupId="activeGroupId"
           @update:activeGroupId="selectGroupId"
@@ -577,7 +539,7 @@ const tryOpenDevTools = () => {
 
       <div class="relative z-[100]">
         <SettingsModal :show="showSettings" @close="showSettings = false"/>
-        <WidgetPanel :isOpen="showWidgetModal" @close="showWidgetModal = false"/>
+        <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="activeGroupId" @close="showWidgetModal = false"/>
 
         <SiteDialog
             :show="dialogLogic.siteDialog.show"
@@ -622,7 +584,6 @@ const tryOpenDevTools = () => {
     </template>
   </ConfirmDialog>
 
-  <!-- 🔔 全局 Toast 通知系统 -->
   <Toast />
   </ErrorBoundary>
 </template>
@@ -635,7 +596,6 @@ body {
   overflow: hidden;
 }
 
-/* 隐藏所有元素滚动条但保留滚动功能 */
 ::-webkit-scrollbar {
   width: 0;
   height: 0;

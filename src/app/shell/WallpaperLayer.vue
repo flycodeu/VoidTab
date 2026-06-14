@@ -1,18 +1,21 @@
-<!-- src/components/WallpaperLayer.vue -->
 <script setup lang="ts">
-import {computed, onBeforeUnmount, ref, watch} from 'vue';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {useConfigStore} from '../../stores/useConfigStore';
 import {wallpaperStorage} from '../../core/wallpaper/storage';
 
 const store = useConfigStore();
 
 const type = computed<'image' | 'video' | ''>(() => {
-  return ((store.config.theme as any).wallpaperType || '') as any;
+  const value = (store.config.theme as any).wallpaperType;
+  return value === 'image' || value === 'video' ? value : '';
 });
 
 const refStr = computed(() => (store.config.theme.wallpaper || '').trim());
+const objectUrl = ref('');
+const cacheState = ref<'idle' | 'cached' | 'remote' | 'error'>('idle');
+const videoEl = ref<HTMLVideoElement | null>(null);
+let resolveToken = 0;
 
-// 你的主题本来就有 blur/opacity，这里直接使用
 const wallpaperBlurPx = computed(() => {
   const n = Number(store.config.theme.blur ?? 0);
   if (!Number.isFinite(n)) return 0;
@@ -25,69 +28,139 @@ const wallpaperOpacity = computed(() => {
   return Math.max(0, Math.min(1, n));
 });
 
-// idb:xxx -> objectURL
-const objectUrl = ref<string>('');
-
-const revoke = () => {
-  if (objectUrl.value && objectUrl.value.startsWith('blob:')) {
-    URL.revokeObjectURL(objectUrl.value);
+const isRemoteHttpImage = computed(() => {
+  if (type.value !== 'image' || !refStr.value || refStr.value.startsWith('idb:')) return false;
+  try {
+    const parsed = new URL(refStr.value, window.location.href);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
   }
+});
+
+const revokeObjectUrl = () => {
+  if (objectUrl.value.startsWith('blob:')) URL.revokeObjectURL(objectUrl.value);
   objectUrl.value = '';
 };
 
 const resolvedSrc = computed(() => {
-  // 1) 上传文件：idb:key -> objectUrl
   if (refStr.value.startsWith('idb:')) return objectUrl.value;
-
-  // 2) 用户手动输入 URL：直接用
+  if (isRemoteHttpImage.value && objectUrl.value) return objectUrl.value;
   return refStr.value;
 });
 
-async function resolveIdbIfNeeded() {
-  revoke();
+async function fetchRemoteImageToCache(url: string, token: number) {
+  try {
+    const response = await fetch(url, {
+      cache: 'force-cache',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    if (token !== resolveToken) return;
+    await wallpaperStorage.cacheRemoteImage(url, blob, blob.type || response.headers.get('content-type') || 'image/*');
+  } catch {
+    return;
+  }
+}
 
-  if (!refStr.value.startsWith('idb:')) return;
+async function resolveWallpaperSource() {
+  const token = ++resolveToken;
+  revokeObjectUrl();
+  cacheState.value = 'idle';
 
-  const key = refStr.value.slice(4).trim();
-  if (!key) return;
+  if (!refStr.value) return;
 
-  const record = await wallpaperStorage.get(key);
-  if (!record?.blob) {
-    // 本地 idb 丢了，就清空（避免页面一直尝试）
-    (store.config.theme as any).wallpaperType = '';
-    store.config.theme.wallpaper = '';
+  if (refStr.value.startsWith('idb:')) {
+    const key = refStr.value.slice(4).trim();
+    if (!key) return;
+
+    const record = await wallpaperStorage.get(key);
+    if (token !== resolveToken) return;
+    if (!record?.blob) {
+      cacheState.value = 'error';
+      (store.config.theme as any).wallpaperType = '';
+      store.config.theme.wallpaper = '';
+      return;
+    }
+
+    objectUrl.value = URL.createObjectURL(record.blob);
+    cacheState.value = 'cached';
     return;
   }
 
-  objectUrl.value = URL.createObjectURL(record.blob);
+  if (isRemoteHttpImage.value) {
+    const cached = await wallpaperStorage.getCachedRemoteImage(refStr.value).catch(() => undefined);
+    if (token !== resolveToken) return;
+    if (cached?.blob) {
+      objectUrl.value = URL.createObjectURL(cached.blob);
+      cacheState.value = 'cached';
+      return;
+    }
+
+    cacheState.value = 'remote';
+    void fetchRemoteImageToCache(refStr.value, token);
+  }
 }
 
-watch(refStr, () => {
-  resolveIdbIfNeeded();
+const handleImageLoad = () => {
+  if (isRemoteHttpImage.value && !objectUrl.value) cacheState.value = 'remote';
+};
+
+const handleImageError = () => {
+  if (isRemoteHttpImage.value && objectUrl.value) {
+    revokeObjectUrl();
+    cacheState.value = 'remote';
+    return;
+  }
+  cacheState.value = 'error';
+};
+
+const syncVideoPlayback = () => {
+  const video = videoEl.value;
+  if (!video) return;
+  if (document.hidden) {
+    video.pause();
+    return;
+  }
+  const playPromise = video.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => null);
+  }
+};
+
+const handleVideoError = () => {
+  cacheState.value = 'error';
+};
+
+watch([refStr, type], () => {
+  void resolveWallpaperSource();
 }, {immediate: true});
 
-onBeforeUnmount(() => revoke());
+watch(resolvedSrc, () => {
+  if (type.value === 'video') requestAnimationFrame(syncVideoPlayback);
+});
 
-// 给 wallpaper-media 喂样式（blur + opacity）
+onMounted(() => {
+  document.addEventListener('visibilitychange', syncVideoPlayback);
+});
+
+onBeforeUnmount(() => {
+  resolveToken += 1;
+  document.removeEventListener('visibilitychange', syncVideoPlayback);
+  revokeObjectUrl();
+});
+
 const mediaStyle = computed(() => {
   return {
     opacity: String(wallpaperOpacity.value),
     filter: wallpaperBlurPx.value > 0 ? `blur(${wallpaperBlurPx.value}px)` : 'none',
-    transform: wallpaperBlurPx.value > 0 ? 'scale(1.04)' : 'none', // 避免 blur 出现黑边
+    transform: wallpaperBlurPx.value > 0 ? 'scale(1.04)' : 'none',
   } as Record<string, string>;
 });
 
-/**
- * Readability overlay 样式
- * 由 useThemeRuntimeSync 写入的 CSS 变量驱动：
- *  - --readability-enabled: 0/1
- *  - --readability-opacity: 0~1
- *  - --readability-color: '0,0,0' or '255,255,255'
- *  - --readability-blur: '0px'~'12px'
- *  - --readability-saturate: 0~1（如果你后续想作用到 wallpaper，可扩展）
- */
 const readabilityStyle = computed(() => {
-  // 注意：这里不从 store 读取，全部走 CSS 变量，保证运行时同步统一入口
   return {
     background: `rgba(var(--readability-color, 0,0,0), var(--readability-opacity, 0))`,
     backdropFilter: `blur(var(--readability-blur, 0px))`,
@@ -98,9 +171,10 @@ const readabilityStyle = computed(() => {
 </script>
 
 <template>
-  <div class="wallpaper-layer" aria-hidden="true">
+  <div class="wallpaper-layer" aria-hidden="true" :data-cache-state="cacheState">
     <video
         v-if="type === 'video' && resolvedSrc"
+        ref="videoEl"
         class="wallpaper-media"
         :style="mediaStyle"
         :src="resolvedSrc"
@@ -109,6 +183,9 @@ const readabilityStyle = computed(() => {
         loop
         playsinline
         preload="metadata"
+        @canplay="syncVideoPlayback"
+        @error="handleVideoError"
+        @stalled="syncVideoPlayback"
     />
 
     <img
@@ -120,9 +197,11 @@ const readabilityStyle = computed(() => {
         loading="eager"
         decoding="async"
         draggable="false"
+        referrerpolicy="no-referrer"
+        @load="handleImageLoad"
+        @error="handleImageError"
     />
 
-    <!-- 新增：可读性遮罩层（始终存在，由 CSS 变量控制强度/是否启用） -->
     <div class="readability-layer" :style="readabilityStyle"></div>
   </div>
 </template>
@@ -136,14 +215,12 @@ const readabilityStyle = computed(() => {
   pointer-events: none;
 }
 
-/* 背景媒体 */
 .wallpaper-media {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-/* 可读性遮罩层 */
 .readability-layer {
   position: absolute;
   inset: 0;

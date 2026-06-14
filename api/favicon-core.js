@@ -337,16 +337,10 @@ function buildProviderCandidates(pageUrl) {
     out.push(`https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`);
   }
   for (const domain of domains) {
-    out.push(`https://icon.horse/icon/${encodeURIComponent(domain)}`);
-  }
-  for (const domain of domains) {
     out.push(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`);
   }
   for (const domain of domains) {
     out.push(`https://favicon.yandex.net/favicon/${encodeURIComponent(domain)}?size=120`);
-  }
-  for (const domain of domains) {
-    out.push(`https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`);
   }
   for (const domain of domains) {
     out.push(`https://favicon.im/${encodeURIComponent(domain)}?larger=true`);
@@ -356,6 +350,12 @@ function buildProviderCandidates(pageUrl) {
   }
   for (const domain of domains) {
     out.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`);
+  }
+  for (const domain of domains) {
+    out.push(`https://icon.horse/icon/${encodeURIComponent(domain)}`);
+  }
+  for (const domain of domains) {
+    out.push(`https://api.iowen.cn/favicon/${encodeURIComponent(domain)}.png`);
   }
 
   return out;
@@ -475,7 +475,7 @@ export async function fetchFaviconProxyPayload(rawUrl) {
     ...commonOriginCandidates,
     ...providerCandidates.slice(6),
   ]);
-  const fastImage = await fetchFirstImageCandidate(fastCandidates, 4);
+  const fastImage = await fetchFirstImageCandidate(fastCandidates, 2);
   if (fastImage) return fastImage;
 
   const declared = await declaredPromise.catch(() => []);

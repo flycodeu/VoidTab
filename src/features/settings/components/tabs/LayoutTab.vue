@@ -12,9 +12,6 @@ const sidebarPositions: Array<{ value: SidebarPosition; label: string }> = [
   {value: "bottom", label: "底部"},
 ];
 
-/** ---------------------------
- * Layout mode
- * -------------------------- */
 const mode = computed<"icon" | "card">({
   get() {
     return (store.config.theme as any).siteLayoutMode || "icon";
@@ -24,70 +21,77 @@ const mode = computed<"icon" | "card">({
   },
 });
 
-/** ---------------------------
- * Card size (w×h)
- * - 预设：2×1 / 3×1
- * - 自定义：滑块调整 w/h（目前你只需要 1 行高度，可保留扩展）
- * -------------------------- */
+const clampCardSize = (value: unknown, min: number, max: number, fallback: number) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+};
+
 const cardW = computed<number>({
   get() {
-    return Number((store.config.theme as any).siteCard?.w ?? 3);
+    return clampCardSize((store.config.theme as any).siteCard?.w, 1, 4, 3);
   },
   set(v) {
     (store.config.theme as any).siteCard = {
       ...(store.config.theme as any).siteCard,
-      w: v,
+      w: clampCardSize(v, 1, 4, 3),
     };
   },
 });
 
 const cardH = computed<number>({
   get() {
-    return Number((store.config.theme as any).siteCard?.h ?? 1);
+    return clampCardSize((store.config.theme as any).siteCard?.h, 1, 2, 1);
   },
   set(v) {
     (store.config.theme as any).siteCard = {
       ...(store.config.theme as any).siteCard,
-      h: v,
+      h: clampCardSize(v, 1, 2, 1),
     };
   },
 });
 
-type CardPreset = "2x1" | "3x1" | "custom";
+type CardPreset = "1x1" | "2x1" | "3x1" | "4x1" | "custom";
 
 const preset = computed<CardPreset>({
   get() {
     const w = cardW.value;
     const h = cardH.value;
+    if (w === 1 && h === 1) return "1x1";
     if (w === 2 && h === 1) return "2x1";
     if (w === 3 && h === 1) return "3x1";
+    if (w === 4 && h === 1) return "4x1";
     return "custom";
   },
   set(v) {
-    if (v === "2x1") {
+    if (v === "1x1") {
+      cardW.value = 1;
+      cardH.value = 1;
+    } else if (v === "2x1") {
       cardW.value = 2;
       cardH.value = 1;
     } else if (v === "3x1") {
       cardW.value = 3;
       cardH.value = 1;
+    } else if (v === "4x1") {
+      cardW.value = 4;
+      cardH.value = 1;
     }
-    // custom：不强制改值
   },
 });
 
-/** 预览：用 3 列网格模拟占格 */
-const previewCardColSpan = computed(() => {
-  const w = Math.max(2, Math.min(3, cardW.value));
-  return w === 2 ? "col-span-2" : "col-span-3";
-});
+const previewCardStyle = computed(() => ({
+  gridColumn: `span ${Math.max(1, Math.min(4, cardW.value))}`,
+  minHeight: `${Math.max(72, cardH.value * 76)}px`,
+  background: 'rgba(var(--overlay-rgb), 0.14)',
+  border: '1px solid rgba(var(--overlay-rgb), 0.14)',
+}));
 
-/** 预览：3×1 允许备注两行；2×1 一行更稳 */
-const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
+const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 ? 2 : 1));
 </script>
 
 <template>
   <div class="space-y-6 animate-fade-in">
-    <!-- 布局模式 -->
     <div class="space-y-3">
       <div class="flex justify-between items-center">
         <label class="font-bold text-sm">布局模式</label>
@@ -117,16 +121,26 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
         </div>
       </div>
 
-      <!-- ✅ 卡片大小（仅在卡片模式显示） -->
       <div v-if="mode === 'card'" class="space-y-3">
         <div class="flex justify-between items-center">
           <label class="font-bold text-sm">卡片大小</label>
 
-          <div class="flex rounded-lg p-1 bg-[var(--modal-input-bg)]">
+          <div class="grid grid-cols-5 rounded-lg p-1 bg-[var(--modal-input-bg)]">
+            <button
+                type="button"
+                @click="preset = '1x1'"
+                class="px-2 py-1 rounded-md text-xs font-bold transition-all"
+                :class="preset === '1x1'
+                ? 'bg-[var(--accent-color)] text-white shadow'
+                : 'opacity-50 hover:opacity-100'"
+            >
+              1×1
+            </button>
+
             <button
                 type="button"
                 @click="preset = '2x1'"
-                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                class="px-2 py-1 rounded-md text-xs font-bold transition-all"
                 :class="preset === '2x1'
                 ? 'bg-[var(--accent-color)] text-white shadow'
                 : 'opacity-50 hover:opacity-100'"
@@ -137,7 +151,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
             <button
                 type="button"
                 @click="preset = '3x1'"
-                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                class="px-2 py-1 rounded-md text-xs font-bold transition-all"
                 :class="preset === '3x1'
                 ? 'bg-[var(--accent-color)] text-white shadow'
                 : 'opacity-50 hover:opacity-100'"
@@ -147,8 +161,19 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
 
             <button
                 type="button"
+                @click="preset = '4x1'"
+                class="px-2 py-1 rounded-md text-xs font-bold transition-all"
+                :class="preset === '4x1'
+                ? 'bg-[var(--accent-color)] text-white shadow'
+                : 'opacity-50 hover:opacity-100'"
+            >
+              4×1
+            </button>
+
+            <button
+                type="button"
                 @click="preset = 'custom'"
-                class="px-3 py-1 rounded-md text-xs font-bold transition-all"
+                class="px-2 py-1 rounded-md text-xs font-bold transition-all"
                 :class="preset === 'custom'
                 ? 'bg-[var(--accent-color)] text-white shadow'
                 : 'opacity-50 hover:opacity-100'"
@@ -158,7 +183,6 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
           </div>
         </div>
 
-        <!-- 自定义：w/h 滑块（目前你的卡片高度建议固定 1，这里保留扩展） -->
         <div v-if="preset === 'custom'" class="space-y-3">
           <div class="space-y-2">
             <div class="flex justify-between items-center">
@@ -168,8 +192,8 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
             <input
                 type="range"
                 v-model.number="cardW"
-                min="2"
-                max="3"
+                min="1"
+                max="4"
                 step="1"
                 class="w-full accent-[var(--accent-color)]"
             />
@@ -184,7 +208,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
                 type="range"
                 v-model.number="cardH"
                 min="1"
-                max="1"
+                max="2"
                 step="1"
                 class="w-full accent-[var(--accent-color)]"
             />
@@ -192,14 +216,11 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
         </div>
 
         <div class="text-[11px] opacity-60" style="color: var(--text-secondary);">
-          2×1 更紧凑；3×1 更适合标题较长或备注较多的站点。
+          1×1 是方块磁贴；2×1/3×1 适合备注和域名；4×1 可作为横向入口卡片。
         </div>
       </div>
 
-      <!-- ✅ 预览小图（模拟效果） -->
-      <!-- 用 3 列，让 3×1 的预览能“变宽”看出来 -->
-      <div class="grid grid-cols-3 gap-3">
-        <!-- Icon preview (占 1 列) -->
+      <div class="grid grid-cols-4 gap-3">
         <button
             type="button"
             @click="mode = 'icon'"
@@ -225,16 +246,14 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
           </div>
         </button>
 
-        <!-- Card preview：随 2×1 / 3×1 变宽（不显示 tags/数字） -->
         <button
             type="button"
             @click="mode = 'card'"
             class="w-full rounded-2xl p-3 text-left transition-all"
             :class="[
             mode === 'card' ? 'ring-2 ring-[var(--accent-color)]' : 'opacity-80 hover:opacity-100',
-            previewCardColSpan
           ]"
-            style="background: rgba(var(--overlay-rgb), 0.14); border: 1px solid rgba(var(--overlay-rgb), 0.14);"
+            :style="previewCardStyle"
         >
           <div class="preview-card flex items-center gap-3 min-w-0" style="min-height: 72px;">
             <div
@@ -255,7 +274,6 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
                   </div>
                 </div>
 
-                <!-- 右侧极简装饰点（可删） -->
                 <div
                     class="shrink-0 rounded-full"
                     style="width: 8px; height: 8px; background: rgba(var(--overlay-rgb), 0.28); border: 1px solid rgba(var(--overlay-rgb), 0.18);"
@@ -279,14 +297,28 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
       </div>
     </div>
 
-    <!-- 侧边栏 -->
-    <div class="flex justify-between items-center">
-      <label class="font-bold text-sm">侧边栏位置</label>
+    <div class="flex justify-between items-center gap-4">
+      <div class="min-w-0">
+        <label class="font-bold text-sm">显示分组栏</label>
+        <div class="text-[11px] opacity-60 mt-1" style="color: var(--text-secondary);">
+          关闭后不显示分组导航，主内容和快捷操作仍保持可用。
+        </div>
+      </div>
+      <input
+          type="checkbox"
+          v-model="store.config.theme.showSidebar"
+          class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"
+      />
+    </div>
+
+    <div class="flex justify-between items-center gap-4" :class="!store.config.theme.showSidebar ? 'opacity-45' : ''">
+      <label class="font-bold text-sm">分组栏位置</label>
       <div class="grid grid-cols-4 rounded-lg p-1 bg-[var(--modal-input-bg)]">
         <button
             v-for="pos in sidebarPositions"
             :key="pos.value"
             @click="store.config.theme.sidebarPos = pos.value"
+            :disabled="!store.config.theme.showSidebar"
             class="px-3 py-1 rounded-md text-xs font-bold transition-all"
             :class="store.config.theme.sidebarPos === pos.value
             ? 'bg-[var(--accent-color)] text-white shadow'
@@ -298,7 +330,6 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
       </div>
     </div>
 
-    <!-- 分组浏览 -->
     <div class="flex justify-between items-center gap-4">
       <div class="min-w-0">
         <label class="font-bold text-sm">显示全部分组</label>
@@ -313,7 +344,6 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
       />
     </div>
 
-    <!-- 时间组件 -->
     <div class="flex justify-between items-center">
       <label class="font-bold text-sm">时间组件</label>
       <input
@@ -323,7 +353,6 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 ? 2 : 1));
       />
     </div>
 
-    <!-- 最大宽度 -->
     <div class="flex justify-between items-center">
       <label class="font-bold text-sm">最大宽度</label>
       <span class="text-xs opacity-60">{{ store.config.theme.gridMaxWidth }}px</span>

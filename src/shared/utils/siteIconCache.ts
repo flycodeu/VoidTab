@@ -11,7 +11,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 12;
+export const SITE_ICON_CACHE_VERSION = 14;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -952,7 +952,7 @@ async function resolveAndCacheSiteIconAsset(
             maxCandidates: 8,
             minEdgePx,
             skipProviders,
-            parallelism: isExtensionContext() ? 2 : 3,
+            parallelism: isExtensionContext() ? 2 : 1,
         });
 
         if (fastProbe) {
@@ -966,7 +966,7 @@ async function resolveAndCacheSiteIconAsset(
         maxCandidates: 18,
         minEdgePx,
         skipProviders,
-        parallelism: isExtensionContext() ? 2 : 3,
+        parallelism: isExtensionContext() ? 2 : 1,
     });
 
     if (!probe) {

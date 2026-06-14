@@ -15,6 +15,7 @@ import type {SidebarPosition} from '../../../core/config/types.ts';
 
 const props = defineProps<{
   sidebarPos: SidebarPosition;
+  showSidebar: boolean;
   isFocusMode: boolean;
   isEditMode: boolean;
 }>();
@@ -29,7 +30,6 @@ const emit = defineEmits<{
 
 const store = useConfigStore();
 
-/** 呼吸频率（秒） */
 const breathSeconds = computed<number>(() => {
   const raw = Number((store.config.theme as any).breathingDuration ?? 3);
   if (!Number.isFinite(raw)) return 3;
@@ -40,12 +40,14 @@ const isBreathing = computed(() => !!store.config.theme.breathingLight);
 const isNeon = computed(() => !!store.config.theme.neonGlow);
 
 const toolbarClass = computed(() => {
+  if (!props.showSidebar) return 'top-6 right-6';
   if (props.sidebarPos === 'right') return 'top-6 left-6';
-  if (props.sidebarPos === 'top') return 'top-[116px] right-6';
+  if (props.sidebarPos === 'top') return 'top-[88px] right-6';
   return 'top-6 right-6';
 });
 
 const nextSidebarLabel = computed(() => {
+  if (!props.showSidebar) return '切换分组栏位置';
   const labels: Record<SidebarPosition, string> = {
     left: '切换到右侧布局',
     right: '切换到顶部布局',
@@ -55,7 +57,6 @@ const nextSidebarLabel = computed(() => {
   return labels[props.sidebarPos] || '切换分组栏位置';
 });
 
-/** 用 style 绑定 animationDuration（避免 TS 对 CSS var 的类型问题） */
 const breathAnimStyle = computed(() => {
   if (!isBreathing.value) return undefined;
   return {animationDuration: `${breathSeconds.value}s`} as any;
@@ -70,7 +71,6 @@ const breathAnimStyle = computed(() => {
       aria-label="快捷操作"
   >
     <template v-if="!isFocusMode">
-      <!-- 切换侧边栏位置 -->
       <button
           type="button"
           @click="emit('toggleSidebarPos')"
@@ -88,7 +88,6 @@ const breathAnimStyle = computed(() => {
         />
       </button>
 
-      <!-- 终端 -->
       <button
           type="button"
           @click="emit('toggleTerminal')"
@@ -98,11 +97,9 @@ const breathAnimStyle = computed(() => {
           aria-label="切换终端模式"
           title="终端模式 (CMD)"
       >
-        <!--  不写死颜色，吃按钮 currentColor -->
         <PhTerminalWindow size="20" weight="bold" aria-hidden="true"/>
       </button>
 
-      <!-- AI -->
       <button
           type="button"
           @click="emit('toggleAi')"
@@ -115,7 +112,6 @@ const breathAnimStyle = computed(() => {
         <PhRobot size="20" weight="bold" aria-hidden="true"/>
       </button>
 
-      <!-- 整理桌面 -->
       <button
           type="button"
           @click="emit('toggleEdit')"
@@ -133,7 +129,6 @@ const breathAnimStyle = computed(() => {
       </button>
     </template>
 
-    <!-- 专注模式 -->
     <button
         type="button"
         @click="emit('toggleFocus')"
@@ -162,12 +157,10 @@ const breathAnimStyle = computed(() => {
   align-items: center;
   justify-content: center;
 
-  /*  背景/边框/阴影跟随主题（light/dark） */
   background: var(--fab-bg);
   border: 1px solid var(--fab-border);
   box-shadow: var(--fab-shadow);
 
-  /*  默认就是主题色：图标吃 currentColor */
   color: var(--accent-color);
 
   backdrop-filter: none;
@@ -179,11 +172,9 @@ const breathAnimStyle = computed(() => {
 .fab-btn:hover {
   transform: translateY(-1px) scale(1.06);
 
-  /* hover 背景更亮一点 + 主题色边框 */
   background: var(--fab-bg-hover);
   border-color: rgba(var(--accent-color-rgb), 0.32);
 
-  /* hover 图标更“饱和”一点 */
   color: rgba(var(--accent-color-rgb), 0.95);
 }
 
@@ -197,7 +188,6 @@ const breathAnimStyle = computed(() => {
   0 0 0 4px rgba(var(--accent-color-rgb), 0.16);
 }
 
-/* active：Edge 风格（细边框 + 柔底） */
 .fab-btn--active {
   background: rgba(var(--accent-color-rgb), 0.16);
   border-color: rgba(var(--accent-color-rgb), 0.50);
@@ -207,14 +197,12 @@ const breathAnimStyle = computed(() => {
   0 0 0 1px rgba(var(--accent-color-rgb), 0.10) inset;
 }
 
-/* focus 模式按钮 */
 .fab-btn--focus {
   background: rgba(var(--accent-color-rgb), 0.14);
   border-color: rgba(var(--accent-color-rgb), 0.30);
   color: rgba(var(--accent-color-rgb), 0.98);
 }
 
-/* 霓虹发光（neonGlow=true） */
 .is-neon:hover {
   box-shadow: var(--fab-shadow),
   0 0 18px rgba(var(--accent-color-rgb), 0.28);
@@ -226,7 +214,6 @@ const breathAnimStyle = computed(() => {
   0 0 0 1px rgba(var(--accent-color-rgb), 0.10) inset;
 }
 
-/*  呼吸灯（breathingLight=true） */
 .is-breathing {
   animation-name: fab-breath;
   animation-timing-function: ease-in-out;

@@ -59,7 +59,7 @@ const CANDIDATE_FAIL_RETRY_MS = 30 * 60 * 1000;
 const CANDIDATE_OK_TTL_MS = 10 * 60 * 1000;
 const PERSISTENT_FAIL_TTL_MS = 24 * 60 * 60 * 1000;
 const PERSISTENT_TRANSIENT_FAIL_TTL_MS = 30 * 60 * 1000;
-const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v3';
+const PERSISTENT_FAIL_STORAGE_KEY = 'voidtab:icon_candidate_fail:v4';
 const PERSISTENT_FAIL_MAX_ENTRIES = 1200;
 const FAILURE_STATS_STORAGE_KEY = 'voidtab:icon_failure_stats:v2';
 const FAILURE_STATS_MAX_PATH_ENTRIES = 1200;
@@ -223,12 +223,30 @@ export function isDirectIconSource(value: string | null | undefined): boolean {
 }
 
 const PRESET_ICONS: Record<string, string> = {
+    'google.com': 'https://www.google.com/favicon.ico',
+    'mail.google.com': 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico',
+    'docs.google.com': 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico',
+    'drive.google.com': 'https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_48dp.png',
+    'bing.com': 'https://www.bing.com/sa/simg/favicon-trans-bg-blue-mg.ico',
+    'microsoft.com': 'https://www.microsoft.com/favicon.ico',
+    'office.com': 'https://www.office.com/favicon.ico',
+    'outlook.live.com': 'https://outlook.live.com/favicon.ico',
+    'onedrive.live.com': 'https://onedrive.live.com/favicon.ico',
     'github.com': 'https://github.githubassets.com/favicons/favicon.png',
+    'openai.com': 'https://openai.com/favicon.ico',
+    'chatgpt.com': 'https://chatgpt.com/favicon.ico',
     'bilibili.com': 'https://www.bilibili.com/favicon.ico',
     'youtube.com': 'https://www.youtube.com/s/desktop/10c3080e/img/favicon_144x144.png',
     'taobao.com': 'https://img.alicdn.com/tfs/TB1_uT8a5ZX8KJjSgoSXXa.sXXa-128-128.png',
+    'baidu.com': 'https://www.baidu.com/favicon.ico',
     'zhihu.com': 'https://static.zhihu.com/heifetz/assets/apple-touch-icon-152.a53ae37b.png',
     'csdn.net': 'https://g.csdnimg.cn/static/logo/favicon32.ico',
+    'notion.so': 'https://www.notion.so/images/favicon.ico',
+    'developer.mozilla.org': 'https://developer.mozilla.org/favicon.ico',
+    'wikipedia.org': 'https://www.wikipedia.org/static/favicon/wikipedia.ico',
+    'vuejs.org': 'https://vuejs.org/logo.svg',
+    'vitejs.dev': 'https://vitejs.dev/logo.svg',
+    'vite.dev': 'https://vite.dev/logo.svg',
     'chat.deepseek.com': 'https://cdn.deepseek.com/chat/icon.png',
     'deepseek.com': 'https://cdn.deepseek.com/chat/icon.png',
 };
@@ -534,13 +552,40 @@ function buildFirstPartyProxyCandidates(pageUrl: string): IconCandidate[] {
     }
 }
 
-function buildExternalCandidates(domains: string[]): IconCandidate[] {
+function buildExternalCandidates(domains: string[], options?: { webSafeOnly?: boolean }): IconCandidate[] {
     const candidates: IconCandidate[] = [];
     for (const domain of domains) {
         candidates.push({
             url: `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(`https://${domain}`)}&size=256`,
             provider: 'google_s2',
         });
+    }
+    if (options?.webSafeOnly) {
+        for (const domain of domains) {
+            candidates.push({
+                url: `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`,
+                provider: 'google_s2',
+            });
+        }
+        for (const domain of domains) {
+            candidates.push({
+                url: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
+                provider: 'duckduckgo',
+            });
+        }
+        for (const domain of domains) {
+            candidates.push({
+                url: `https://favicon.yandex.net/favicon/${encodeURIComponent(domain)}?size=120`,
+                provider: 'yandex',
+            });
+        }
+        for (const domain of domains) {
+            candidates.push({
+                url: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256`,
+                provider: 'google_s2',
+            });
+        }
+        return candidates;
     }
     for (const domain of domains) {
         candidates.push({
@@ -619,13 +664,11 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         return dedupe(candidates);
     }
 
-    // Web/dev: use the same-origin proxy first, then presets/third-party sources
-    // to avoid Tracking Prevention and CORP/ORB blocked direct site icons.
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal && !proxyCandidates.length) {
-        candidates.push(...buildExternalCandidates(thirdPartyDomains));
+    if (!privateOrLocal) {
+        candidates.push(...buildExternalCandidates(thirdPartyDomains, {webSafeOnly: true}));
     }
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
@@ -660,13 +703,11 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
         return dedupe(candidates);
     }
 
-    // Fast path (Web): same-origin proxy first, then preset/third-party.
-    // Public site-origin favicons are often blocked by CORP/ORB when embedded from the web app.
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal && !proxyCandidates.length) {
-        candidates.push(...buildExternalCandidates(thirdPartyDomains));
+    if (!privateOrLocal) {
+        candidates.push(...buildExternalCandidates(thirdPartyDomains, {webSafeOnly: true}));
     }
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
