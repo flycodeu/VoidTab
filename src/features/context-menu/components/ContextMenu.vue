@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
+import {computed, inject, onMounted, onUnmounted, ref, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useToast} from '../../../shared/composables/useToast.ts';
@@ -9,8 +9,6 @@ import {cloneConfigSnapshot} from '../../../shared/utils/configSnapshot.ts';
 import ContextMenuPanel from './ContextMenuPanel.vue';
 import ConfirmDialog from '../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {PhTrash} from '@phosphor-icons/vue';
-
-const WidgetMarketplaceModal = defineAsyncComponent(() => import('../../widgets/components/WidgetMarketplaceModal.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -25,12 +23,11 @@ const emit = defineEmits<{
   (e: 'edit'): void;
   (e: 'toggleEdit'): void;
   (e: 'editWidgetSettings', item: any): void;
+  (e: 'openWidgets', groupId?: string): void;
 
   (e: 'openSettings'): void;     // ✅ 打开设置
   (e: 'openDevTools'): void;     // ✅ 尝试打开 DevTools（F12）
 }>();
-
-const showWidgetModal = ref(false);
 
 // ========== 删除弹窗状态 ==========
 type DeleteTarget =
@@ -271,12 +268,8 @@ const handleAddSite = () => {
 };
 
 const handleAddWidgetRequest = () => {
+  emit('openWidgets', ui.contextMenu.groupId);
   ui.closeContextMenu();
-  showWidgetModal.value = true;
-};
-
-const handleConfirmAddWidget = (type: string) => {
-  if (ui.contextMenu.groupId) store.addWidget(ui.contextMenu.groupId, type);
 };
 
 const handleResizeItem = (w: number, h: number) => {
@@ -370,13 +363,6 @@ onUnmounted(() => {
        @edit="() => { emit('edit'); ui.closeContextMenu(); }"
     />
   </div>
-
-  <WidgetMarketplaceModal
-      :show="showWidgetModal"
-      @close="showWidgetModal = false"
-      @select="handleConfirmAddWidget"
-  />
-
   <ConfirmDialog
       :show="showDeleteModal"
       :title="deleteTitle"

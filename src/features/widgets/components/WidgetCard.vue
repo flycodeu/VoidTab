@@ -2,6 +2,8 @@
 import {computed} from 'vue';
 import type {SiteItem} from '../../../core/config/types.ts';
 import {getWidgetMeta} from '../../../core/registry/widgets.ts';
+import WidgetErrorBoundary from './WidgetErrorBoundary.vue';
+import WidgetState from './WidgetState.vue';
 
 const props = defineProps<{
   item: SiteItem;
@@ -14,6 +16,12 @@ const currentWidget = computed(() => {
 });
 
 const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET');
+const widgetResetKey = computed(() => [
+  props.item.id,
+  props.item.widgetType,
+  props.item.w,
+  props.item.h,
+].join(':'));
 </script>
 <template>
   <div class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 rounded-[18px] select-none bg-[#121212]">
@@ -26,17 +34,31 @@ const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET
     />
 
     <div class="relative z-10 w-full h-full min-w-0 min-h-0 overflow-hidden">
-      <component
+      <WidgetErrorBoundary
           v-if="currentWidget"
-          :is="currentWidget"
-          :item="item"
-          :is-edit-mode="isEditMode"
-      />
+          :reset-key="widgetResetKey"
+          :title="`${item.title || typeLabel} 渲染失败`"
+      >
+        <Suspense>
+          <component
+              :is="currentWidget"
+              :item="item"
+              :is-edit-mode="isEditMode"
+          />
 
-      <div v-else class="w-full h-full flex flex-col items-center justify-center text-white/90">
-        <div class="text-sm font-bold opacity-70 mb-1">{{ typeLabel }}</div>
-        <div class="text-[10px] opacity-40 border border-white/20 px-2 py-1 rounded">未实现</div>
-      </div>
+          <template #fallback>
+            <WidgetState type="loading" compact/>
+          </template>
+        </Suspense>
+      </WidgetErrorBoundary>
+
+      <WidgetState
+          v-else
+          type="empty"
+          :title="typeLabel"
+          description="该组件类型尚未注册或已被移除。"
+          compact
+      />
     </div>
 
     <div

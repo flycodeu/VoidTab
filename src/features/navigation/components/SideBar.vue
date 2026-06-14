@@ -137,7 +137,7 @@ const brandBlockClass = computed(() => {
 
 const listShellClass = computed(() => {
   return isHorizontal.value
-      ? 'w-full min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center justify-center'
+      ? 'w-full min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center justify-start scroll-smooth cursor-grab active:cursor-grabbing'
       : 'flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2';
 });
 
@@ -149,7 +149,7 @@ const listShellStyle = computed(() => {
 });
 
 const draggableClass = computed(() => {
-  return isHorizontal.value ? 'flex flex-row items-center gap-2 py-2' : 'flex flex-col gap-2';
+  return isHorizontal.value ? 'flex flex-row items-center gap-2 py-2 w-max min-w-max' : 'flex flex-col gap-2';
 });
 
 const addButtonClass = computed(() => {
@@ -187,20 +187,61 @@ const railStyle = computed(() => {
 });
 
 const isGroupSorting = ref(false);
-const WHEEL_SPEED = 1.15;
+const HORIZONTAL_WHEEL_SPEED = 2.8;
+const SORTING_WHEEL_SPEED = 1.8;
+const MAX_WHEEL_STEP = 280;
+
+const canScrollSidebarList = () => {
+  const host = listRef.value;
+  if (!host) return false;
+  if (isHorizontal.value) return host.scrollWidth > host.clientWidth + 1;
+  return host.scrollHeight > host.clientHeight + 1;
+};
+
+const normalizeWheelDelta = (e: WheelEvent, value: number) => {
+  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return value * 40;
+  if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return value * window.innerHeight;
+  return value;
+};
+
+const clampWheelStep = (value: number, max = MAX_WHEEL_STEP) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-max, Math.min(max, value));
+};
+
+const getDominantWheelDelta = (e: WheelEvent) => {
+  const dx = normalizeWheelDelta(e, e.deltaX);
+  const dy = normalizeWheelDelta(e, e.deltaY);
+  return Math.abs(dx) > Math.abs(dy) ? dx : dy;
+};
+
+const scrollSidebarByWheel = (e: WheelEvent) => {
+  const host = listRef.value;
+  if (!host || !isHorizontal.value || !canScrollSidebarList()) return false;
+
+  const delta = clampWheelStep(getDominantWheelDelta(e) * HORIZONTAL_WHEEL_SPEED);
+  if (!delta) return false;
+
+  if (e.cancelable) e.preventDefault();
+  e.stopPropagation();
+  host.scrollLeft += delta;
+  return true;
+};
+
+const onSidebarListWheel = (e: WheelEvent) => {
+  scrollSidebarByWheel(e);
+};
 
 const onWheelWhileSorting = (e: WheelEvent) => {
   if (!isGroupSorting.value) return;
   const host = listRef.value;
   if (!host) return;
-  if (e.cancelable) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
+  if (e.cancelable) e.preventDefault();
+  e.stopPropagation();
   if (isHorizontal.value) {
-    host.scrollLeft += e.deltaY * WHEEL_SPEED;
+    host.scrollLeft += clampWheelStep(getDominantWheelDelta(e) * SORTING_WHEEL_SPEED);
   } else {
-    host.scrollTop += e.deltaY * WHEEL_SPEED;
+    host.scrollTop += clampWheelStep(normalizeWheelDelta(e, e.deltaY) * SORTING_WHEEL_SPEED);
   }
 };
 
@@ -225,11 +266,61 @@ const onGroupSortEnd = () => {
   store.saveConfig();
 };
 
+let pointerDrag:
+    | { id: number; startX: number; startY: number; scrollLeft: number; moved: boolean }
+    | null = null;
+let suppressClickUntil = 0;
+
+const onSidebarPointerDown = (e: PointerEvent) => {
+  const host = listRef.value;
+  if (!host || !isHorizontal.value || !canScrollSidebarList()) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+  pointerDrag = {
+    id: e.pointerId,
+    startX: e.clientX,
+    startY: e.clientY,
+    scrollLeft: host.scrollLeft,
+    moved: false,
+  };
+  host.setPointerCapture?.(e.pointerId);
+};
+
+const onSidebarPointerMove = (e: PointerEvent) => {
+  const host = listRef.value;
+  if (!host || !pointerDrag || e.pointerId !== pointerDrag.id) return;
+
+  const dx = e.clientX - pointerDrag.startX;
+  const dy = e.clientY - pointerDrag.startY;
+  if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy)) {
+    pointerDrag.moved = true;
+    if (e.cancelable) e.preventDefault();
+    host.scrollLeft = pointerDrag.scrollLeft - dx;
+  }
+};
+
+const onSidebarPointerEnd = (e: PointerEvent) => {
+  const host = listRef.value;
+  if (host && pointerDrag && e.pointerId === pointerDrag.id) {
+    host.releasePointerCapture?.(e.pointerId);
+    if (pointerDrag.moved) suppressClickUntil = performance.now() + 240;
+  }
+  pointerDrag = null;
+};
+
+const onSidebarClickCapture = (e: MouseEvent) => {
+  if (performance.now() > suppressClickUntil) return;
+  e.preventDefault();
+  e.stopPropagation();
+};
+
 onBeforeUnmount(() => {
   if (activeScrollRaf != null) cancelAnimationFrame(activeScrollRaf);
   activeScrollRaf = null;
   ui.setGroupSorting(false);
   unbindSortingWheel();
+  pointerDrag = null;
+  suppressClickUntil = 0;
 });
 </script>
 
@@ -279,6 +370,12 @@ onBeforeUnmount(() => {
               :class="listShellClass"
               :style="listShellStyle"
               aria-label="分组列表"
+              @wheel="onSidebarListWheel"
+              @pointerdown="onSidebarPointerDown"
+              @pointermove="onSidebarPointerMove"
+              @pointerup="onSidebarPointerEnd"
+              @pointercancel="onSidebarPointerEnd"
+              @click.capture="onSidebarClickCapture"
           >
             <VueDraggable
                 v-model="store.config.layout"

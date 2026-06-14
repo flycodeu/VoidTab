@@ -39,6 +39,8 @@ useThemeRuntimeSync(store);
 const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
+const widgetPanelGroupId = ref('');
+const isDesktopViewport = ref(true);
 
 const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
@@ -46,6 +48,9 @@ const sidebarPositionCycle: SidebarPosition[] = ['left', 'right', 'top', 'bottom
 
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
 const showSidebarNav = computed(() => store.config.theme.showSidebar !== false);
+const effectiveSidebarPos = computed<SidebarPosition>(() => {
+  return isDesktopViewport.value ? store.config.theme.sidebarPos : 'bottom';
+});
 
 const isFocusMode = computed({
   get: () => store.config.focusMode,
@@ -56,6 +61,7 @@ const isFocusMode = computed({
 });
 
 const toggleSidebarPos = () => {
+  if (!isDesktopViewport.value) return;
   const current = store.config.theme.sidebarPos;
   const index = sidebarPositionCycle.indexOf(current);
   store.config.theme.sidebarPos = sidebarPositionCycle[(index + 1) % sidebarPositionCycle.length] || 'left';
@@ -357,6 +363,10 @@ onMounted(async () => {
   if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
   scheduleBackgroundIconRefresh();
 
+  desktopViewportMql = window.matchMedia('(min-width: 1024px)');
+  syncDesktopViewport();
+  desktopViewportMql.addEventListener?.('change', syncDesktopViewport);
+
   document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
   document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
 
@@ -373,6 +383,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   groupWheel.unmount();
+  desktopViewportMql?.removeEventListener?.('change', syncDesktopViewport);
+  desktopViewportMql = null;
 
   window.removeEventListener('dragover', onDragOverForAutoScroll, true);
   window.removeEventListener('dragend', onDragEndForAutoScroll, true);
@@ -391,10 +403,16 @@ const handleToggleEdit = () => {
 };
 
 const handleEditWidgetSettings = (item: any) => {
+  widgetPanelGroupId.value = activeGroupId.value;
   showWidgetModal.value = true;
   const title = item?.title ? `「${item.title}」` : '该组件';
   toast.info(`已打开组件面板，可在这里管理${title}。`);
   ui.announce(`已打开组件面板，可管理${item?.title || '该组件'}`);
+};
+
+const openWidgetPanel = (groupId?: string) => {
+  widgetPanelGroupId.value = groupId || activeGroupId.value;
+  showWidgetModal.value = true;
 };
 
 const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
@@ -403,6 +421,11 @@ const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
 });
 const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
   mobileViewport.value = v;
+};
+
+let desktopViewportMql: MediaQueryList | null = null;
+const syncDesktopViewport = () => {
+  isDesktopViewport.value = desktopViewportMql?.matches ?? true;
 };
 
 const showDevtoolsTip = ref(false);
@@ -470,18 +493,18 @@ const tryOpenDevTools = () => {
 
       <div
           class="relative z-10 w-full h-full flex flex-col transition-all duration-500"
-          :class="store.config.theme.sidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row'"
+          :class="effectiveSidebarPos === 'right' ? 'flex-row-reverse' : 'flex-row'"
       >
         <header class="absolute top-0 left-0 right-0 z-50 pointer-events-none" aria-label="全局操作">
           <TopActions
               class="pointer-events-auto"
-              :sidebarPos="store.config.theme.sidebarPos"
+              :sidebarPos="effectiveSidebarPos"
               :showSidebar="showSidebarNav"
               :isFocusMode="isFocusMode"
               :isEditMode="isGlobalEditMode"
               @toggleSidebarPos="toggleSidebarPos"
               @toggleEdit="isGlobalEditMode = !isGlobalEditMode"
-              @openWidgets="showWidgetModal = true"
+              @openWidgets="openWidgetPanel()"
               @toggleFocus="isFocusMode = !isFocusMode"
               @toggleAi="showAiPanel = true"
               @toggleTerminal="handleToggleTerminal"
@@ -504,11 +527,11 @@ const tryOpenDevTools = () => {
             :activeGroupId="activeGroupId"
             :isEditMode="isGlobalEditMode"
             @update:isEditMode="isGlobalEditMode = $event"
-            :sidebarPos="store.config.theme.sidebarPos"
+            :sidebarPos="effectiveSidebarPos"
             :showSidebar="showSidebarNav"
             @openSettings="showSettings = true"
             @openGroupDialog="dialogLogic.openAddGroupDialog"
-            @openWidgets="showWidgetModal = true"
+            @openWidgets="openWidgetPanel(activeGroupId)"
             :mobileNarrow="mobileViewport.isNarrow"
             :mobileWidth="mobileViewport.width"
             @update:activeGroupId="syncActiveGroupIdFromScroll"
@@ -517,6 +540,7 @@ const tryOpenDevTools = () => {
         <ContextMenu
             @toggleEdit="handleToggleEdit"
             @editWidgetSettings="handleEditWidgetSettings"
+            @openWidgets="openWidgetPanel"
             @edit="dialogLogic.handleContextMenuEdit"
             @openSettings="showSettings = true"
             @openDevTools="tryOpenDevTools"
@@ -539,7 +563,7 @@ const tryOpenDevTools = () => {
 
       <div class="relative z-[100]">
         <SettingsModal :show="showSettings" @close="showSettings = false"/>
-        <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="activeGroupId" @close="showWidgetModal = false"/>
+        <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="widgetPanelGroupId || activeGroupId" @close="showWidgetModal = false"/>
 
         <SiteDialog
             :show="dialogLogic.siteDialog.show"

@@ -144,6 +144,7 @@ watch(resolvedSrc, () => {
 
 onMounted(() => {
   document.addEventListener('visibilitychange', syncVideoPlayback);
+  requestAnimationFrame(syncVideoPlayback);
 });
 
 onBeforeUnmount(() => {
@@ -163,8 +164,8 @@ const mediaStyle = computed(() => {
 const readabilityStyle = computed(() => {
   return {
     background: `rgba(var(--readability-color, 0,0,0), var(--readability-opacity, 0))`,
-    backdropFilter: `blur(var(--readability-blur, 0px))`,
-    WebkitBackdropFilter: `blur(var(--readability-blur, 0px))`,
+    backdropFilter: `blur(var(--readability-blur, 0px)) saturate(var(--readability-saturate, 1))`,
+    WebkitBackdropFilter: `blur(var(--readability-blur, 0px)) saturate(var(--readability-saturate, 1))`,
     opacity: `var(--readability-enabled, 1)`,
   } as Record<string, string>;
 });

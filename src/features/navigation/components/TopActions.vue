@@ -74,7 +74,7 @@ const breathAnimStyle = computed(() => {
       <button
           type="button"
           @click="emit('toggleSidebarPos')"
-          class="fab-btn group"
+          class="fab-btn fab-btn--desktop-only group"
           :class="[{ 'is-breathing': isBreathing, 'is-neon': isNeon }]"
           :style="breathAnimStyle"
           :aria-label="nextSidebarLabel"
@@ -167,6 +167,16 @@ const breathAnimStyle = computed(() => {
   -webkit-backdrop-filter: none;
 
   transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+}
+
+.fab-btn--desktop-only {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .fab-btn--desktop-only {
+    display: inline-flex;
+  }
 }
 
 .fab-btn:hover {

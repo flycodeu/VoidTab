@@ -41,6 +41,9 @@ const categories = [
   {id: 'game', label: '娱乐'},
 ];
 
+const featuredWidgets = computed(() => widgetRegistry.filter((widget) => widget.featured));
+const featuredLocalCount = computed(() => featuredWidgets.value.filter((widget) => widget.runtime === 'local').length);
+
 const groups = computed(() => store.config.layout || []);
 
 watch(
@@ -68,6 +71,10 @@ const filteredWidgets = computed(() => {
         || widget.type.toLowerCase().includes(search);
     return matchCategory && matchSearch;
   });
+});
+
+const categoryTitle = computed(() => {
+  return categories.find((category) => category.id === activeCategory.value)?.label || '组件';
 });
 
 const selectedGroupName = computed(() => {
@@ -175,6 +182,21 @@ const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFo
           </aside>
 
           <main class="widget-list" data-wheel-allow="true">
+            <div class="list-summary">
+              <div>
+                <div class="summary-title">{{ categoryTitle }}</div>
+                <div class="summary-desc">
+                  <template v-if="activeCategory === 'featured'">
+                    默认推荐 {{ featuredWidgets.length }} 个，其中 {{ featuredLocalCount }} 个可本地运行。
+                  </template>
+                  <template v-else>
+                    共 {{ filteredWidgets.length }} 个组件，可添加到「{{ selectedGroupName }}」。
+                  </template>
+                </div>
+              </div>
+              <div class="summary-count">{{ filteredWidgets.length }}</div>
+            </div>
+
             <div v-if="filteredWidgets.length" class="widget-grid">
               <article
                   v-for="widget in filteredWidgets"
@@ -351,6 +373,44 @@ const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFo
   min-height: 0;
   overflow-y: auto;
   padding: 18px;
+}
+
+.list-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--settings-border);
+  background: var(--settings-panel);
+}
+
+.summary-title {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.summary-desc {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--settings-text);
+  opacity: 0.62;
+}
+
+.summary-count {
+  min-width: 34px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-color-rgb), 0.12);
+  color: var(--accent-color);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .widget-grid {

@@ -264,6 +264,49 @@ const removeLogo = () => {
 
 const colorInputRef = ref<HTMLInputElement | null>(null);
 const openColorPicker = () => colorInputRef.value?.click();
+
+const ensureReadability = () => {
+  const theme = store.config.theme as any;
+  if (!theme.readability || typeof theme.readability !== 'object') {
+    theme.readability = {
+      enabled: true,
+      mode: 'auto',
+      strength: 22,
+      blur: 0,
+      desaturate: 0,
+    };
+  }
+  return theme.readability;
+};
+
+const readability = computed(() => ensureReadability());
+
+const readabilityModes = [
+  {value: 'auto', label: '自动'},
+  {value: 'darken', label: '加深'},
+  {value: 'lighten', label: '提亮'},
+] as const;
+
+const readabilityStrength = computed({
+  get: () => Number(readability.value.strength ?? 22),
+  set: (v: number) => {
+    readability.value.strength = Math.max(0, Math.min(100, Number(v)));
+  },
+});
+
+const readabilityBlur = computed({
+  get: () => Number(readability.value.blur ?? 0),
+  set: (v: number) => {
+    readability.value.blur = Math.max(0, Math.min(12, Number(v)));
+  },
+});
+
+const readabilityDesaturate = computed({
+  get: () => Number(readability.value.desaturate ?? 0),
+  set: (v: number) => {
+    readability.value.desaturate = Math.max(0, Math.min(100, Number(v)));
+  },
+});
 </script>
 
 <template>
@@ -452,6 +495,83 @@ const openColorPicker = () => colorInputRef.value?.click();
         </label>
       </div>
       <p class="text-[10px] opacity-40 text-right">支持 JPG, PNG, GIF, MP4, WebM (建议 &lt; 10MB)</p>
+    </div>
+
+    <div
+        class="p-5 rounded-2xl border transition-colors space-y-4"
+        style="background-color: var(--settings-panel); border-color: var(--settings-border);"
+    >
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <h3 class="font-bold text-sm">壁纸可读性</h3>
+          <p class="text-[11px] opacity-55 mt-1">在壁纸上叠加柔和遮罩，避免文字和图标被背景淹没。</p>
+        </div>
+        <input
+            type="checkbox"
+            v-model="readability.enabled"
+            class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"
+        />
+      </div>
+
+      <div :class="readability.enabled ? '' : 'opacity-45 pointer-events-none'" class="space-y-4">
+        <div class="grid grid-cols-3 gap-1 rounded-xl p-1" style="background: var(--settings-input-bg);">
+          <button
+              v-for="mode in readabilityModes"
+              :key="mode.value"
+              type="button"
+              class="py-2 rounded-lg text-xs font-bold transition-all"
+              :class="readability.mode === mode.value ? 'text-white shadow' : 'opacity-65 hover:opacity-100'"
+              :style="readability.mode === mode.value ? { background: 'var(--accent-color)' } : {}"
+              @click="readability.mode = mode.value"
+          >
+            {{ mode.label }}
+          </button>
+        </div>
+
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <label class="font-bold text-xs">遮罩强度</label>
+            <span class="text-xs opacity-60">{{ readabilityStrength }}%</span>
+          </div>
+          <input
+              type="range"
+              v-model.number="readabilityStrength"
+              min="0"
+              max="100"
+              class="w-full accent-[var(--accent-color)] range-input"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="font-bold text-xs">背景柔化</label>
+              <span class="text-xs opacity-60">{{ readabilityBlur }}px</span>
+            </div>
+            <input
+                type="range"
+                v-model.number="readabilityBlur"
+                min="0"
+                max="12"
+                class="w-full accent-[var(--accent-color)] range-input"
+            />
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="font-bold text-xs">背景降饱和</label>
+              <span class="text-xs opacity-60">{{ readabilityDesaturate }}%</span>
+            </div>
+            <input
+                type="range"
+                v-model.number="readabilityDesaturate"
+                min="0"
+                max="100"
+                class="w-full accent-[var(--accent-color)] range-input"
+            />
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="space-y-6">

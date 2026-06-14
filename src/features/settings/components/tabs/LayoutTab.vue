@@ -311,7 +311,10 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
       />
     </div>
 
-    <div class="flex justify-between items-center gap-4" :class="!store.config.theme.showSidebar ? 'opacity-45' : ''">
+    <div
+        class="hidden lg:flex justify-between items-center gap-4"
+        :class="!store.config.theme.showSidebar ? 'opacity-45' : ''"
+    >
       <label class="font-bold text-sm">分组栏位置</label>
       <div class="grid grid-cols-4 rounded-lg p-1 bg-[var(--modal-input-bg)]">
         <button
@@ -328,6 +331,13 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
           {{ pos.label }}
         </button>
       </div>
+    </div>
+
+    <div
+        class="lg:hidden p-3 rounded-xl border text-xs leading-relaxed"
+        style="border-color: var(--glass-border); background: var(--modal-input-bg); color: var(--text-secondary);"
+    >
+      手机端分组栏固定在底部，桌面端才支持左侧、右侧、顶部和底部位置切换。
     </div>
 
     <div class="flex justify-between items-center gap-4">

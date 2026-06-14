@@ -89,7 +89,17 @@ function onWheel(e: WheelEvent) {
   if (shouldFit.value) return;
   if (el.scrollWidth <= el.clientWidth) return;
 
-  const dx = Math.abs(e.deltaX) > 0 ? e.deltaX : e.deltaY;
+  const normalize = (value: number) => {
+    if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return value * 40;
+    if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return value * window.innerHeight;
+    return value;
+  };
+  const rawDeltaX = normalize(e.deltaX);
+  const rawDeltaY = normalize(e.deltaY);
+  const dominantDelta = Math.abs(rawDeltaX) > Math.abs(rawDeltaY) ? rawDeltaX : rawDeltaY;
+  const dx = Math.max(-240, Math.min(240, dominantDelta * 2.4));
+  if (!dx) return;
+
   if (e.cancelable) e.preventDefault();
   e.stopPropagation();
   el.scrollLeft += dx;
