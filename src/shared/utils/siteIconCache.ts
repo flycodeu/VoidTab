@@ -11,7 +11,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 14;
+export const SITE_ICON_CACHE_VERSION = 15;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -427,6 +427,10 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
             const staleDisplayOnlyRemote = mode === 'url'
                 && rec.lastError === 'display_only'
                 && (isExternalProvider(provider) || provider === 'unknown');
+            const staleExternalUrlRecord = mode === 'url'
+                && isExternalProvider(provider)
+                && provider !== 'first_party_proxy'
+                && provider !== 'preset';
             const staleDisplayOnlyDirectSite = mode === 'url'
                 && rec.lastError === 'display_only'
                 && provider !== 'preset'
@@ -444,6 +448,7 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
                 || poisonedBrowserUrl
                 || poisonedFailedExternal
                 || staleDisplayOnlyRemote
+                || staleExternalUrlRecord
                 || staleDisplayOnlyDirectSite
                 || poisonedMiss
                 || poisonedUnknownThirdParty

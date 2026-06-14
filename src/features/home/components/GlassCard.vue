@@ -32,6 +32,7 @@ const resolveToken = ref(0);
 const hasTriedForceRefresh = ref(false);
 const directIconErrorUrl = ref("");
 const iconSourceMode = ref<"auto" | "none">("none");
+const autoIconLowQuality = ref(false);
 let deferredResolveTimer: ReturnType<typeof setTimeout> | null = null;
 let deferredResolveAttempts = 0;
 
@@ -78,12 +79,14 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   if (!isAuto.value) {
     setAutoIconUrl("", false);
     iconSourceMode.value = "none";
+    autoIconLowQuality.value = false;
     return;
   }
 
   if (!props.item.url) {
     setAutoIconUrl("", false);
     iconSourceMode.value = "none";
+    autoIconLowQuality.value = false;
     hasLoadError.value = true;
     return;
   }
@@ -94,6 +97,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
     if (instantUrl && instantUrl !== directIconErrorUrl.value) {
       hasLoadError.value = false;
       iconSourceMode.value = "auto";
+      autoIconLowQuality.value = false;
       setAutoIconUrl(instantUrl, false);
     }
   }
@@ -113,10 +117,12 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   if (!result?.url) {
     if (canUseDirectIconUrl()) {
       iconSourceMode.value = "auto";
+      autoIconLowQuality.value = false;
       setAutoIconUrl(directIconUrl.value, false);
       hasLoadError.value = false;
     } else {
       iconSourceMode.value = "none";
+      autoIconLowQuality.value = false;
       setAutoIconUrl("", false);
       hasLoadError.value = true;
     }
@@ -127,6 +133,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
   clearDeferredResolveTimer();
   hasLoadError.value = false;
   iconSourceMode.value = "auto";
+  autoIconLowQuality.value = !!result.lowQuality;
   setAutoIconUrl(result.url, !!result.objectUrl);
 };
 
@@ -136,6 +143,7 @@ watch(
       hasLoadError.value = false;
       hasTriedForceRefresh.value = false;
       directIconErrorUrl.value = "";
+      autoIconLowQuality.value = false;
       deferredResolveAttempts = 0;
       clearDeferredResolveTimer();
       void resolveAutoIcon(false);
@@ -180,6 +188,8 @@ const handleFallback = () => {
   }
 
   hasLoadError.value = true;
+  autoIconLowQuality.value = false;
+  setAutoIconUrl("", false);
 };
 const handleImgLoad = () => (hasLoadError.value = false);
 
@@ -386,6 +396,7 @@ const showDomainRow = computed(() => {
               :isAuto="isAuto"
               :autoIconUrl="autoIconUrl"
               :hasError="hasLoadError"
+              :lowQuality="autoIconLowQuality"
               :text="displayText"
               :textFontSize="cardTextFontSize"
               :density="density"
@@ -436,6 +447,7 @@ const showDomainRow = computed(() => {
           :isAuto="isAuto"
           :autoIconUrl="autoIconUrl"
           :hasError="hasLoadError"
+          :lowQuality="autoIconLowQuality"
           :text="displayText"
           :textFontSize="(() => {
           const base = Number(store.config.theme.iconSize || 72);

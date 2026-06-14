@@ -100,7 +100,7 @@ export const defaultConfig: Config = {
         terminal_buffer: {buffer: '', theme: 'standard'},
         siteState: {},
         siteIcons: {
-            version: 14,
+            version: 15,
             records: {},
             lastBatchRefreshAt: 0,
         },

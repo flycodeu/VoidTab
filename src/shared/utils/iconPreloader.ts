@@ -2,7 +2,6 @@ import type {RuntimeConfig} from '../../core/config/types';
 import {
     getFastIconCandidatesWithProviders,
     getIconCandidatesWithProviders,
-    isExtensionContext,
     type IconProvider,
 } from './icon';
 import {resolveAndCacheSiteIcon, type SiteIconResolveOptions, type SiteIconResult} from './siteIconCache';
@@ -62,7 +61,6 @@ function canWarmBrowserUrl(url: string): boolean {
         const parsed = new URL(url, window.location.href);
         if (parsed.protocol === 'chrome-extension:') return true;
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-        if (isExtensionContext()) return true;
         if (parsed.origin === window.location.origin) return true;
         return false;
     } catch {
@@ -73,14 +71,7 @@ function canWarmBrowserUrl(url: string): boolean {
 function canSpeculativelyWarmProvider(provider: IconProvider): boolean {
     return provider === 'browser_favicon'
         || provider === 'first_party_proxy'
-        || provider === 'cn_favicon'
         || provider === 'preset'
-        || provider === 'google_s2'
-        || provider === 'duckduckgo'
-        || provider === 'yandex'
-        || provider === 'icon_horse'
-        || provider === 'favicon_im'
-        || provider === 'unavatar'
         || provider === 'unknown';
 }
 

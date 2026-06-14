@@ -1,7 +1,7 @@
 // src/composables/icon/useDebouncedFavicon.ts
 import {ref, watch, onUnmounted, type Ref} from 'vue';
 import type {RuntimeConfig} from '../../../core/config/types';
-import {getFastIconCandidates, getIconCandidates, getEffectiveMinEdgePx, ICON_MIN_EDGE_PX} from '../../utils/icon.ts';
+import {getInstantAutoIconUrl} from '../../utils/icon.ts';
 import {resolveAndCacheSiteIcon, type SiteIconResult} from '../../utils/siteIconCache';
 import {warmBrowserIconCache} from '../../utils/iconPreloader';
 
@@ -13,49 +13,12 @@ type DebouncedFaviconOptions = {
     minEdgePx?: number;
 };
 
-const candidateProbeInflight = new Map<string, Promise<{url: string; width: number; height: number} | null>>();
-
 function unwrapRuntime(runtime: MaybeRuntimeRef): RuntimeConfig | undefined {
     if (!runtime) return undefined;
     if (typeof runtime === 'object' && 'value' in runtime) {
         return runtime.value;
     }
     return runtime;
-}
-
-function probeCandidateIcon(url: string, timeoutMs: number): Promise<{url: string; width: number; height: number} | null> {
-    const existing = candidateProbeInflight.get(url);
-    if (existing) return existing;
-
-    const promise = new Promise<{url: string; width: number; height: number} | null>((resolve) => {
-        const img = new Image();
-        let settled = false;
-        const finish = (value: {url: string; width: number; height: number} | null) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            img.onload = null;
-            img.onerror = null;
-            resolve(value);
-        };
-        const timer = setTimeout(() => finish(null), Math.max(300, timeoutMs));
-
-        img.onload = () => {
-            finish({
-                url,
-                width: Number(img.naturalWidth || 0),
-                height: Number(img.naturalHeight || 0),
-            });
-        };
-        img.onerror = () => finish(null);
-        img.decoding = 'async';
-        img.referrerPolicy = 'no-referrer';
-        img.src = url;
-    });
-
-    candidateProbeInflight.set(url, promise);
-    void promise.finally(() => candidateProbeInflight.delete(url));
-    return promise;
 }
 
 function releaseResultObjectUrl(result: SiteIconResult | null | undefined): void {
@@ -122,47 +85,9 @@ export function useDebouncedFavicon(
         return true;
     };
 
-    const loadFromBrowserCandidates = async (url: string, token: number) => {
-        const fastCandidates = getFastIconCandidates(url);
-        const fullCandidates = getIconCandidates(url);
-        const candidates = [...fastCandidates, ...fullCandidates.filter((x) => !fastCandidates.includes(x))].slice(0, 10);
-        const minEdge = getEffectiveMinEdgePx(options?.minEdgePx ?? ICON_MIN_EDGE_PX);
-        const timeoutMs = Math.max(300, Number(options?.timeoutMs ?? 1600));
-        const deadlineAt = Date.now() + Math.max(1800, timeoutMs * 4);
-        let bestLowQualityUrl = '';
-        let bestLowQualityEdge = 0;
-
-        void warmBrowserIconCache(url, {fastFirst: true, limit: 4, timeoutMs: Math.min(1200, timeoutMs)});
-
-        for (const candidate of candidates) {
-            if (token !== runToken) return;
-            const remainingMs = Math.max(0, deadlineAt - Date.now());
-            if (remainingMs < 250) break;
-
-            const loaded = await probeCandidateIcon(candidate, Math.min(timeoutMs, remainingMs));
-            if (token !== runToken) return;
-            if (!loaded) continue;
-
-            const edge = Math.min(loaded.width, loaded.height);
-            const lowQuality = edge > 0 && edge < minEdge;
-            if (lowQuality) {
-                if (edge > bestLowQualityEdge) {
-                    bestLowQualityEdge = edge;
-                    bestLowQualityUrl = loaded.url;
-                }
-                continue;
-            }
-
-            setFaviconUrl(loaded.url, false);
-            return;
-        }
-
-        if (bestLowQualityUrl) {
-            setFaviconUrl(bestLowQualityUrl, false);
-            return;
-        }
-
-        setFaviconUrl('', false);
+    const loadFromSafeInstantCandidate = async (url: string, token: number) => {
+        if (token !== runToken) return;
+        setFaviconUrl(getInstantAutoIconUrl(url, '', ''), false);
     };
 
     const run = async (url: string, token: number) => {
@@ -173,7 +98,7 @@ export function useDebouncedFavicon(
             void warmBrowserIconCache(url, {fastFirst: true, limit: 3});
             const handledByRuntime = await loadFromRuntimeCache(url, token);
             if (!handledByRuntime) {
-                await loadFromBrowserCandidates(url, token);
+                await loadFromSafeInstantCandidate(url, token);
             }
         } finally {
             if (token === runToken) {

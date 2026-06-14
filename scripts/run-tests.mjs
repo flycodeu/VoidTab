@@ -58,7 +58,7 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /FETCHABLE_ICON_PROBE_HOSTS/);
   assert.match(icon, /probeIconCandidateBatch/);
   assert.match(icon, /parallelism: options\?\.parallelism/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*14/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*15/);
   assert.match(icon, /'google\.com': 'https:\/\/www\.google\.com\/favicon\.ico'/);
   assert.match(icon, /'notion\.so': 'https:\/\/www\.notion\.so\/images\/favicon\.ico'/);
   assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
@@ -86,15 +86,15 @@ test('web auto icons avoid CORP-blocked direct site favicons', async () => {
   const cache = await read('src/shared/utils/siteIconCache.ts');
   const siteIcon = await read('src/features/home/components/SiteIcon.vue');
 
-  assert.match(icon, /return getFastIconCandidates\(url\)\[0\] \|\| ''/);
-  assert.doesNotMatch(icon, /getFastIconCandidates\(url\)\[0\] \|\| explicitDirect \|\| legacyDirect/);
+  assert.match(icon, /provider === 'browser_favicon'/);
+  assert.doesNotMatch(icon, /return getFastIconCandidates\(url\)\[0\] \|\| ''/);
+  assert.doesNotMatch(icon, /buildExternalCandidates\(thirdPartyDomains,\s*\{webSafeOnly:\s*true\}\)/);
   assert.match(icon, /first_party_proxy/);
   assert.match(icon, /buildFirstPartyProxyCandidates/);
-  assert.match(icon, /buildExternalCandidates\(thirdPartyDomains,\s*\{webSafeOnly:\s*true\}\)/);
-  assert.match(icon, /candidate\.provider !== 'first_party_proxy'/);
+  assert.match(icon, /candidate\.provider === 'browser_favicon' \|\| candidate\.provider === 'preset'/);
   assert.match(siteIcon, /url\.includes\('\/api\/favicon'\) \? 5200 : 1600/);
   assert.match(icon, /if \(privateOrLocal\) \{\s*candidates\.push\(\.\.\.buildSiteOriginCandidates\(origin\)\);/);
-  assert.match(preloader, /if \(isExtensionContext\(\)\) return true/);
+  assert.doesNotMatch(preloader, /if \(isExtensionContext\(\)\) return true/);
   assert.match(preloader, /return false/);
   assert.match(cache, /staleDisplayOnlyDirectSite/);
   assert.match(cache, /!isThirdPartyFaviconSource\(source\)/);
@@ -368,7 +368,7 @@ test('sidebar visibility setting is normalized and wired through layout componen
 
   assert.match(types, /showSidebar: boolean/);
   assert.match(defaults, /showSidebar:\s*true/);
-  assert.match(defaults, /version:\s*14/);
+  assert.match(defaults, /version:\s*15/);
   assert.match(normalize, /showSidebar:\s*typeof input\.theme\?\.showSidebar === 'boolean'/);
   assert.match(app, /showSidebarNav/);
   assert.match(app, /:show="!isFocusMode && showSidebarNav"/);

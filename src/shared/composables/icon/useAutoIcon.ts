@@ -1,6 +1,6 @@
 import {onUnmounted, ref, watch, type Ref} from 'vue';
 import type {RuntimeConfig} from '../../../core/config/types';
-import {getHighResIconUrl} from '../../utils/icon.ts';
+import {getInstantAutoIconUrl} from '../../utils/icon.ts';
 import {markSiteIconMiss, resolveAndCacheSiteIcon, type SiteIconResult} from '../../utils/siteIconCache';
 import {warmBrowserIconCache} from '../../utils/iconPreloader';
 
@@ -88,7 +88,7 @@ export function useAutoIcon(options: {
         const runtime = unwrapRuntime(options.runtime);
         if (!runtime) {
             if (token !== resolveToken) return;
-            setAutoIconUrl(getHighResIconUrl(url), false);
+            setAutoIconUrl(getInstantAutoIconUrl(url, '', ''), false);
             return;
         }
 

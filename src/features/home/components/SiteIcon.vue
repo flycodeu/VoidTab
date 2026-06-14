@@ -12,6 +12,7 @@ const props = defineProps<{
   isAuto: boolean;
   autoIconUrl: string;
   hasError?: boolean;
+  lowQuality?: boolean;
   text: string;
   textFontSize: number;
   density?: BookmarkDensity;
@@ -40,6 +41,7 @@ const startImageFallbackTimer = () => {
   clearImageFallbackTimer();
   imageLoaded.value = false;
   if (!props.isAuto || props.hasError || !props.autoIconUrl) return;
+  if (props.lowQuality) return;
   if (props.priority !== 'high') return;
 
   imageFallbackTimer = setTimeout(() => {
@@ -52,6 +54,7 @@ const startImageFallbackTimer = () => {
 const bg = computed(() => {
   const usesFallbackSurface = props.item.iconType === 'text'
       || props.hasError
+      || props.lowQuality
       || (props.isAuto && !imageLoaded.value);
   if (usesFallbackSurface && props.item.bgColor === '#ffffff') {
     return '#475569';
@@ -96,10 +99,10 @@ const dynamicFontSize = computed(() => {
 });
 const shouldShowText = computed(() => {
   return props.item.iconType === 'text'
-      || (props.isAuto && (props.hasError || !props.autoIconUrl || !imageLoaded.value));
+      || (props.isAuto && (props.hasError || props.lowQuality || !props.autoIconUrl || !imageLoaded.value));
 });
 
-const hasAutoImage = computed(() => props.isAuto && !props.hasError && !!props.autoIconUrl);
+const hasAutoImage = computed(() => props.isAuto && !props.hasError && !props.lowQuality && !!props.autoIconUrl);
 const isImageMode = computed(() => hasAutoImage.value && imageLoaded.value);
 const imageLoading = computed(() => props.priority === 'high' ? 'eager' : 'lazy');
 const imageFetchPriority = computed(() => props.priority === 'high' ? 'high' : 'low');
@@ -119,6 +122,7 @@ watch(
   () => props.autoIconUrl,
   (url) => {
     if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
+    if (props.lowQuality) return;
     if (props.priority !== 'high') return;
     void warmBrowserIconUrl(url, {linkRel: 'preload', timeoutMs: 1000});
   },
@@ -126,7 +130,7 @@ watch(
 );
 
 watch(
-  () => [props.autoIconUrl, props.hasError, props.isAuto],
+  () => [props.autoIconUrl, props.hasError, props.isAuto, props.lowQuality],
   startImageFallbackTimer,
   {immediate: true}
 );

@@ -531,7 +531,9 @@ export function getInstantAutoIconUrl(
     const legacyDirect = resolveDirectIconUrl(rawIcon, url);
     if (canUseDirectIconInstantly(legacyDirect)) return legacyDirect;
 
-    return getFastIconCandidates(url)[0] || '';
+    const browserCandidate = getFastIconCandidatesWithProviders(url)
+        .find((candidate) => candidate.provider === 'browser_favicon');
+    return browserCandidate?.url || '';
 }
 
 function canUseFirstPartyFaviconProxy(): boolean {
@@ -667,9 +669,6 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal) {
-        candidates.push(...buildExternalCandidates(thirdPartyDomains, {webSafeOnly: true}));
-    }
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
     }
@@ -706,9 +705,6 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
     pushPresetCandidate(candidates, host, rootDomain);
-    if (!privateOrLocal) {
-        candidates.push(...buildExternalCandidates(thirdPartyDomains, {webSafeOnly: true}));
-    }
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
     }
@@ -745,8 +741,8 @@ function canFetchProbeImageBlob(url: string): boolean {
     }
 }
 
-async function createProbeImageObjectUrl(url: string, timeoutMs: number): Promise<string> {
-    if (!canFetchProbeImageBlob(url)) return '';
+async function createProbeImageObjectUrl(url: string, timeoutMs: number): Promise<{ objectUrl: string; checked: boolean }> {
+    if (!canFetchProbeImageBlob(url)) return {objectUrl: '', checked: false};
     try {
         const resp = await fetchWithRetry(url, {
             cache: 'force-cache',
@@ -756,17 +752,19 @@ async function createProbeImageObjectUrl(url: string, timeoutMs: number): Promis
             retries: 0,
             metricName: 'icon.probe.blob',
         });
-        if (!resp.ok) return '';
+        if (!resp.ok) return {objectUrl: '', checked: true};
         const blob = await resp.blob();
-        if (!blob || blob.size <= 0) return '';
-        return URL.createObjectURL(blob);
+        if (!blob || blob.size <= 0) return {objectUrl: '', checked: true};
+        return {objectUrl: URL.createObjectURL(blob), checked: true};
     } catch {
-        return '';
+        return {objectUrl: '', checked: true};
     }
 }
 
 async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: number; height: number } | null> {
-    const objectUrl = await createProbeImageObjectUrl(url, timeoutMs);
+    const probe = await createProbeImageObjectUrl(url, timeoutMs);
+    if (!probe.objectUrl && probe.checked) return null;
+
     return await new Promise((resolve) => {
         const img = new Image();
         let settled = false;
@@ -777,7 +775,7 @@ async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: numbe
             clearTimeout(timer);
             img.onload = null;
             img.onerror = null;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            if (probe.objectUrl) URL.revokeObjectURL(probe.objectUrl);
             resolve(value);
         };
 
@@ -792,7 +790,7 @@ async function probeImage(url: string, timeoutMs = 2500): Promise<{ width: numbe
         img.onerror = () => finish(null);
         img.decoding = 'async';
         img.referrerPolicy = 'no-referrer';
-        img.src = objectUrl || url;
+        img.src = probe.objectUrl || url;
     });
 }
 
@@ -854,8 +852,9 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<str
 }
 
 function shouldPrevalidateCandidate(candidate: IconCandidate): boolean {
-    // Browser favicon/proxy are image endpoints and preset is curated; skip extra precheck.
-    if (candidate.provider === 'browser_favicon' || candidate.provider === 'first_party_proxy' || candidate.provider === 'preset') return false;
+    // Browser favicon and presets are curated image endpoints; same-origin proxy still gets prevalidated
+    // so failed proxy responses do not become noisy <img> 404s in the browser console.
+    if (candidate.provider === 'browser_favicon' || candidate.provider === 'preset') return false;
     return true;
 }
 
