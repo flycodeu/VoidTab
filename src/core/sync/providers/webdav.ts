@@ -1,6 +1,10 @@
 // src/core/sync/providers/webdav.ts
 import type {SyncProfile, SyncOpResult, SyncTestResult, WebDavProfile, SyncProvider} from '../types';
-import {checkWebDavConnection, uploadToWebDav, downloadFromWebDav} from '../../../shared/utils/webdav';
+import {
+    checkWebDavConnectionDetailed,
+    downloadFromWebDavDetailed,
+    uploadToWebDavDetailed,
+} from '../../../shared/utils/webdav';
 
 function asWebDav(profile: SyncProfile): WebDavProfile | null {
     return profile.provider === 'webdav' ? (profile as WebDavProfile) : null;
@@ -11,26 +15,23 @@ export function createWebDavProvider(): SyncProvider {
         async test(profile: SyncProfile): Promise<SyncTestResult> {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
-            const ok = await checkWebDavConnection(p);
-            return {ok, message: ok ? '连接成功' : '连接失败'};
+            const result = await checkWebDavConnectionDetailed(p);
+            return {ok: result.ok, message: result.message};
         },
 
         async upload(profile: SyncProfile, payload: any): Promise<SyncOpResult> {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
-            const ok = await uploadToWebDav(p, payload, p.filename);
-            return {ok, message: ok ? '云端备份成功' : '上传失败'};
+            const result = await uploadToWebDavDetailed(p, payload, p.filename);
+            return {ok: result.ok, message: result.message};
         },
 
         async download(profile: SyncProfile): Promise<SyncOpResult> {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
-            const data = await downloadFromWebDav(p, p.filename);
-            if (!data) return {ok: false, message: '下载失败或无备份'};
-
-            //   返回字符串（store 里 JSON.parse）
-            const text = typeof data === 'string' ? data : JSON.stringify(data);
-            return {ok: true, message: '下载成功', data: text};
+            const result = await downloadFromWebDavDetailed(p, p.filename);
+            if (!result.ok || !result.data) return {ok: false, message: result.message};
+            return {ok: true, message: result.message, data: result.data};
         }
     };
 }

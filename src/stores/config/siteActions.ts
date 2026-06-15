@@ -1,6 +1,7 @@
 import type {Ref} from 'vue';
 import type {Config, Group, SiteItem} from '../../core/config/types';
 import {parseBookmarkContent} from '../../shared/utils/bookmarkImporter';
+import {dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
 import {createTextIconValue, generateColor, normalizeSiteIconType} from './helpers';
 
 type GroupInput = Partial<Omit<Group, 'id' | 'items'>> & {
@@ -140,8 +141,9 @@ export const createSiteActions = (
         const result = parseBookmarkContent(htmlContent);
         if (result.success && result.groups.length > 0) {
             const now = Date.now();
+            const deduped = dedupeImportedBookmarkGroups(result.groups, config.value.layout);
 
-            result.groups.forEach((group) => {
+            deduped.groups.forEach((group) => {
                 group.items.forEach((item: SiteItem) => {
                     item.kind = 'site';
                     item.w = 1;
@@ -153,9 +155,37 @@ export const createSiteActions = (
                 });
             });
 
-            config.value.layout.push(...result.groups);
-            void saveConfig();
-            return {success: true, groupCount: result.groups.length, count: result.totalCount};
+            const duplicateCount = deduped.duplicateStats.skippedExisting + deduped.duplicateStats.skippedWithinFile;
+
+            if (deduped.importedCount > 0) {
+                config.value.layout.push(...deduped.groups);
+                void saveConfig();
+                return {
+                    success: true,
+                    groupCount: deduped.groups.length,
+                    count: deduped.importedCount,
+                    duplicateCount,
+                    skippedExisting: deduped.duplicateStats.skippedExisting,
+                    skippedWithinFile: deduped.duplicateStats.skippedWithinFile,
+                    skippedInvalid: deduped.duplicateStats.skippedInvalid,
+                    duplicateExamples: deduped.duplicateStats.examples,
+                };
+            }
+
+            const skippedCount = duplicateCount + deduped.duplicateStats.skippedInvalid;
+            return {
+                success: true,
+                groupCount: 0,
+                count: 0,
+                duplicateCount,
+                skippedExisting: deduped.duplicateStats.skippedExisting,
+                skippedWithinFile: deduped.duplicateStats.skippedWithinFile,
+                skippedInvalid: deduped.duplicateStats.skippedInvalid,
+                duplicateExamples: deduped.duplicateStats.examples,
+                message: skippedCount > 0
+                    ? `未新增书签，已跳过 ${skippedCount} 个重复或无效 URL`
+                    : '未新增书签',
+            };
         }
         return {success: false, message: result.message || '导入失败'};
     };

@@ -10,6 +10,7 @@ import type {
     SiteIconProviderStatRecord,
     SidebarPosition,
 } from './types';
+import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 
@@ -59,6 +60,35 @@ const SIDEBAR_POSITIONS = new Set<SidebarPosition>(['left', 'right', 'top', 'bot
 
 function normalizeSidebarPosition(value: any, fallback: SidebarPosition = 'left'): SidebarPosition {
     return SIDEBAR_POSITIONS.has(value as SidebarPosition) ? value as SidebarPosition : fallback;
+}
+
+function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
+    const input = (inputSync && typeof inputSync === 'object') ? inputSync : {};
+    const provider = input.provider === 'none' || input.provider === 'webdav'
+        ? input.provider
+        : fallback.provider;
+
+    const base: any = {
+        ...fallback,
+        ...input,
+        provider,
+        enabled: typeof input.enabled === 'boolean' ? input.enabled : fallback.enabled,
+        autoSync: typeof input.autoSync === 'boolean' ? input.autoSync : fallback.autoSync,
+        lastSyncTime: Number.isFinite(Number(input.lastSyncTime)) ? Number(input.lastSyncTime) : fallback.lastSyncTime,
+        lastRemoteEtag: typeof input.lastRemoteEtag === 'string' ? input.lastRemoteEtag : fallback.lastRemoteEtag,
+        lastRemoteMtime: typeof input.lastRemoteMtime === 'string' ? input.lastRemoteMtime : fallback.lastRemoteMtime,
+        intervalMinutes: clampInt(input.intervalMinutes, 1, 1440, fallback.intervalMinutes ?? 10),
+    };
+
+    if (provider === 'webdav') {
+        base.url = typeof input.url === 'string' ? input.url : (fallback as any).url;
+        base.username = typeof input.username === 'string' ? input.username : (fallback as any).username;
+        base.password = typeof input.password === 'string' ? input.password : (fallback as any).password;
+        base.folder = typeof input.folder === 'string' && input.folder.trim() ? input.folder : (fallback as any).folder;
+        base.filename = typeof input.filename === 'string' && input.filename.trim() ? input.filename : (fallback as any).filename;
+    }
+
+    return base as SyncProfile;
 }
 
 function generateColor(str: string) {
@@ -324,10 +354,7 @@ export function normalizeConfig(raw: any): Config {
 
     out.version = CURRENT_CONFIG_VERSION;
 
-    out.sync = {
-        ...base.sync,
-        ...(input.sync || {})
-    };
+    out.sync = normalizeSync(input.sync, base.sync);
 
     out.theme = {
         ...base.theme,

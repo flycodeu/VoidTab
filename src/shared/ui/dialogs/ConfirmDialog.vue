@@ -13,6 +13,7 @@ const props = defineProps<{
   cancelText?: string;
   danger?: boolean; // 危险态：红色按钮
   closeOnBackdrop?: boolean;
+  confirmDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -72,6 +73,8 @@ const normalizedMessage = () => {
             </p>
           </div>
 
+          <slot name="body"></slot>
+
           <div class="grid grid-cols-2 gap-3 w-full mt-2">
             <button
                 type="button"
@@ -84,8 +87,12 @@ const normalizedMessage = () => {
             <button
                 type="button"
                 @click="emit('confirm')"
+                :disabled="confirmDisabled"
                 class="py-3.5 rounded-2xl font-bold transition-all active:scale-95 text-white shadow-lg"
-                :class="danger ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' : 'bg-[var(--accent-color)] hover:brightness-110'"
+                :class="[
+                  danger ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' : 'bg-[var(--accent-color)] hover:brightness-110',
+                  confirmDisabled ? 'opacity-45 cursor-not-allowed pointer-events-none active:scale-100' : ''
+                ]"
             >
               {{ confirmText ?? '确认' }}
             </button>

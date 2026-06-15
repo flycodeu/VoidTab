@@ -16,6 +16,7 @@ import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
 import {mergeLocalSensitiveFields, stripSensitiveConfigForSync} from '../../../../core/config/sensitive.ts';
+import {createImportValidationMessages, validateImportedConfig} from '../../../../core/config/validate.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 
@@ -27,6 +28,7 @@ const bookmarkInput = ref<HTMLInputElement | null>(null);
 // --- 弹窗相关状态：导入覆盖 ---
 const showConfirm = ref(false);
 const pendingData = ref<any>(null);
+const pendingImportMessages = ref<string[]>([]);
 
 // --- 操作结果提示状态 ---
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
@@ -75,6 +77,12 @@ const handleExportHtml = () => {
 
 const triggerImport = () => fileInput.value?.click();
 
+const cancelImport = () => {
+  showConfirm.value = false;
+  pendingData.value = null;
+  pendingImportMessages.value = [];
+};
+
 // 读取 JSON 并触发弹窗
 const handleImport = (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
@@ -89,7 +97,14 @@ const handleImport = (e: Event) => {
         return;
       }
 
+      const validation = validateImportedConfig(raw);
+      if (!validation.ok) {
+        showFeedback(false, `导入失败：${validation.errors[0] || '配置结构不符合要求'}`);
+        return;
+      }
+
       pendingData.value = raw;
+      pendingImportMessages.value = createImportValidationMessages(validation);
       showConfirm.value = true;
 
     } catch {
@@ -130,6 +145,7 @@ const executeImport = () => {
 
     showConfirm.value = false;
     pendingData.value = null;
+    pendingImportMessages.value = [];
 
     showFeedback(true, '配置导入成功');
 
@@ -155,7 +171,14 @@ const handleBookmarkUpload = (event: Event) => {
     const result = store.importBookmarks(content);
 
     if (result.success) {
-      showFeedback(true, `导入成功！共导入 ${result.groupCount} 个分组，${result.count} 个书签`);
+      const duplicateCount = Number(result.duplicateCount || 0);
+      const invalidCount = Number(result.skippedInvalid || 0);
+      const baseMsg = result.message || `导入成功！新增 ${result.groupCount} 个分组，${result.count} 个书签`;
+      const suffix = [
+        duplicateCount > 0 ? `已跳过 ${duplicateCount} 个重复 URL` : '',
+        invalidCount > 0 ? `已跳过 ${invalidCount} 个无效 URL` : '',
+      ].filter(Boolean).join('，');
+      showFeedback(true, suffix ? `${baseMsg}；${suffix}` : baseMsg);
     } else {
       showFeedback(false, result.message || '导入失败');
     }
@@ -170,17 +193,30 @@ const handleBookmarkUpload = (event: Event) => {
 // ===============================
 const showReset1 = ref(false);
 const showReset2 = ref(false);
+const resetBackupAcknowledged = ref(false);
 
 const openReset = () => {
+  resetBackupAcknowledged.value = false;
   showReset1.value = true;
 };
 
 const goResetStep2 = () => {
   showReset1.value = false;
+  resetBackupAcknowledged.value = false;
   showReset2.value = true;
 };
 
+const cancelResetStep2 = () => {
+  showReset2.value = false;
+  resetBackupAcknowledged.value = false;
+};
+
 const executeResetAll = async () => {
+  if (!resetBackupAcknowledged.value) {
+    showFeedback(false, '请先确认已导出备份或不需要保留当前数据');
+    return;
+  }
+
   showReset2.value = false;
 
   try {
@@ -242,7 +278,7 @@ const executeResetAll = async () => {
         >
           <PhFileArrowUp size="16" weight="bold"/>
           导入 JSON
-          <input type="file" ref="fileInput" class="hidden" @change="handleImport"/>
+          <input type="file" ref="fileInput" class="hidden" accept=".json,application/json" @change="handleImport"/>
         </button>
       </div>
     </div>
@@ -310,11 +346,11 @@ const executeResetAll = async () => {
     <ConfirmDialog
         :show="showConfirm"
         title="覆盖当前配置？"
-        :message="['导入操作将完全覆盖您当前的本地设置。', '我们会自动迁移旧版数据格式，但建议先备份当前配置。']"
+        :message="pendingImportMessages.length ? pendingImportMessages : ['导入操作将完全覆盖您当前的本地设置。', '我们会自动迁移旧版数据格式，但建议先备份当前配置。']"
         confirmText="确认覆盖"
         cancelText="取消"
         :danger="true"
-        @cancel="showConfirm = false"
+        @cancel="cancelImport"
         @confirm="executeImport"
     >
       <template #icon>
@@ -355,11 +391,18 @@ const executeResetAll = async () => {
         cancelText="我再想想"
         :danger="true"
         :closeOnBackdrop="false"
-        @cancel="showReset2 = false"
+        @cancel="cancelResetStep2"
         @confirm="executeResetAll"
+        :confirmDisabled="!resetBackupAcknowledged"
     >
       <template #icon>
         <PhWarning :size="32" weight="duotone"/>
+      </template>
+      <template #body>
+        <label class="reset-ack">
+          <input v-model="resetBackupAcknowledged" type="checkbox" class="reset-ack-check"/>
+          <span>我已导出 JSON 备份，或确认不需要保留当前数据。</span>
+        </label>
       </template>
     </ConfirmDialog>
   </div>
@@ -368,6 +411,29 @@ const executeResetAll = async () => {
 <style scoped>
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+.reset-ack {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: rgba(239, 68, 68, 0.08);
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.reset-ack-check {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: rgb(239 68 68);
 }
 
 @keyframes fadeIn {

@@ -91,6 +91,19 @@ const opResult = ref<{ success: boolean; msg: string } | null>(null);
 /** 新增：说明折叠 */
 const showRemoteHelp = ref(false);
 
+const sensitiveSyncFields = ['AI Key', 'WebDAV 密码', 'JWT 临时 Token'];
+const webdavExamples = [
+  {name: '坚果云', url: 'https://dav.jianguoyun.com/dav/', note: '使用账号邮箱和应用专用密码；网页版默认走内置代理。'},
+  {name: 'Nextcloud / ownCloud', url: 'https://example.com/remote.php/dav/files/your-user/', note: '将 example.com 和 your-user 替换为自己的服务地址和用户名。'},
+  {name: '群晖 Synology', url: 'https://example.com:5006/', note: '需要已启用 WebDAV Server，并确保证书和端口可访问。'},
+];
+const webdavErrorTips = [
+  '401/403：账号或应用密码错误，或服务端未授权 WebDAV。',
+  '404：服务器地址、文件夹或备份文件名不正确；恢复前需先备份一次。',
+  '409：嵌套文件夹的父目录不存在，先在网盘里创建父目录。',
+  '503/网络失败：网页版可能被 CORS 拦截；扩展版通常可直连已声明的 WebDAV host。',
+];
+
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
   if (success) toast.success(msg);
@@ -223,6 +236,13 @@ const executeRestore = async () => {
         <component :is="opResult.success ? PhCheck : PhWarning" size="16" weight="fill"/>
         <span class="truncate">{{ opResult.msg }}</span>
       </div>
+
+      <div class="safe-note mt-3">
+        <PhInfo size="16" weight="duotone"/>
+        <span>
+          同步和云端备份会剥离 {{ sensitiveSyncFields.join('、') }}；恢复云端数据时会保留本机已填写的敏感字段。
+        </span>
+      </div>
     </section>
 
     <!-- =========================
@@ -233,7 +253,7 @@ const executeRestore = async () => {
         <div class="panel-head">
           <div>
             <div class="panel-title">WebDAV 配置</div>
-            <div class="panel-sub">部分网盘需使用“应用专用密码”</div>
+            <div class="panel-sub">部分网盘需使用“应用专用密码”；网页版可能受 CORS 限制</div>
           </div>
 
           <div class="badge">
@@ -339,15 +359,28 @@ const executeRestore = async () => {
         <div class="mt-4">
           <button class="link" @click="showRemoteHelp = !showRemoteHelp">
             <PhInfo size="16" weight="duotone"/>
-            {{ showRemoteHelp ? '收起说明' : '远程同步需求？点此查看说明' }}
+            {{ showRemoteHelp ? '收起说明' : 'WebDAV 填写与错误说明' }}
           </button>
 
           <Transition name="fade">
             <div v-if="showRemoteHelp" class="help">
-              <div class="help-title">远程同步（可选）</div>
+              <div class="help-title">常见服务地址示例</div>
+              <div class="example-list">
+                <div v-for="item in webdavExamples" :key="item.name" class="example-item">
+                  <div class="example-name">{{ item.name }}</div>
+                  <code class="example-url">{{ item.url }}</code>
+                  <div class="example-note">{{ item.note }}</div>
+                </div>
+              </div>
+
+              <div class="help-title mt-3">错误原因拆分</div>
+              <ul class="help-list">
+                <li v-for="tip in webdavErrorTips" :key="tip">{{ tip }}</li>
+              </ul>
+
+              <div class="help-title mt-3">同步安全</div>
               <div class="help-text">
-                如果你有远程同步需求，可关注 <b>程序员飞云</b>，发送关键词：<b>远程同步</b>。<br/>
-                可免费协助同步，帮助你保存与找回数据。
+                上传和自动同步只保存布局、站点、组件、主题和非敏感配置；AI Key、WebDAV 密码和临时 Token 仅保留在本机。
               </div>
             </div>
           </Transition>
@@ -617,6 +650,20 @@ const executeRestore = async () => {
   background: rgba(239, 68, 68, 0.08);
 }
 
+.safe-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  background: rgba(34, 197, 94, 0.07);
+  color: rgb(22 163 74);
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -656,10 +703,63 @@ const executeRestore = async () => {
   margin-bottom: 6px;
 }
 
+.example-list {
+  display: grid;
+  gap: 8px;
+}
+
+.example-item {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:global(.dark) .example-item {
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.example-name {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.example-url {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 11px;
+  opacity: 0.86;
+}
+
+:global(.dark) .example-url {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.example-note {
+  font-size: 11px;
+  opacity: 0.66;
+  line-height: 1.45;
+}
+
 .help-text {
   font-size: 12px;
   opacity: 0.78;
   line-height: 1.5;
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0.76;
 }
 
 /* 未启用提示 icon */

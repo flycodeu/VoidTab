@@ -6,6 +6,14 @@ export interface WebDavConfig {
     url: string;
     username: string;
     password: string; // 坚果云建议用“应用专用密码”
+    folder?: string;
+}
+
+export interface WebDavActionResult<T = unknown> {
+    ok: boolean;
+    message: string;
+    status?: number;
+    data?: T;
 }
 
 const DAV_FOLDER = 'voidtab';
@@ -15,6 +23,11 @@ export const DEFAULT_BACKUP_FILENAME = 'voidtab-backup.json';
 const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
 
 const isJianguoyun = (url: string) => /dav\.jianguoyun\.com/i.test(url);
+
+const normalizeWebDavFolder = (folder: unknown) => {
+    const raw = typeof folder === 'string' ? folder.trim() : '';
+    return (raw || DAV_FOLDER).replace(/^\/+|\/+$/g, '') || DAV_FOLDER;
+};
 
 /** 处理中文账号/密码的 Base64（避免 btoa 遇到非 ASCII 报错） */
 const toBase64 = (input: string) => {
@@ -68,8 +81,7 @@ const getRequestBaseUrl = (inputUrl: string): string => {
  */
 export const buildFullPath = (config: WebDavConfig, filename = ''): string => {
     const baseUrl = getRequestBaseUrl(config.url);
-    // 确保 folder 干净
-    const folder = DAV_FOLDER.replace(/^\/+|\/+$/g, '');
+    const folder = normalizeWebDavFolder(config.folder);
 
     // 拼接: Base + / + Folder
     let path = `${baseUrl}/${folder}`;
@@ -84,6 +96,32 @@ export const buildFullPath = (config: WebDavConfig, filename = ''): string => {
     }
 
     return path;
+};
+
+const explainHttpStatus = (status: number, action: 'test' | 'upload' | 'download') => {
+    if (status === 401 || status === 403) return '认证失败：请检查账号和密码，坚果云等服务通常需要应用专用密码';
+    if (status === 404) return action === 'download'
+        ? '未找到云端备份文件，请先执行一次立即备份'
+        : 'WebDAV 路径不存在，请检查服务器地址和文件夹';
+    if (status === 405) return '服务器拒绝该 WebDAV 方法，请确认填写的是 WebDAV 地址而不是普通网页地址';
+    if (status === 409) return '远端目录冲突：请检查文件夹路径，嵌套目录需要先在网盘侧创建父目录';
+    if (status === 413) return '备份文件过大，服务器拒绝上传';
+    if (status === 423) return '远端文件被锁定，请稍后重试';
+    if (status === 429) return '请求过于频繁，请稍后再试';
+    if (status === 503) return '网络不可达或被 CORS 拦截：网页版默认仅坚果云走代理，其他服务建议使用扩展版或配置跨域';
+    if (status >= 500) return `WebDAV 服务暂时不可用（HTTP ${status}）`;
+    return `WebDAV 请求失败（HTTP ${status}）`;
+};
+
+const explainError = (error: unknown) => {
+    if (error instanceof Error) {
+        if (/URL 不能为空/.test(error.message)) return 'WebDAV URL 不能为空';
+        if (/Failed to fetch|NetworkError|Load failed/i.test(error.message)) {
+            return '网络请求失败，可能是地址不可达、证书异常或浏览器 CORS 限制';
+        }
+        return error.message || 'WebDAV 请求失败';
+    }
+    return 'WebDAV 请求失败';
 };
 
 /**
@@ -118,27 +156,35 @@ const webdavFetch = async (config: WebDavConfig, url: string, init: RequestInit)
 };
 
 /** 确保目录存在（已存在时 405/409 也视为 OK） */
-export const ensureWebDavFolder = async (config: WebDavConfig): Promise<boolean> => {
+export const ensureWebDavFolderDetailed = async (config: WebDavConfig): Promise<WebDavActionResult> => {
     // 注意：创建目录时不带文件名
-    const folderUrl = buildFullPath(config, '');
+    let folderUrl = '';
 
-    // MKCOL 请求
-    const resp = await webdavFetch(config, folderUrl, {method: 'MKCOL'});
+    try {
+        folderUrl = buildFullPath(config, '');
+        const resp = await webdavFetch(config, folderUrl, {method: 'MKCOL'});
 
-    if (resp.status === 201) return true; // Created
-    if (resp.status === 204) return true; // No Content
-    if (resp.status === 405) return true; // Method Not Allowed (通常意味着目录已存在)
-    if (resp.status === 409) return true; // Conflict (父目录不存在或已存在)
+        if (resp.status === 201) return {ok: true, status: resp.status, message: '远端文件夹已创建'};
+        if (resp.status === 204) return {ok: true, status: resp.status, message: '远端文件夹可用'};
+        if (resp.status === 405) return {ok: true, status: resp.status, message: '远端文件夹已存在'};
 
-    // 如果是 401，这里会被拦截，不会弹窗，返回 false
-    return false;
+        return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'test')};
+    } catch (error) {
+        return {ok: false, message: explainError(error)};
+    }
+};
+
+export const ensureWebDavFolder = async (config: WebDavConfig): Promise<boolean> => {
+    const result = await ensureWebDavFolderDetailed(config);
+    return result.ok;
 };
 
 /** 1) 测试连接：MKCOL -> PROPFIND */
-export const checkWebDavConnection = async (config: WebDavConfig): Promise<boolean> => {
+export const checkWebDavConnectionDetailed = async (config: WebDavConfig): Promise<WebDavActionResult> => {
     try {
         // 先尝试创建目录（如果有了就跳过，没有就创建）
-        await ensureWebDavFolder(config);
+        const folderResult = await ensureWebDavFolderDetailed(config);
+        if (!folderResult.ok && folderResult.status !== 409) return folderResult;
 
         const targetUrl = buildFullPath(config, ''); // .../voidtab/
         const body = `<?xml version="1.0" encoding="utf-8" ?>
@@ -155,51 +201,83 @@ export const checkWebDavConnection = async (config: WebDavConfig): Promise<boole
         });
 
         // 207: Multi-Status（WebDAV 标准成功）
-        if (resp.status === 207) return true;
-        if (resp.ok) return true;
+        if (resp.status === 207 || resp.ok) return {ok: true, status: resp.status, message: '连接成功'};
 
-        return false;
-    } catch {
-        return false;
+        return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'test')};
+    } catch (error) {
+        return {ok: false, message: explainError(error)};
     }
 };
 
+export const checkWebDavConnection = async (config: WebDavConfig): Promise<boolean> => {
+    const result = await checkWebDavConnectionDetailed(config);
+    return result.ok;
+};
+
 /** 2) 上传备份（PUT） */
+export const uploadToWebDavDetailed = async (
+    config: WebDavConfig,
+    data: any,
+    filename: string = DEFAULT_BACKUP_FILENAME
+): Promise<WebDavActionResult> => {
+    try {
+        const folderResult = await ensureWebDavFolderDetailed(config);
+        if (!folderResult.ok && folderResult.status !== 409) return folderResult;
+
+        const targetUrl = buildFullPath(config, filename);
+        const body = typeof data === 'string' ? data : JSON.stringify(data);
+        const resp = await webdavFetch(config, targetUrl, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body,
+        });
+
+        if (resp.ok || resp.status === 201 || resp.status === 204) {
+            return {ok: true, status: resp.status, message: '云端备份成功'};
+        }
+        return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'upload')};
+    } catch (error) {
+        return {ok: false, message: explainError(error)};
+    }
+};
+
 export const uploadToWebDav = async (
     config: WebDavConfig,
     data: any,
     filename: string = DEFAULT_BACKUP_FILENAME
 ): Promise<boolean> => {
-    try {
-        await ensureWebDavFolder(config);
-
-        const targetUrl = buildFullPath(config, filename);
-        const resp = await webdavFetch(config, targetUrl, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json; charset=utf-8'},
-            body: JSON.stringify(data),
-        });
-
-        return resp.ok || resp.status === 201 || resp.status === 204;
-    } catch {
-        return false;
-    }
+    const result = await uploadToWebDavDetailed(config, data, filename);
+    return result.ok;
 };
 
 /** 3) 下载备份（GET） */
-export const downloadFromWebDav = async (
+export const downloadFromWebDavDetailed = async (
     config: WebDavConfig,
     filename: string = DEFAULT_BACKUP_FILENAME
-): Promise<any | null> => {
+): Promise<WebDavActionResult<string>> => {
     try {
         const targetUrl = buildFullPath(config, filename);
         const resp = await webdavFetch(config, targetUrl, {method: 'GET'});
 
         if (!resp.ok) {
-            return null;
+            return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'download')};
         }
-        return await resp.json();
+        return {ok: true, status: resp.status, message: '下载成功', data: await resp.text()};
+    } catch (error) {
+        return {ok: false, message: explainError(error)};
+    }
+};
+
+export const downloadFromWebDav = async (
+    config: WebDavConfig,
+    filename: string = DEFAULT_BACKUP_FILENAME
+): Promise<any | null> => {
+    const result = await downloadFromWebDavDetailed(config, filename);
+    if (!result.ok || !result.data) return null;
+
+    try {
+        return JSON.parse(result.data);
     } catch {
-        return null;
+        return result.data;
     }
 };

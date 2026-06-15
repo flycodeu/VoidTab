@@ -3,6 +3,7 @@ import type {Config} from '../../core/config/types';
 import {migrateConfig} from '../../core/config/migrate';
 import {normalizeConfig} from '../../core/config/normalize';
 import {mergeLocalSensitiveFields, stripSensitiveConfigForSync} from '../../core/config/sensitive';
+import {validateImportedConfig} from '../../core/config/validate';
 import {SyncScheduler, syncService} from '../../core/sync';
 import {useToast} from '../../shared/composables/useToast';
 import {measurePerformanceAsync} from '../../shared/utils/performance';
@@ -72,6 +73,8 @@ export const createSyncActions = ({
             onRemotePayload: async (remoteText) => {
                 try {
                     const raw = JSON.parse(remoteText);
+                    const validation = validateImportedConfig(raw);
+                    if (!validation.ok) throw new Error(validation.errors[0] || 'invalid sync payload');
                     const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(raw)), config.value);
                     next.runtime = config.value.runtime;
                     applyingExternal.value = true;
@@ -133,6 +136,8 @@ export const createSyncActions = ({
 
             try {
                 const parsed = JSON.parse(res.data);
+                const validation = validateImportedConfig(parsed);
+                if (!validation.ok) return {success: false, msg: `云端数据结构异常：${validation.errors[0]}`};
                 const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(parsed)), config.value);
                 next.runtime = currentRuntime;
                 config.value = next;

@@ -353,6 +353,115 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     assert.equal(normalized.layout[0].items[1].h, 1);
     assert.equal(normalized.runtime.siteIcons.records['example.com'].cacheMode, 'miss');
     assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'google_s2');
+
+    const repairedSync = normalizeConfig({ sync: { provider: 'invalid', intervalMinutes: 0 } });
+    assert.equal(repairedSync.sync.provider, 'webdav');
+    assert.equal(repairedSync.sync.intervalMinutes, 1);
+  `);
+});
+
+test('config import validation rejects non-config JSON before normalize', async () => {
+  await runBundledTypeScript('config-import-validation', `
+    import assert from 'node:assert/strict';
+    import {
+      createImportValidationMessages,
+      validateImportedConfig,
+    } from '../../../src/core/config/validate.ts';
+
+    const invalid = validateImportedConfig({ random: true });
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.errors[0], /未检测到 VoidTab 配置字段/);
+
+    const valid = validateImportedConfig({
+      version: 'legacy',
+      sync: { provider: 'bad', password: 'secret' },
+      ai: { apiKey: 'ai-key' },
+      runtime: { auth: { jwtToken: 'jwt-token' } },
+      layout: [{
+        id: 'g1',
+        title: 'Group',
+        icon: 'Folder',
+        items: [
+          { id: 's1', title: 'Site', url: 'https://example.com' },
+          { id: 'w1', kind: 'widget', widgetType: 'clock' }
+        ]
+      }]
+    });
+
+    assert.equal(valid.ok, true);
+    assert.equal(valid.summary.groupCount, 1);
+    assert.equal(valid.summary.siteCount, 1);
+    assert.equal(valid.summary.widgetCount, 1);
+    assert.deepEqual(valid.summary.sensitiveFields, ['WebDAV 密码', 'AI Key', '临时 Token']);
+    assert.ok(valid.warnings.some((item) => item.includes('sync.provider')));
+    assert.ok(createImportValidationMessages(valid).some((item) => item.includes('schema 检查')));
+
+    const malformed = validateImportedConfig({
+      sync: { provider: 'webdav', url: 42, intervalMinutes: 'soon' },
+      theme: { siteCard: [] },
+      ai: { temperature: 'hot' },
+      runtime: { auth: [] },
+      searchEngines: [{ id: 1, name: 'Broken', url: 2, icon: 'Globe' }],
+      layout: [{
+        id: 1,
+        title: 2,
+        icon: 'Folder',
+        items: [
+          { id: 'bad-site', kind: 'site', url: 42 },
+          { id: 'bad-widget', kind: 'widget', widgetType: 7, w: 'wide' }
+        ]
+      }]
+    });
+
+    assert.equal(malformed.ok, true);
+    assert.ok(malformed.warnings.some((item) => item.includes('sync.url')));
+    assert.ok(malformed.warnings.some((item) => item.includes('theme.siteCard')));
+    assert.ok(malformed.warnings.some((item) => item.includes('runtime.auth')));
+    assert.ok(malformed.warnings.some((item) => item.includes('searchEngines[0].url')));
+    assert.ok(malformed.warnings.some((item) => item.includes('layout[0].items[1].widgetType')));
+
+    const hardInvalid = validateImportedConfig({ layout: [{ items: {} }] });
+    assert.equal(hardInvalid.ok, false);
+    assert.ok(hardInvalid.errors.some((item) => item.includes('layout[0].items')));
+  `);
+});
+
+test('bookmark HTML import dedupe skips existing and in-file duplicate URLs', async () => {
+  await runBundledTypeScript('bookmark-import-dedup', `
+    import assert from 'node:assert/strict';
+    import {
+      createBookmarkUrlKey,
+      dedupeImportedBookmarkGroups,
+    } from '../../../src/shared/utils/bookmarkImportDedup.ts';
+
+    assert.equal(createBookmarkUrlKey('https://EXAMPLE.com/path/#hash'), 'https://example.com/path');
+
+    const existing = [{
+      id: 'existing-group',
+      title: 'Existing',
+      icon: 'Folder',
+      items: [{ id: 'existing-site', title: 'Example', url: 'https://example.com/path' }]
+    }];
+
+    const incoming = [{
+      id: 'import-group',
+      title: 'Import',
+      icon: 'Folder',
+      items: [
+        { id: 'same-existing', title: 'Same existing', url: 'https://example.com/path#other' },
+        { id: 'fresh', title: 'Fresh', url: 'https://fresh.example.com/' },
+        { id: 'same-file', title: 'Same file', url: 'https://fresh.example.com/#again' },
+        { id: 'empty', title: 'Empty', url: '' }
+      ]
+    }];
+
+    const result = dedupeImportedBookmarkGroups(incoming, existing);
+    assert.equal(result.importedCount, 1);
+    assert.equal(result.groups.length, 1);
+    assert.equal(result.groups[0].items[0].id, 'fresh');
+    assert.equal(result.duplicateStats.skippedExisting, 1);
+    assert.equal(result.duplicateStats.skippedWithinFile, 1);
+    assert.equal(result.duplicateStats.skippedInvalid, 1);
   `);
 });
 
