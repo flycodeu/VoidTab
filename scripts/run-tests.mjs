@@ -633,6 +633,38 @@ test('template cards and wallpaper media keep resource use bounded', async () =>
   assert.match(layer, /preload="metadata"/);
 });
 
+test('terminal command memos normalize old buffer state', async () => {
+  const widget = await read('src/features/widgets/builtins/terminal-buffer/TerminalWidget.vue');
+  const modal = await read('src/features/widgets/builtins/terminal-buffer/TerminalModal.vue');
+  const registry = await read('src/core/registry/widgets.ts');
+
+  assert.match(registry, /label:\s*'命令备忘'/);
+  assert.match(widget, /copyCommand/);
+  assert.match(modal, /saveCommandMemo/);
+  assert.match(modal, /filteredCommands/);
+
+  await runBundledTypeScript('terminal-command-memos', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+
+    const normalized = normalizeConfig({
+      runtime: {
+        terminal_buffer: {
+          buffer: 'legacy notes',
+          theme: 'retro',
+        },
+      },
+    });
+
+    assert.equal(normalized.runtime.terminal_buffer.buffer, 'legacy notes');
+    assert.equal(normalized.runtime.terminal_buffer.theme, 'retro');
+    assert.equal(normalized.runtime.terminal_buffer.activeCategory, 'all');
+    assert.ok(Array.isArray(normalized.runtime.terminal_buffer.commands));
+    assert.ok(normalized.runtime.terminal_buffer.commands.length >= 3);
+    assert.ok(normalized.runtime.terminal_buffer.commands.some((item) => item.command === 'npm run build'));
+  `);
+});
+
 test('sensitive config helpers encrypt local secrets and keep sync payload clean', async () => {
   await runBundledTypeScript('sensitive-config', `
     import assert from 'node:assert/strict';

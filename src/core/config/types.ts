@@ -196,6 +196,18 @@ export type SiteIconProviderStatRecord = {
     lastStatus?: number;
 };
 
+export type TerminalCommandCategory = 'dev' | 'git' | 'ops' | 'note' | string;
+
+export type TerminalCommandMemo = {
+    id: string;
+    title: string;
+    command: string;
+    category: TerminalCommandCategory;
+    description?: string;
+    createdAt: number;
+    updatedAt: number;
+};
+
 export type PhotoRef =
     | { id: string; source: 'url'; url: string; createdAt: number }
     | { id: string; source: 'idb'; blobKey: string; createdAt: number };
@@ -222,6 +234,8 @@ export type RuntimeConfig = {
     terminal_buffer: {
         buffer: string;
         theme: string;
+        activeCategory: string;
+        commands: TerminalCommandMemo[];
     };
     siteState: SiteStateMap;
     siteIcons: {

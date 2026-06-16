@@ -3,6 +3,8 @@ import {ref, nextTick, onMounted, computed} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
 import {fetchWithRetry} from '../../../shared/utils/network';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
+import {getTerminalCommandCategoryLabel} from '../../../core/config/terminalCommands';
+import {ensureTerminalBufferState} from '../../widgets/builtins/terminal-buffer/commandMemo';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
@@ -175,6 +177,8 @@ VoidTab Shell (v2.4) - Available Commands:
   config engine <name>   Set default search engine
   config engine add <name> <url>  Add new engine
   config engine list     List all engines
+  memo list              List saved command memos
+  memo copy <id|title>   Copy a saved command
 
   ai <prompt>            Ask AI (Context maintained)
   ai --reset             Clear AI context memory
@@ -216,6 +220,10 @@ VoidTab Shell (v2.4) - Available Commands:
 
     case 'config':
       handleConfig(args);
+      break;
+
+    case 'memo':
+      await handleMemo(args);
       break;
 
     case 'search':
@@ -380,6 +388,40 @@ const handleConfig = (args: string[]) => {
   } else {
     throw new Error('Unknown config. Try: config engine <name>');
   }
+};
+
+const handleMemo = async (args: string[]) => {
+  const state = ensureTerminalBufferState(store.config.runtime);
+  const subCmd = args[1];
+
+  if (subCmd === 'list' || !subCmd) {
+    if (state.commands.length === 0) {
+      logs.value.push({type: 'warn', content: 'No saved command memos.'});
+      return;
+    }
+    logs.value.push({type: 'success', content: 'Saved command memos:'});
+    state.commands.forEach((item) => {
+      logs.value.push({
+        type: 'info',
+        content: `  ${item.id}  [${getTerminalCommandCategoryLabel(item.category)}] ${item.title} -> ${item.command}`,
+      });
+    });
+    return;
+  }
+
+  if (subCmd === 'copy') {
+    const target = args.slice(2).join(' ').trim().toLowerCase();
+    if (!target) throw new Error('Usage: memo copy <id|title>');
+    const memo = state.commands.find((item) =>
+        item.id.toLowerCase() === target || item.title.toLowerCase().includes(target)
+    );
+    if (!memo) throw new Error(`Memo "${target}" not found.`);
+    await navigator.clipboard.writeText(memo.command);
+    logs.value.push({type: 'success', content: `Copied memo: ${memo.title}`});
+    return;
+  }
+
+  throw new Error('Usage: memo list | memo copy <id|title>');
 };
 
 const handleTheme = (args: string[]) => {

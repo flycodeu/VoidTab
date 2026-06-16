@@ -124,8 +124,8 @@ export const widgetRegistry: WidgetMeta[] = [
     },
     {
         type: 'terminal_buffer',
-        label: '夜幕笔记',
-        description: '极客风格的临时缓冲区，像写代码一样记笔记。',
+        label: '命令备忘',
+        description: '保存、分类和复制常用命令，并保留终端风文本缓冲区。',
         defaultW: 4,
         defaultH: 2,
         category: 'tool',

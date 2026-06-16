@@ -3,11 +3,14 @@ import {ref, onMounted, nextTick, computed} from 'vue';
 import { useDateFormat, useNow} from '@vueuse/core';
 import {
   PhX, PhBroom, PhBracketsCurly, PhClipboardText,
-  PhArrowsLeftRight, PhPaintBucket
+  PhArrowsLeftRight, PhPaintBucket, PhPlus, PhFloppyDisk, PhPencilSimple,
+  PhTrash, PhCopy, PhArrowLineRight
 } from '@phosphor-icons/vue';
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import {useToast} from '../../../../shared/composables/useToast';
 import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
+import {getTerminalCommandCategoryLabel, terminalCommandCategories} from '../../../../core/config/terminalCommands';
+import {createCommandMemo, ensureTerminalBufferState, touchCommandMemo} from './commandMemo';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(['close']);
@@ -18,18 +21,41 @@ import { useConfigStore } from '../../../../stores/useConfigStore';
 
 const store = useConfigStore();
 const toast = useToast();
+const terminalState = computed(() => ensureTerminalBufferState(store.config.runtime));
 const content = computed<string>({
-  get: () => store.config.runtime.terminal_buffer.buffer,
-  set: (v) => (store.config.runtime.terminal_buffer.buffer = v),
+  get: () => terminalState.value.buffer,
+  set: (v) => (terminalState.value.buffer = v),
 });
 
 const currentTheme = computed<string>({
-  get: () => store.config.runtime.terminal_buffer.theme,
-  set: (v) => (store.config.runtime.terminal_buffer.theme = v),
+  get: () => terminalState.value.theme,
+  set: (v) => (terminalState.value.theme = v),
 });
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const statusMsg = ref('READY');
 const showClearConfirm = ref(false);
+const editingCommandId = ref('');
+const commandForm = ref({
+  title: '',
+  command: '',
+  category: 'dev',
+  description: '',
+});
+
+const commandCategoryOptions = terminalCommandCategories.filter((item) => item.id !== 'all');
+const activeCommandCategory = computed<string>({
+  get: () => terminalState.value.activeCategory || 'all',
+  set: (v) => (terminalState.value.activeCategory = v || 'all'),
+});
+
+const sortedCommands = computed(() => {
+  return [...terminalState.value.commands].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+});
+
+const filteredCommands = computed(() => {
+  if (activeCommandCategory.value === 'all') return sortedCommands.value;
+  return sortedCommands.value.filter((item) => item.category === activeCommandCategory.value);
+});
 
 // === 主题定义 ===
 const themes = [
@@ -47,6 +73,90 @@ const activeThemeClass = computed(() => {
 const showStatus = (msg: string) => {
   statusMsg.value = msg;
   setTimeout(() => statusMsg.value = 'READY', 2000);
+};
+
+const resetCommandForm = () => {
+  editingCommandId.value = '';
+  commandForm.value = {
+    title: '',
+    command: '',
+    category: activeCommandCategory.value === 'all' ? 'dev' : activeCommandCategory.value,
+    description: '',
+  };
+};
+
+const persistCommandState = () => {
+  store.saveConfig?.();
+};
+
+const saveCommandMemo = () => {
+  const command = commandForm.value.command.trim();
+  if (!command) {
+    toast.warning('请先填写命令内容');
+    return;
+  }
+
+  const title = commandForm.value.title.trim() || command.slice(0, 28);
+  if (editingCommandId.value) {
+    const idx = terminalState.value.commands.findIndex((item) => item.id === editingCommandId.value);
+    if (idx >= 0) {
+      terminalState.value.commands[idx] = touchCommandMemo({
+        ...terminalState.value.commands[idx],
+        title,
+        command,
+        category: commandForm.value.category || 'note',
+        description: commandForm.value.description.trim(),
+      });
+      toast.success('命令已更新');
+    }
+  } else {
+    terminalState.value.commands.unshift(createCommandMemo({
+      title,
+      command,
+      category: commandForm.value.category || 'note',
+      description: commandForm.value.description,
+    }));
+    toast.success('命令已保存');
+  }
+
+  persistCommandState();
+  resetCommandForm();
+};
+
+const editCommandMemo = (id: string) => {
+  const command = terminalState.value.commands.find((item) => item.id === id);
+  if (!command) return;
+  editingCommandId.value = command.id;
+  commandForm.value = {
+    title: command.title,
+    command: command.command,
+    category: command.category || 'note',
+    description: command.description || '',
+  };
+};
+
+const deleteCommandMemo = (id: string) => {
+  terminalState.value.commands = terminalState.value.commands.filter((item) => item.id !== id);
+  if (editingCommandId.value === id) resetCommandForm();
+  persistCommandState();
+  toast.success('命令已删除');
+};
+
+const copyCommandMemo = async (command: string) => {
+  try {
+    await navigator.clipboard.writeText(command);
+    showStatus('COMMAND COPIED');
+    toast.success('命令已复制');
+  } catch {
+    showStatus('ERR: COPY FAIL');
+    toast.error('复制失败，请检查浏览器权限');
+  }
+};
+
+const insertCommandMemo = (command: string) => {
+  content.value = content.value ? `${content.value}\n${command}` : command;
+  showStatus('COMMAND INSERTED');
+  nextTick(() => textareaRef.value?.focus());
 };
 
 // 1. JSON 格式化/压缩
@@ -208,16 +318,107 @@ onMounted(() => {
           </div>
         </div>
 
-        <textarea
-            ref="textareaRef"
-            v-model="content"
-            spellcheck="false"
-            class="flex-1 w-full bg-transparent resize-none outline-none p-6 text-sm md:text-base font-mono leading-relaxed z-10 custom-scrollbar theme-text placeholder-opacity-30"
-            placeholder="// System Ready.
-// Paste your logs, tokens, or JSON here..."
-            @keydown="handleKeydown"
-            @input="handleInput"
-        ></textarea>
+        <div class="terminal-workbench relative z-10 flex-1 min-h-0">
+          <aside class="command-panel custom-scrollbar" data-wheel-allow="true">
+            <div class="command-panel-head">
+              <div>
+                <div class="command-panel-title">命令备忘</div>
+                <div class="command-panel-sub">{{ terminalState.commands.length }} saved commands</div>
+              </div>
+              <button class="command-mini-btn" type="button" title="新建命令" aria-label="新建命令" @click="resetCommandForm">
+                <PhPlus size="15" weight="bold"/>
+              </button>
+            </div>
+
+            <div class="command-tabs" role="tablist" aria-label="命令分类">
+              <button
+                  v-for="category in terminalCommandCategories"
+                  :key="category.id"
+                  type="button"
+                  class="command-tab"
+                  :class="activeCommandCategory === category.id ? 'is-active' : ''"
+                  @click="activeCommandCategory = category.id"
+              >
+                {{ category.label }}
+              </button>
+            </div>
+
+            <div class="command-form">
+              <input
+                  v-model="commandForm.title"
+                  class="command-input"
+                  placeholder="标题"
+                  spellcheck="false"
+              />
+              <textarea
+                  v-model="commandForm.command"
+                  class="command-input command-input--code"
+                  placeholder="命令，例如 npm run build"
+                  spellcheck="false"
+              ></textarea>
+              <div class="command-form-row">
+                <select v-model="commandForm.category" class="command-input command-select">
+                  <option v-for="category in commandCategoryOptions" :key="category.id" :value="category.id">
+                    {{ category.label }}
+                  </option>
+                </select>
+                <button class="command-save" type="button" @click="saveCommandMemo">
+                  <component :is="editingCommandId ? PhFloppyDisk : PhPlus" size="14" weight="bold"/>
+                  <span>{{ editingCommandId ? '更新' : '保存' }}</span>
+                </button>
+              </div>
+              <input
+                  v-model="commandForm.description"
+                  class="command-input"
+                  placeholder="备注"
+                  spellcheck="false"
+              />
+            </div>
+
+            <div class="command-list">
+              <div v-if="filteredCommands.length === 0" class="command-empty">
+                当前分类暂无命令
+              </div>
+              <template v-else>
+                <div v-for="cmd in filteredCommands" :key="cmd.id" class="command-item">
+                  <div class="command-item-main">
+                    <div class="command-item-title truncate">{{ cmd.title }}</div>
+                    <div class="command-item-code">{{ cmd.command }}</div>
+                    <div class="command-item-meta">
+                      <span>{{ getTerminalCommandCategoryLabel(cmd.category) }}</span>
+                      <span v-if="cmd.description" class="truncate">{{ cmd.description }}</span>
+                    </div>
+                  </div>
+                  <div class="command-actions">
+                    <button type="button" title="插入到缓冲区" aria-label="插入到缓冲区" @click="insertCommandMemo(cmd.command)">
+                      <PhArrowLineRight size="14" weight="bold"/>
+                    </button>
+                    <button type="button" title="复制命令" aria-label="复制命令" @click="copyCommandMemo(cmd.command)">
+                      <PhCopy size="14" weight="bold"/>
+                    </button>
+                    <button type="button" title="编辑命令" aria-label="编辑命令" @click="editCommandMemo(cmd.id)">
+                      <PhPencilSimple size="14" weight="bold"/>
+                    </button>
+                    <button type="button" title="删除命令" aria-label="删除命令" @click="deleteCommandMemo(cmd.id)">
+                      <PhTrash size="14" weight="bold"/>
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </aside>
+
+          <textarea
+              ref="textareaRef"
+              v-model="content"
+              spellcheck="false"
+              class="terminal-buffer flex-1 w-full bg-transparent resize-none outline-none p-6 text-sm md:text-base font-mono leading-relaxed custom-scrollbar theme-text placeholder-opacity-30"
+              placeholder="// System Ready.
+// Paste your logs, tokens, commands, or JSON here..."
+              @keydown="handleKeydown"
+              @input="handleInput"
+          ></textarea>
+        </div>
 
         <div
             class="relative z-10 px-6 py-2 border-t theme-border bg-opacity-5 text-[10px] flex justify-between theme-text opacity-60 font-mono select-none">
@@ -276,6 +477,256 @@ onMounted(() => {
 .tool-btn:hover {
   background-color: var(--btn-hover-bg);
   box-shadow: 0 0 10px var(--glow-color);
+}
+
+.terminal-workbench {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.command-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  border-right: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--header-bg) 72%, transparent);
+}
+
+.command-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.command-panel-title {
+  color: var(--text-accent);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.command-panel-sub {
+  margin-top: 5px;
+  color: var(--text-color);
+  opacity: 0.45;
+  font-size: 10px;
+  line-height: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.command-mini-btn,
+.command-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.command-mini-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+}
+
+.command-mini-btn:hover,
+.command-actions button:hover {
+  color: var(--text-accent);
+  background: var(--btn-hover-bg);
+}
+
+.command-mini-btn:active,
+.command-actions button:active {
+  transform: scale(0.94);
+}
+
+.command-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.command-tab {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text-color);
+  opacity: 0.65;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  font-size: 11px;
+  font-weight: 850;
+  transition: opacity 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.command-tab.is-active {
+  opacity: 1;
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.command-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+}
+
+.command-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.command-input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 9px;
+  padding: 8px 9px;
+  color: var(--text-color);
+  background: color-mix(in srgb, var(--bg-color) 82%, transparent);
+  border: 1px solid var(--btn-border);
+  outline: none;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.command-input:focus {
+  border-color: var(--text-accent);
+}
+
+.command-input::placeholder {
+  color: var(--text-color);
+  opacity: 0.38;
+}
+
+.command-input--code {
+  min-height: 56px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.command-select {
+  appearance: none;
+}
+
+.command-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  color: var(--bg-color);
+  background: var(--text-accent);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.command-list {
+  display: grid;
+  gap: 9px;
+}
+
+.command-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  border-radius: 12px;
+  color: var(--text-color);
+  opacity: 0.45;
+  background: var(--btn-bg);
+  border: 1px dashed var(--btn-border);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.command-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+}
+
+.command-item-main {
+  min-width: 0;
+}
+
+.command-item-title {
+  color: var(--text-color);
+  font-size: 12px;
+  line-height: 1.15;
+  font-weight: 900;
+}
+
+.command-item-code {
+  margin-top: 6px;
+  color: var(--text-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.command-item-meta {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  margin-top: 7px;
+  color: var(--text-color);
+  opacity: 0.48;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.command-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
+  gap: 5px;
+  align-content: start;
+}
+
+.command-actions button {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.terminal-buffer {
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .terminal-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .command-panel {
+    max-height: 46vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
 }
 
 /* === 主题变量定义 === */

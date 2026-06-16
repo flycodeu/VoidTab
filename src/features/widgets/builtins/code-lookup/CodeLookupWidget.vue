@@ -4,6 +4,7 @@ import type {SiteItem} from '../../../../core/config/types';
 import {PhIdentificationCard, PhMagnifyingGlass} from '@phosphor-icons/vue';
 import CodeLookupModal from './CodeLookupModal.vue';
 import {getTypeLabel, searchGeoCodes} from './geoCodes';
+import ToolWidgetState from '../../components/ToolWidgetState.vue';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 
@@ -59,13 +60,22 @@ const openModal = () => {
       </div>
 
       <div class="lookup-results">
-        <div v-for="record in results.slice(0, layout.isWide ? 1 : 2)" :key="record.id" class="lookup-row">
-          <div class="min-w-0">
-            <div class="lookup-row-title truncate">{{ record.zh }} · {{ record.en }}</div>
-            <div class="lookup-row-sub truncate">{{ record.countryZh || getTypeLabel(record.type) }}</div>
+        <ToolWidgetState
+            v-if="results.length === 0"
+            type="empty"
+            compact
+            title="没有匹配编码"
+            description="换一个国家、城市、电话区号或语言关键字"
+        />
+        <template v-else>
+          <div v-for="record in results.slice(0, layout.isWide ? 1 : 2)" :key="record.id" class="lookup-row">
+            <div class="min-w-0">
+              <div class="lookup-row-title truncate">{{ record.zh }} · {{ record.en }}</div>
+              <div class="lookup-row-sub truncate">{{ record.countryZh || getTypeLabel(record.type) }}</div>
+            </div>
+            <div class="lookup-code truncate">{{ record.code }}</div>
           </div>
-          <div class="lookup-code truncate">{{ record.code }}</div>
-        </div>
+        </template>
       </div>
     </div>
 

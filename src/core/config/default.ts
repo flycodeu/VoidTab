@@ -1,6 +1,7 @@
 import type {Config} from './types';
 import {CURRENT_CONFIG_VERSION} from './types';
 import {buildTemplateLayout} from '../templates/presets';
+import {cloneDefaultTerminalCommands} from './terminalCommands';
 
 export const LOCAL_WALLPAPER_MARKER = '_USE_LOCAL_STORAGE_' as const;
 
@@ -97,7 +98,12 @@ export const defaultConfig: Config = {
     runtime: {
         cron: {expr: '* * * * * ?', theme: 'pure-white'},
         auth: {jwtToken: ''},
-        terminal_buffer: {buffer: '', theme: 'standard'},
+        terminal_buffer: {
+            buffer: '',
+            theme: 'standard',
+            activeCategory: 'all',
+            commands: cloneDefaultTerminalCommands(),
+        },
         siteState: {},
         siteIcons: {
             version: 15,

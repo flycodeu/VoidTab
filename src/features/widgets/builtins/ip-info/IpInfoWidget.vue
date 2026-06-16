@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue';
 import type {SiteItem} from '../../../../core/config/types';
-import {PhArrowClockwise, PhGlobeHemisphereEast, PhWarningCircle} from '@phosphor-icons/vue';
+import {PhArrowClockwise, PhGlobeHemisphereEast} from '@phosphor-icons/vue';
 import IpInfoDetailModal from './IpInfoDetailModal.vue';
 import {fetchIpInfo, type IpInfo} from './ipInfoData';
+import ToolWidgetState from '../../components/ToolWidgetState.vue';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 
@@ -57,19 +58,24 @@ onMounted(() => loadInfo(false));
       :data-layout="layout.key"
       @click="openModal"
   >
-    <div v-if="loading && !info" class="ip-center">
-      <PhGlobeHemisphereEast size="26" class="animate-pulse"/>
-      <span v-if="!layout.isMini">查询中</span>
-    </div>
+    <ToolWidgetState
+        v-if="loading && !info"
+        type="loading"
+        :compact="layout.isMini"
+        title="查询中"
+        description="正在获取当前公网 IP"
+        :icon="PhGlobeHemisphereEast"
+    />
 
-    <div v-else-if="errorMessage && !info" class="ip-center text-center">
-      <PhWarningCircle size="24" class="text-amber-200"/>
-      <span v-if="!layout.isMini">{{ errorMessage }}</span>
-      <button v-if="!layout.isMini" class="ip-refresh" @click.stop="loadInfo(true)">
-        <PhArrowClockwise size="13" weight="bold"/>
-        重试
-      </button>
-    </div>
+    <ToolWidgetState
+        v-else-if="errorMessage && !info"
+        type="error"
+        :compact="layout.isMini"
+        title="IP 查询失败"
+        :description="errorMessage"
+        actionLabel="重试"
+        @action="loadInfo(true)"
+    />
 
     <div v-else-if="layout.isMini" class="ip-center">
       <PhGlobeHemisphereEast size="28" weight="duotone"/>

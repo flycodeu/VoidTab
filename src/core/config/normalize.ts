@@ -9,6 +9,7 @@ import type {
     SiteIconPathMissRecord,
     SiteIconProviderStatRecord,
     SidebarPosition,
+    TerminalCommandMemo,
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
@@ -203,6 +204,56 @@ function normalizeProviderStats(value: any): Partial<Record<SiteIconProvider, Si
     return Object.keys(out).length ? out : undefined;
 }
 
+function normalizeTerminalCommands(value: any, fallback: TerminalCommandMemo[]): TerminalCommandMemo[] {
+    const source = Array.isArray(value) && value.length > 0 ? value : fallback;
+    const now = Date.now();
+    const seen = new Set<string>();
+
+    return source
+        .map((raw: any, index: number): TerminalCommandMemo => {
+            const command = typeof raw?.command === 'string' ? raw.command.trim() : '';
+            const title = typeof raw?.title === 'string' && raw.title.trim()
+                ? raw.title.trim()
+                : (command ? command.slice(0, 28) : `命令 ${index + 1}`);
+            const category = typeof raw?.category === 'string' && raw.category.trim()
+                ? raw.category.trim()
+                : 'note';
+            const idSeed = typeof raw?.id === 'string' && raw.id.trim()
+                ? raw.id.trim()
+                : `cmd_${category}_${index}`;
+            let id = idSeed;
+            let suffix = 1;
+            while (seen.has(id)) {
+                suffix += 1;
+                id = `${idSeed}_${suffix}`;
+            }
+            seen.add(id);
+
+            return {
+                id,
+                title,
+                command,
+                category,
+                description: typeof raw?.description === 'string' ? raw.description : '',
+                createdAt: Number.isFinite(Number(raw?.createdAt)) ? Number(raw.createdAt) : now,
+                updatedAt: Number.isFinite(Number(raw?.updatedAt)) ? Number(raw.updatedAt) : now,
+            };
+        })
+        .filter((item) => item.command.length > 0);
+}
+
+function normalizeTerminalBuffer(input: any, fallback: RuntimeConfig['terminal_buffer']): RuntimeConfig['terminal_buffer'] {
+    const base = input && typeof input === 'object' ? input : {};
+    return {
+        buffer: typeof base.buffer === 'string' ? base.buffer : fallback.buffer,
+        theme: typeof base.theme === 'string' && base.theme.trim() ? base.theme : fallback.theme,
+        activeCategory: typeof base.activeCategory === 'string' && base.activeCategory.trim()
+            ? base.activeCategory
+            : fallback.activeCategory,
+        commands: normalizeTerminalCommands(base.commands, fallback.commands),
+    };
+}
+
 function normalizeItem(rawItem: any): SiteItem {
     const kind = (rawItem?.kind === 'widget' || rawItem?.kind === 'site') ? rawItem.kind : 'site';
     const w = kind === 'widget' ? clamp(rawItem?.w, 1, 4, 2) : 1;
@@ -332,7 +383,7 @@ function normalizeRuntime(input: any): RuntimeConfig {
     return {
         cron: base.cron || def.cron,
         auth: base.auth || def.auth,
-        terminal_buffer: base.terminal_buffer || def.terminal_buffer,
+        terminal_buffer: normalizeTerminalBuffer(base.terminal_buffer, def.terminal_buffer),
 
         siteState: base.siteState || {},
         siteIcons,

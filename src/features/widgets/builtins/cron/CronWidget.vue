@@ -7,6 +7,7 @@ import parser from 'cron-parser';
 import {useDebounceFn} from '@vueuse/core';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
+import ToolWidgetState from '../../components/ToolWidgetState.vue';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
@@ -59,6 +60,7 @@ const cronExpression = computed<string>({
 const showModal = ref(false);
 const nextRunTime = ref('--:--:--');
 const timeToNext = ref('--:--:--');
+const cronError = ref('');
 
 const calculateNextRun = () => {
   try {
@@ -69,6 +71,7 @@ const calculateNextRun = () => {
     const next = interval.next().toDate();
     const now = new Date();
 
+    cronError.value = '';
     nextRunTime.value = next.toLocaleTimeString('zh-CN', {hour12: false});
     const diff = Math.max(0, next.getTime() - now.getTime());
 
@@ -82,6 +85,7 @@ const calculateNextRun = () => {
       timeToNext.value = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
   } catch {
+    cronError.value = '当前 Cron 表达式无法解析，请打开详情检查字段数量和通配符。';
     nextRunTime.value = 'ERR';
     timeToNext.value = '--:--';
   }
@@ -90,6 +94,7 @@ const calculateNextRun = () => {
 watch(cronExpression, calculateNextRun);
 
 useVisibilityInterval(calculateNextRun, 1000, {immediate: true});
+const hasCronError = computed(() => !!cronError.value);
 
 const openModal = () => {
   if (props.isEditMode) return;
@@ -121,7 +126,18 @@ const layout = computed(() => {
       ]"
       @click="openModal"
   >
-    <div v-if="layout.isMini" class="w-full h-full flex flex-col items-center justify-center p-1 gap-0.5">
+    <div v-if="hasCronError && !layout.isMini" class="w-full h-full p-3">
+      <ToolWidgetState
+          type="error"
+          surface="theme"
+          title="Cron 表达式无效"
+          :description="cronError"
+          actionLabel="编辑表达式"
+          @action="openModal"
+      />
+    </div>
+
+    <div v-else-if="layout.isMini" class="w-full h-full flex flex-col items-center justify-center p-1 gap-0.5">
       <PhTimer :size="18" weight="fill" class="text-orange-500"/>
       <div class="text-[9px] text-[var(--widget-muted)] font-medium leading-none mt-1">倒计时</div>
       <div class="text-[11px] font-bold tabular-nums tracking-tight text-[var(--widget-text)] leading-none">

@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
+import {PhCopy, PhListBullets, PhTerminalWindow} from '@phosphor-icons/vue';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import type {SiteItem} from '../../../../core/config/types';
-import {PhTerminalWindow, PhCopy, PhCode} from '@phosphor-icons/vue';
+import {getTerminalCommandCategoryLabel} from '../../../../core/config/terminalCommands';
+import ToolWidgetState from '../../components/ToolWidgetState.vue';
 import TerminalModal from './TerminalModal.vue';
+import {ensureTerminalBufferState} from './commandMemo';
 import {useToast} from '../../../../shared/composables/useToast';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
-const toast = useToast();
 
 const store = useConfigStore();
-const content = computed<string>({
-  get: () => store.config.runtime.terminal_buffer?.buffer || '',
-  set: (v) => {
-    if (!store.config.runtime.terminal_buffer) store.config.runtime.terminal_buffer = {buffer: '', theme: 'none'};
-    store.config.runtime.terminal_buffer.buffer = v;
-  },
+const toast = useToast();
+const terminalState = computed(() => ensureTerminalBufferState(store.config.runtime));
+const commands = computed(() => {
+  return [...terminalState.value.commands].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 });
 
 const showModal = ref(false);
@@ -37,22 +37,21 @@ const layout = computed(() => {
   };
 });
 
-const lineCount = computed(() => content.value ? content.value.split('\n').length : 0);
-const charCount = computed(() => content.value ? content.value.length : 0);
-
-const previewLines = computed(() => {
-  if (!content.value) return [];
-  return content.value
-      .split('\n')
-      .slice(0, layout.value.isLarge ? 12 : 6); // 稍微增加显示的行数
+const visibleCommands = computed(() => {
+  if (layout.value.isWide) return commands.value.slice(0, 1);
+  if (layout.value.isLarge) return commands.value.slice(0, 6);
+  return commands.value.slice(0, 3);
 });
 
-const copyToClipboard = async (e: MouseEvent) => {
+const bufferLineCount = computed(() => terminalState.value.buffer ? terminalState.value.buffer.split('\n').length : 0);
+const commandCount = computed(() => commands.value.length);
+
+const copyCommand = async (command: string, e?: MouseEvent) => {
   if (props.isEditMode) return;
-  e.stopPropagation();
+  e?.stopPropagation();
   try {
-    await navigator.clipboard.writeText(content.value);
-    toast.success('缓冲区内容已复制');
+    await navigator.clipboard.writeText(command);
+    toast.success('命令已复制');
   } catch {
     toast.error('复制失败，请检查浏览器权限');
   }
@@ -61,77 +60,64 @@ const copyToClipboard = async (e: MouseEvent) => {
 
 <template>
   <div
-      class="w-full h-full relative overflow-hidden group font-mono transition-all duration-300 rounded-[22px]"
-      :class="[
-        !isEditMode ? 'cursor-pointer' : 'cursor-move',
-        'bg-[var(--widget-surface)] text-[var(--widget-text)] border border-[var(--widget-border)] hover:bg-[var(--widget-surface-2)] shadow-sm'
-      ]"
+      class="command-widget w-full h-full relative overflow-hidden group transition-all duration-300 rounded-[22px]"
+      :class="!isEditMode ? 'cursor-pointer' : 'cursor-move'"
       @click="openModal"
   >
-    <div v-if="layout.isMini" class="relative z-10 w-full h-full flex flex-col items-center justify-center p-2 gap-1">
-      <PhTerminalWindow size="22" weight="duotone" class="text-indigo-500 mb-0.5"/>
-      <div class="text-[10px] text-[var(--widget-muted)] font-bold">BUF</div>
-      <div class="text-xs font-bold tabular-nums">{{ charCount > 999 ? '999+' : charCount }}</div>
+    <div v-if="layout.isMini" class="command-mini">
+      <PhTerminalWindow size="23" weight="duotone" class="text-emerald-500"/>
+      <div class="text-[10px] text-[var(--widget-muted)] font-bold">CMD</div>
+      <div class="text-xs font-bold tabular-nums">{{ commandCount }}</div>
     </div>
 
-    <div v-else-if="layout.isWide" class="relative z-10 w-full h-full flex flex-col justify-center px-4 py-2">
-      <div
-          class="flex items-center justify-between text-[10px] text-[var(--widget-muted)] mb-1 border-b border-[var(--widget-border)] pb-1">
+    <div v-else class="command-body" :data-layout="layout.isWide ? 'wide' : layout.isTall ? 'tall' : 'standard'">
+      <div class="command-head">
+        <div class="command-mark">
+          <PhTerminalWindow size="18" weight="fill"/>
+        </div>
+        <div class="min-w-0">
+          <div class="command-title">命令备忘</div>
+          <div class="command-sub truncate">{{ commandCount }} 条命令 · {{ bufferLineCount }} 行缓冲</div>
+        </div>
+        <div class="command-count">{{ commandCount }}</div>
+      </div>
+
+      <div v-if="commands.length === 0" class="flex-1 min-h-0">
+        <ToolWidgetState
+            type="empty"
+            surface="theme"
+            title="还没有常用命令"
+            description="打开面板保存命令、分类和备注"
+        />
+      </div>
+
+      <div v-else class="command-list">
+        <div v-for="cmd in visibleCommands" :key="cmd.id" class="command-row">
+          <div class="min-w-0">
+            <div class="command-row-title truncate">{{ cmd.title }}</div>
+            <div class="command-row-code truncate">{{ cmd.command }}</div>
+          </div>
+          <div class="command-row-side">
+            <span class="command-pill">{{ getTerminalCommandCategoryLabel(cmd.category) }}</span>
+            <button
+                type="button"
+                class="command-copy"
+                title="复制命令"
+                aria-label="复制命令"
+                @click="copyCommand(cmd.command, $event)"
+            >
+              <PhCopy size="13" weight="bold"/>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="layout.isLarge" class="command-footer">
         <span class="flex items-center gap-1.5">
-          <PhCode size="12" weight="bold"/>
-          <span>TERMINAL</span>
+          <PhListBullets size="13" weight="bold"/>
+          点击管理命令库
         </span>
-        <span class="font-mono">{{ lineCount }} LN</span>
-      </div>
-      <div class="text-xs truncate opacity-80 font-mono">
-        <span class="mr-2 text-indigo-500 font-bold">❯</span>{{ content || 'Waiting for input...' }}
-      </div>
-    </div>
-
-    <div v-else class="relative z-10 w-full h-full flex flex-col p-4">
-      <div class="flex items-center justify-between text-[10px] text-[var(--widget-muted)] mb-2 shrink-0 select-none">
-        <div class="flex items-center gap-1.5">
-          <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-          <span class="font-bold tracking-wider">IDLE</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <span>{{ (charCount / 1024).toFixed(1) }} KB</span>
-          <button
-              @click="copyToClipboard"
-              class="hover:text-[var(--accent-color)] transition-colors p-1 -mr-1 rounded hover:bg-[var(--widget-border)]"
-              title="Copy All"
-          >
-            <PhCopy size="14"/>
-          </button>
-        </div>
-      </div>
-
-      <div
-          class="flex-1 overflow-hidden text-xs leading-relaxed font-mono break-all whitespace-pre-wrap pointer-events-none">
-        <template v-if="content">
-          <div v-for="(line, index) in previewLines" :key="index" class="flex">
-            <span class="mr-3 text-[var(--widget-muted)] opacity-50 select-none w-4 text-right shrink-0">{{
-                index + 1
-              }}</span>
-            <span class="text-[var(--widget-text)] opacity-90 truncate">{{ line }}</span>
-          </div>
-          <div v-if="previewLines.length < lineCount" class="pl-7 opacity-40 mt-1 italic text-[10px]">
-            ... {{ lineCount - previewLines.length }} more lines
-          </div>
-        </template>
-
-        <div v-else class="h-full flex flex-col items-center justify-center opacity-40 italic gap-2">
-          <PhTerminalWindow size="24" weight="duotone"/>
-          <div class="text-center">
-            <span class="text-indigo-500 font-bold">>_</span> System Ready<br>Click to Edit
-          </div>
-        </div>
-      </div>
-
-      <div
-          class="mt-auto pt-2 border-t border-[var(--widget-border)] text-[10px] text-[var(--widget-muted)] flex justify-between select-none">
-        <span>MODE: INSERT</span>
-        <span class="animate-pulse font-bold text-indigo-500">_</span>
+        <span>{{ terminalState.theme.toUpperCase() }}</span>
       </div>
     </div>
 
@@ -142,9 +128,216 @@ const copyToClipboard = async (e: MouseEvent) => {
           @close="showModal = false"
       />
     </Teleport>
-
   </div>
 </template>
 
 <style scoped>
+.command-widget {
+  min-width: 0;
+  min-height: 0;
+  color: var(--widget-text);
+  background:
+      radial-gradient(circle at 84% 10%, rgba(var(--accent-color-rgb), 0.18), transparent 34%),
+      var(--widget-surface);
+  border: 1px solid var(--widget-border);
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.15);
+}
+
+.command-mini,
+.command-body {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.command-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.command-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.command-body[data-layout="wide"] {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.command-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.command-mark {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.18);
+}
+
+.command-title {
+  font-size: 13px;
+  line-height: 1.05;
+  font-weight: 950;
+}
+
+.command-sub {
+  margin-top: 5px;
+  color: var(--widget-muted);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.command-count {
+  margin-left: auto;
+  min-width: 28px;
+  height: 24px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.10);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.16);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.command-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  overflow: hidden;
+}
+
+.command-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--widget-surface-2);
+  border: 1px solid var(--widget-border);
+}
+
+.command-row-title {
+  color: var(--widget-text);
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.command-row-code {
+  margin-top: 5px;
+  color: var(--widget-muted);
+  font-family: var(--tech-font-family), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.command-row-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.command-pill {
+  max-width: 48px;
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.10);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.14);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.command-copy {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--widget-muted);
+  background: rgba(var(--overlay-rgb), 0.06);
+  border: 1px solid var(--widget-border);
+  transition: color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+
+.command-copy:hover {
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.10);
+}
+
+.command-copy:active {
+  transform: scale(0.94);
+}
+
+.command-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+  color: var(--widget-muted);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.command-body[data-layout="wide"] .command-list {
+  display: block;
+}
+
+.command-body[data-layout="wide"] .command-count,
+.command-body[data-layout="wide"] .command-sub {
+  display: none;
+}
+
+.command-body[data-layout="tall"] .command-head {
+  flex-direction: column;
+  text-align: center;
+}
+
+.command-body[data-layout="tall"] .command-count {
+  margin-left: 0;
+}
+
+.command-body[data-layout="tall"] .command-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.command-body[data-layout="tall"] .command-row-side {
+  justify-content: space-between;
+}
 </style>

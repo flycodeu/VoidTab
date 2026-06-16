@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {computed, ref} from 'vue';
 import type {SiteItem} from '../../../../core/config/types';
-import {PhArrowsClockwise, PhCopy, PhTrash, PhWarningCircle} from '@phosphor-icons/vue';
+import {PhArrowsClockwise, PhCopy, PhTrash} from '@phosphor-icons/vue';
+import ToolWidgetState from '../../components/ToolWidgetState.vue';
 
 defineProps<{ item: SiteItem; isEditMode: boolean }>();
 
@@ -54,6 +55,7 @@ const result = computed(() => {
 
 const output = computed(() => result.value.value);
 const hasError = computed(() => !!result.value.error);
+const hasInput = computed(() => input.value.trim().length > 0);
 
 const toggleMode = () => {
   mode.value = mode.value === 'encode' ? 'decode' : 'encode';
@@ -126,10 +128,20 @@ const copyOutput = async () => {
       />
 
       <div class="result-box" data-wheel-allow="true">
-        <div v-if="hasError" class="h-full flex items-center gap-2 text-[11px] text-red-200">
-          <PhWarningCircle size="18" weight="fill" class="shrink-0"/>
-          <span>{{ result.error }}</span>
-        </div>
+        <ToolWidgetState
+            v-if="!hasInput"
+            type="empty"
+            compact
+            title="等待文本"
+            :description="mode === 'encode' ? '输入文本后在本机生成 Base64' : '输入 Base64 后在本机解码'"
+        />
+        <ToolWidgetState
+            v-else-if="hasError"
+            type="error"
+            compact
+            title="解析失败"
+            :description="result.error"
+        />
         <pre v-else class="result-text">{{ output || (mode === 'encode' ? '编码结果' : '解码结果') }}</pre>
       </div>
     </div>

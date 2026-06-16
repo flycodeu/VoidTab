@@ -8,6 +8,7 @@ import {
 } from '@phosphor-icons/vue'
 import JWTSentryModal from './JWTSentryModal.vue'
 import {useConfigStore} from '../../../../stores/useConfigStore'
+import ToolWidgetState from '../../components/ToolWidgetState.vue'
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>()
 const store = useConfigStore()
@@ -117,16 +118,26 @@ const shortSub = computed(() => {
         weight="fill"
     />
 
-    <div v-if="status === 'EMPTY'"
-         class="relative z-10 w-full h-full flex flex-col items-center justify-center p-2 opacity-60">
-      <PhFingerprint size="24" class="mb-1 text-[var(--widget-muted)]"/>
-      <span class="text-[10px] font-bold tracking-wider text-[var(--widget-muted)]">NO TOKEN</span>
+    <div v-if="status === 'EMPTY'" class="relative z-10 w-full h-full p-3">
+      <ToolWidgetState
+          type="empty"
+          surface="theme"
+          :compact="layout.isMini || layout.isWide"
+          title="等待 Token"
+          description="打开详情粘贴 JWT 后在本机解析"
+          :icon="PhFingerprint"
+      />
     </div>
 
-    <div v-else-if="status === 'INVALID'"
-         class="relative z-10 w-full h-full flex flex-col items-center justify-center p-2 text-red-500">
-      <PhShieldWarning size="24" class="mb-1 animate-pulse"/>
-      <span class="text-[10px] font-bold">INVALID TOKEN</span>
+    <div v-else-if="status === 'INVALID'" class="relative z-10 w-full h-full p-3">
+      <ToolWidgetState
+          type="error"
+          surface="theme"
+          :compact="layout.isMini || layout.isWide"
+          title="Token 无效"
+          description="请检查 JWT 是否包含 header.payload.signature 三段"
+          :icon="PhShieldWarning"
+      />
     </div>
 
     <div v-else-if="layout.isMini"
