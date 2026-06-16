@@ -5,6 +5,7 @@ import type {SiteItem} from '../../../../core/config/types';
 import {PhTrendUp, PhTrendDown, PhChartLineUp, PhWarningCircle, PhArrowClockwise} from '@phosphor-icons/vue';
 import {tempStorage} from '../../../../core/storage/tempStorage';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 import {fetchStockMarketData, normalizeStockSymbols, type StockMarketItem} from './stockData';
 
 // 异步加载配置弹窗
@@ -30,9 +31,31 @@ const loading = ref(true);
 const activeIndex = ref(0); // 2x1 轮播索引
 const errorMessage = ref('');
 const hasWarnedFailure = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 
 const normalizeSymbols = () => {
   return normalizeStockSymbols(config.value.symbols);
+};
+
+const getMatchingCache = () => {
+  const symbols = normalizeSymbols();
+  const symbolKey = symbols.join(',');
+  const cache = tempStorage.get('stock');
+  const hasMatchingCache = cache
+      && tempStorage.isValid(cache.ts, CACHE_TIME)
+      && Array.isArray(cache.symbols)
+      && cache.symbols.join(',') === symbolKey;
+  return hasMatchingCache ? cache : null;
+};
+
+const restoreCachedMarketData = () => {
+  const cache = getMatchingCache();
+  if (!cache) return false;
+  marketData.value = cache.data;
+  historyData.value = cache.history;
+  loading.value = false;
+  errorMessage.value = '';
+  return true;
 };
 
 // === 核心：获取股票/ETF/指数数据 ===
@@ -45,14 +68,11 @@ const fetchData = async () => {
   }
 
   const cache = tempStorage.get('stock');
-  const hasMatchingCache = cache
-      && tempStorage.isValid(cache.ts, CACHE_TIME)
-      && Array.isArray(cache.symbols)
-      && cache.symbols.join(',') === symbolKey;
+  const matchingCache = getMatchingCache();
 
-  if (hasMatchingCache) {
-    marketData.value = cache.data;
-    historyData.value = cache.history;
+  if (matchingCache) {
+    marketData.value = matchingCache.data;
+    historyData.value = matchingCache.history;
     loading.value = false;
     return;
   }
@@ -89,9 +109,20 @@ const fetchData = async () => {
 };
 
 // 定时刷新
-const {} = useIntervalFn(fetchData, config.value.refreshRate * 1000);
+const refreshTimer = useIntervalFn(fetchData, config.value.refreshRate * 1000, {immediate: false});
 
-onMounted(fetchData);
+onMounted(() => {
+  restoreCachedMarketData();
+});
+
+useDeferredWidgetLoad(rootEl, async () => {
+  await fetchData();
+  refreshTimer.resume();
+}, {
+  delayMs: 1600,
+  idleTimeoutMs: 6500,
+  metricName: 'stockTicker.initial',
+});
 
 // 2x1 轮播逻辑
 useIntervalFn(() => {
@@ -197,6 +228,7 @@ const formatChange = (value: number) => {
 
 <template>
   <div
+      ref="rootEl"
       class="stock-widget w-full h-full relative cursor-pointer group"
       :data-layout="layout.key"
       @click="!isEditMode && (showModal = true)"

@@ -3,8 +3,9 @@ import {computed, onMounted, ref} from 'vue';
 import type {SiteItem} from '../../../../core/config/types';
 import {PhArrowClockwise, PhGlobeHemisphereEast} from '@phosphor-icons/vue';
 import IpInfoDetailModal from './IpInfoDetailModal.vue';
-import {fetchIpInfo, type IpInfo} from './ipInfoData';
+import {fetchIpInfo, readCachedIpInfo, type IpInfo} from './ipInfoData';
 import ToolWidgetState from '../../components/ToolWidgetState.vue';
+import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 
@@ -12,6 +13,7 @@ const info = ref<IpInfo | null>(null);
 const loading = ref(true);
 const errorMessage = ref('');
 const showModal = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 
 const layout = computed(() => {
   const w = Number(props.item.w || 2);
@@ -44,16 +46,34 @@ const loadInfo = async (force = false) => {
   }
 };
 
+const restoreCachedInfo = () => {
+  const cached = readCachedIpInfo();
+  if (!cached) return false;
+  info.value = cached;
+  loading.value = false;
+  errorMessage.value = '';
+  return true;
+};
+
 const openModal = () => {
   if (props.isEditMode) return;
   showModal.value = true;
 };
 
-onMounted(() => loadInfo(false));
+onMounted(() => {
+  restoreCachedInfo();
+});
+
+useDeferredWidgetLoad(rootEl, () => loadInfo(false), {
+  delayMs: 1800,
+  idleTimeoutMs: 6000,
+  metricName: 'ipInfo.initial',
+});
 </script>
 
 <template>
   <div
+      ref="rootEl"
       class="ip-widget w-full h-full rounded-[18px] overflow-hidden cursor-pointer select-none"
       :data-layout="layout.key"
       @click="openModal"

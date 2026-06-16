@@ -17,7 +17,7 @@ export type IpInfo = {
 
 const CACHE_TIME = 20 * 60 * 1000;
 
-const readCachedIpInfo = () => {
+export const readCachedIpInfo = () => {
   const cache = tempStorage.get('ipInfo');
   if (!cache?.data) return null;
   return tempStorage.isValid(cache.ts, CACHE_TIME) ? cache.data as IpInfo : null;

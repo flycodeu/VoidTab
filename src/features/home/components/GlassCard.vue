@@ -35,6 +35,12 @@ const iconSourceMode = ref<"auto" | "none">("none");
 const autoIconLowQuality = ref(false);
 let deferredResolveTimer: ReturnType<typeof setTimeout> | null = null;
 let deferredResolveAttempts = 0;
+let scheduledResolveTimer: ReturnType<typeof setTimeout> | null = null;
+let scheduledResolveIdleId: number | null = null;
+const CARD_ICON_STARTUP_WINDOW_MS = 4500;
+const cardCreatedAt = globalThis.performance?.now ? globalThis.performance.now() : Date.now();
+const iconNow = () => globalThis.performance?.now ? globalThis.performance.now() : Date.now();
+const isStartupIconWindow = () => iconNow() - cardCreatedAt < CARD_ICON_STARTUP_WINDOW_MS;
 
 const revokeObjectUrl = () => {
   if (isObjectUrl.value && autoIconUrl.value.startsWith("blob:")) {
@@ -53,6 +59,18 @@ const clearDeferredResolveTimer = () => {
   if (!deferredResolveTimer) return;
   clearTimeout(deferredResolveTimer);
   deferredResolveTimer = null;
+};
+
+const clearScheduledResolve = () => {
+  if (scheduledResolveTimer) {
+    clearTimeout(scheduledResolveTimer);
+    scheduledResolveTimer = null;
+  }
+  if (scheduledResolveIdleId !== null && typeof window !== "undefined") {
+    const cancelIdle = (window as any).cancelIdleCallback as undefined | ((id: number) => void);
+    if (cancelIdle) cancelIdle(scheduledResolveIdleId);
+    scheduledResolveIdleId = null;
+  }
 };
 
 const directIconUrl = computed(() => {
@@ -75,6 +93,49 @@ const scheduleDeferredResolveRetry = (token: number) => {
   }, 1800 * deferredResolveAttempts);
 };
 
+const applyInstantAutoIcon = () => {
+  if (!isAuto.value || !props.item.url || autoIconUrl.value) return;
+  const instantUrl = getInstantAutoIconUrl(props.item.url, props.item.icon, props.item.iconValue);
+  if (!instantUrl || instantUrl === directIconErrorUrl.value) return;
+  hasLoadError.value = false;
+  iconSourceMode.value = "auto";
+  autoIconLowQuality.value = false;
+  setAutoIconUrl(instantUrl, false);
+};
+
+const scheduleAutoIconResolve = (forceRefresh = false) => {
+  clearScheduledResolve();
+  if (forceRefresh) {
+    void resolveAutoIcon(true);
+    return;
+  }
+
+  const startup = isStartupIconWindow();
+  const delayMs = props.priority === "low"
+      ? (startup ? 1600 : 700)
+      : (startup ? 350 : 80);
+
+  scheduledResolveTimer = setTimeout(() => {
+    scheduledResolveTimer = null;
+    const run = () => {
+      scheduledResolveIdleId = null;
+      void resolveAutoIcon(false);
+    };
+
+    if (typeof window === "undefined") {
+      run();
+      return;
+    }
+
+    const requestIdle = (window as any).requestIdleCallback as undefined | ((cb: () => void, options?: {timeout: number}) => number);
+    if (requestIdle) {
+      scheduledResolveIdleId = requestIdle(run, {timeout: props.priority === "low" ? 2600 : 1200});
+    } else {
+      scheduledResolveTimer = setTimeout(run, props.priority === "low" ? 700 : 0);
+    }
+  }, delayMs);
+};
+
 const resolveAutoIcon = async (forceRefresh = false) => {
   if (!isAuto.value) {
     setAutoIconUrl("", false);
@@ -93,13 +154,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 
   const token = ++resolveToken.value;
   if (!forceRefresh && !autoIconUrl.value) {
-    const instantUrl = getInstantAutoIconUrl(props.item.url, props.item.icon, props.item.iconValue);
-    if (instantUrl && instantUrl !== directIconErrorUrl.value) {
-      hasLoadError.value = false;
-      iconSourceMode.value = "auto";
-      autoIconLowQuality.value = false;
-      setAutoIconUrl(instantUrl, false);
-    }
+    applyInstantAutoIcon();
   }
 
   const result = await resolveAndCacheSiteIcon(props.item.url, store.config.runtime, {
@@ -146,7 +201,9 @@ watch(
       autoIconLowQuality.value = false;
       deferredResolveAttempts = 0;
       clearDeferredResolveTimer();
-      void resolveAutoIcon(false);
+      clearScheduledResolve();
+      applyInstantAutoIcon();
+      scheduleAutoIconResolve(false);
     },
     {immediate: true}
 );
@@ -182,6 +239,7 @@ const handleFallback = () => {
     markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error", preserveExisting: true});
     if (!hasTriedForceRefresh.value) {
       hasTriedForceRefresh.value = true;
+      clearScheduledResolve();
       void resolveAutoIcon(true);
       return;
     }
@@ -310,6 +368,7 @@ onUnmounted(() => {
   ro?.disconnect();
   ro = null;
   clearDeferredResolveTimer();
+  clearScheduledResolve();
   revokeObjectUrl();
 });
 

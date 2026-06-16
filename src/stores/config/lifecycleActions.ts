@@ -34,6 +34,7 @@ export const createLifecycleActions = ({
     onLoadWarning,
 }: LifecycleDeps) => {
     let loadRunId = 0;
+    let loadConfigPromise: Promise<void> | null = null;
 
     const setConfigForBoot = (next: Config) => {
         applyingExternal.value = true;
@@ -103,42 +104,51 @@ export const createLifecycleActions = ({
     };
 
     const loadConfig = async () => {
-        const runId = ++loadRunId;
-        const bootPromise = measurePerformanceAsync('config.load.boot', async () => await configRepository.loadForBoot());
+        if (loadConfigPromise) return loadConfigPromise;
+        if (isLoaded.value) return;
 
-        const firstResult = await Promise.race([bootPromise, waitForBootTimeout()])
-            .catch((error) => ({error}));
+        loadConfigPromise = (async () => {
+            const runId = ++loadRunId;
+            const bootPromise = measurePerformanceAsync('config.load.boot', async () => await configRepository.loadForBoot());
 
-        if (firstResult === 'timeout') {
-            setConfigForBoot(createFallbackConfig());
-            const fallbackRevision = localRevision.value;
-            markPerformance('config.loaded', 'fallback-timeout');
-            onLoadWarning?.('配置加载较慢，已先进入可用界面，后台会继续恢复数据');
+            const firstResult = await Promise.race([bootPromise, waitForBootTimeout()])
+                .catch((error) => ({error}));
 
-            void bootPromise.then((bootResult) => {
-                if (runId !== loadRunId) return;
-                if (localRevision.value !== fallbackRevision) {
+            if (firstResult === 'timeout') {
+                setConfigForBoot(createFallbackConfig());
+                const fallbackRevision = localRevision.value;
+                markPerformance('config.loaded', 'fallback-timeout');
+                onLoadWarning?.('配置加载较慢，已先进入可用界面，后台会继续恢复数据');
+
+                void bootPromise.then((bootResult) => {
+                    if (runId !== loadRunId) return;
+                    if (localRevision.value !== fallbackRevision) {
+                        startScheduler();
+                        onLoadWarning?.('配置已在后台恢复，但检测到你已修改当前界面，已保留当前数据');
+                        return;
+                    }
+                    applyBootResult(runId, bootResult, 'background-after-timeout');
+                }).catch(() => {
+                    onLoadWarning?.('后台配置恢复失败，已保留当前可用界面');
                     startScheduler();
-                    onLoadWarning?.('配置已在后台恢复，但检测到你已修改当前界面，已保留当前数据');
-                    return;
-                }
-                applyBootResult(runId, bootResult, 'background-after-timeout');
-            }).catch(() => {
-                onLoadWarning?.('后台配置恢复失败，已保留当前可用界面');
+                });
+                return;
+            }
+
+            if (firstResult && typeof firstResult === 'object' && 'error' in firstResult) {
+                setConfigForBoot(createFallbackConfig());
                 startScheduler();
-            });
-            return;
-        }
+                markPerformance('config.loaded', 'fallback-error');
+                onLoadWarning?.('配置加载失败，已使用默认配置进入界面');
+                return;
+            }
 
-        if (firstResult && typeof firstResult === 'object' && 'error' in firstResult) {
-            setConfigForBoot(createFallbackConfig());
-            startScheduler();
-            markPerformance('config.loaded', 'fallback-error');
-            onLoadWarning?.('配置加载失败，已使用默认配置进入界面');
-            return;
-        }
+            applyBootResult(runId, firstResult, 'boot');
+        })().finally(() => {
+            loadConfigPromise = null;
+        });
 
-        applyBootResult(runId, firstResult, 'boot');
+        return loadConfigPromise;
     };
 
     const resetToDefault = async () => {

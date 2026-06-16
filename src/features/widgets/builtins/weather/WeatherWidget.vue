@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {ref, onMounted, computed, defineAsyncComponent} from "vue";
-import {useGeolocation} from "@vueuse/core";
 import type {SiteItem} from "../../../../core/config/types.ts";
 import {
   PhCloudSun, PhSun, PhCloud, PhCloudRain, PhSnowflake, PhLightning, PhMapPin, PhSpinner,
@@ -9,6 +8,7 @@ import {
 import {tempStorage} from '../../../../core/storage/tempStorage';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 
 const WeatherDetailModal = defineAsyncComponent(() => import("./WeatherDetailModal.vue"));
 const props = defineProps<{ item: SiteItem }>();
@@ -22,12 +22,7 @@ const isLoading = ref(true);
 const showModal = ref(false);
 const weatherData = ref<any>(null);
 const locationName = ref("定位中...");
-
-const {coords, error} = useGeolocation({
-  enableHighAccuracy: false,
-  timeout: 8000,
-  maximumAge: 60_000,
-});
+const rootEl = ref<HTMLElement | null>(null);
 
 // 图标映射
 const weatherCodeMap: Record<number, { icon: any; label: string; bgClass: string }> = {
@@ -86,6 +81,48 @@ async function reverseGeocode(lat: number, lon: number, fallbackCity?: string) {
   return "未知位置";
 }
 
+const readWeatherCache = () => {
+  const cache = tempStorage.get('weather');
+  return cache && tempStorage.isValid(cache.ts, CACHE_TIME) ? cache : null;
+};
+
+const restoreCachedWeather = () => {
+  const cache = readWeatherCache();
+  if (!cache?.data) return false;
+  weatherData.value = cache.data;
+  locationName.value = cache.city || "未知位置";
+  isLoading.value = false;
+  return true;
+};
+
+const getCurrentCoords = async () => {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    throw new Error('geolocation unavailable');
+  }
+
+  return await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+        (position) => resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        }),
+        reject,
+        {
+          enableHighAccuracy: false,
+          timeout: 8000,
+          maximumAge: 60_000,
+        }
+    );
+  });
+};
+
+const isGeolocationError = (value: unknown) => {
+  return typeof value === 'object'
+      && value !== null
+      && 'code' in value
+      && 'message' in value;
+};
+
 const fetchData = async () => {
   isLoading.value = true;
 
@@ -99,23 +136,8 @@ const fetchData = async () => {
     return;
   }
 
-  // 如果缓存无效，等待定位
-  if (error.value) {
-    locationName.value = "定位失败";
-    isLoading.value = false;
-    return;
-  }
-
-  const lat = coords.value.latitude;
-  const lon = coords.value.longitude;
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    // 还没获取到坐标，且没有有效缓存，稍后重试
-    setTimeout(fetchData, 800);
-    return;
-  }
-
   try {
+    const {latitude: lat, longitude: lon} = await getCurrentCoords();
     const cachedWeather = cache?.data;
     const results = await Promise.allSettled([
       fetchJson(
@@ -168,11 +190,14 @@ const fetchData = async () => {
       ts: Date.now()
     });
 
-  } catch {
+  } catch (err) {
     if (cache?.data) {
       weatherData.value = cache.data;
       locationName.value = cache.city || "离线缓存";
       toast.warning('天气更新失败，已使用离线缓存');
+    } else if (isGeolocationError(err)) {
+      locationName.value = "定位失败";
+      toast.warning('定位不可用，暂时无法加载本地天气');
     } else {
       locationName.value = "网络错误";
       toast.error('天气数据加载失败，请稍后重试');
@@ -182,7 +207,15 @@ const fetchData = async () => {
   }
 };
 
-onMounted(fetchData);
+onMounted(() => {
+  restoreCachedWeather();
+});
+
+useDeferredWidgetLoad(rootEl, fetchData, {
+  delayMs: 1800,
+  idleTimeoutMs: 6500,
+  metricName: 'weather.initial',
+});
 
 // ================= 布局自适应 (代码保持不变) =================
 type Variant = "mini" | "wide" | "square" | "tallNarrow" | "tall" | "large";
@@ -230,7 +263,7 @@ const onClickCard = () => {
 </script>
 
 <template>
-  <div class="w-full h-full relative cursor-pointer min-w-0 min-h-0" @click.stop="onClickCard">
+  <div ref="rootEl" class="w-full h-full relative cursor-pointer min-w-0 min-h-0" @click.stop="onClickCard">
     <div
         class="weather-card w-full h-full rounded-[18px] overflow-hidden flex flex-col relative text-white transition-all select-none min-w-0 min-h-0"
         :class="[isLoading ? 'bg-gray-200' : layout.bgClass]"

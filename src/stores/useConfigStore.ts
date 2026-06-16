@@ -11,7 +11,7 @@ import {createConfigState} from './config/state';
 import {createSyncActions} from './config/syncActions';
 
 export const useConfigStore = defineStore('config', () => {
-    initPerformanceMonitor({maxEntries: 120, exposeGlobal: true});
+    initPerformanceMonitor({maxEntries: 160, exposeGlobal: true});
 
     const toast = useToast();
     const {

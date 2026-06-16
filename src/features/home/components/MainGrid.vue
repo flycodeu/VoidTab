@@ -172,6 +172,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   iconPreloadDisposed = true;
   cancelIconPreloadBatches();
+  if (steadyIconPreloadTimer !== null) {
+    window.clearTimeout(steadyIconPreloadTimer);
+    steadyIconPreloadTimer = null;
+  }
   mq?.removeEventListener?.("change", onMqChange);
   ro?.disconnect();
   if (onWindowResize) window.removeEventListener("resize", onWindowResize);
@@ -213,9 +217,15 @@ const densityItemClass = computed(() => `density-mode-${store.config.theme.densi
 
 const PRELOAD_CURRENT_GROUP_LIMIT = 48;
 const PRELOAD_NEIGHBOR_GROUP_LIMIT = 36;
+const PRELOAD_STARTUP_WINDOW_MS = 5000;
+const PRELOAD_STARTUP_CURRENT_GROUP_LIMIT = 18;
 let primaryIconPreload: SiteIconPreloadHandle | null = null;
 let secondaryIconPreload: SiteIconPreloadHandle | null = null;
 let iconPreloadDisposed = false;
+let steadyIconPreloadTimer: number | null = null;
+const mainGridCreatedAt = globalThis.performance?.now ? globalThis.performance.now() : Date.now();
+const gridNow = () => globalThis.performance?.now ? globalThis.performance.now() : Date.now();
+const isStartupPreloadWindow = () => gridNow() - mainGridCreatedAt < PRELOAD_STARTUP_WINDOW_MS;
 
 const isAutoIconSiteItem = (item: LayoutItem) => {
   if (!item || item.kind === "widget") return false;
@@ -264,22 +274,36 @@ const scheduleIconPreloadBatches = useDebounceFn(() => {
   if (!runtime) return;
 
   const inExtension = isExtensionContext();
+  const startup = isStartupPreloadWindow();
+  if (startup && steadyIconPreloadTimer === null && typeof window !== "undefined") {
+    steadyIconPreloadTimer = window.setTimeout(() => {
+      steadyIconPreloadTimer = null;
+      if (!iconPreloadDisposed) scheduleIconPreloadBatches();
+    }, PRELOAD_STARTUP_WINDOW_MS + 350);
+  } else if (!startup && steadyIconPreloadTimer !== null) {
+    window.clearTimeout(steadyIconPreloadTimer);
+    steadyIconPreloadTimer = null;
+  }
+
   const currentGroup = activeGroupData.value;
-  const currentUrls = collectAutoIconUrls(currentGroup ? [currentGroup] : [], inExtension ? PRELOAD_CURRENT_GROUP_LIMIT : 12);
+  const currentLimit = inExtension
+      ? (startup ? PRELOAD_STARTUP_CURRENT_GROUP_LIMIT : PRELOAD_CURRENT_GROUP_LIMIT)
+      : (startup ? 8 : 12);
+  const currentUrls = collectAutoIconUrls(currentGroup ? [currentGroup] : [], currentLimit);
   if (currentUrls.length) {
     primaryIconPreload = queueSiteIconPreload(currentUrls, runtime, {
-      concurrency: isMobile.value ? 2 : (inExtension ? 5 : 2),
+      concurrency: startup ? (isMobile.value ? 1 : 2) : (isMobile.value ? 2 : (inExtension ? 5 : 2)),
       fastFirst: true,
       fastTimeoutMs: 900,
       timeoutMs: 1400,
       browserWarm: true,
-      browserWarmLimit: inExtension ? 3 : 2,
+      browserWarmLimit: startup ? 1 : (inExtension ? 3 : 2),
       backgroundUpgrade: false,
-      idleTimeoutMs: 250,
+      idleTimeoutMs: startup ? 1200 : 250,
     });
   }
 
-  const neighborUrls = collectAutoIconUrls(getNeighborGroups(), inExtension ? PRELOAD_NEIGHBOR_GROUP_LIMIT : 4);
+  const neighborUrls = startup ? [] : collectAutoIconUrls(getNeighborGroups(), inExtension ? PRELOAD_NEIGHBOR_GROUP_LIMIT : 4);
   if (neighborUrls.length) {
     secondaryIconPreload = queueSiteIconPreload(neighborUrls, runtime, {
       concurrency: inExtension ? 2 : 1,

@@ -31,6 +31,16 @@ const pingText = computed(() => {
 const netType = computed(() => props.stats?.net.effectiveType?.toUpperCase() ?? 'WIFI');
 const downlink = computed(() => props.stats?.net.downlinkMbps ? `${props.stats.net.downlinkMbps} Mbps` : '--');
 
+const performanceInfo = computed(() => {
+  const perf = props.stats?.performance;
+  return {
+    appP95: typeof perf?.app.p95DurationMs === 'number' ? `${perf.app.p95DurationMs} ms` : '--',
+    networkP95: typeof perf?.network.p95DurationMs === 'number' ? `${perf.network.p95DurationMs} ms` : '--',
+    budgetText: perf?.budgets ? `${perf.budgets.violationCount}/${perf.budgets.trackedCount}` : '--',
+    lastBudgetViolation: perf?.app.lastBudgetViolation || '--',
+  };
+});
+
 // 内存
 const memoryInfo = computed(() => {
   const m = props.stats?.memory;
@@ -216,6 +226,35 @@ const uptime = computed(() => {
                       {{ memoryInfo.text }}
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <!-- 性能预算 -->
+              <div class="col-span-1 md:col-span-2 settings-card rounded-2xl p-5 border transition-colors">
+                <div class="flex items-center gap-2 mb-5">
+                  <PhActivity size="20" class="settings-accent"/>
+                  <span class="text-sm font-bold settings-text">性能预算</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div class="settings-subcard rounded-xl p-3 border min-w-0">
+                    <div class="text-[10px] settings-muted uppercase font-bold mb-1">Budget</div>
+                    <div class="text-sm font-mono settings-text truncate">{{ performanceInfo.budgetText }}</div>
+                  </div>
+                  <div class="settings-subcard rounded-xl p-3 border min-w-0">
+                    <div class="text-[10px] settings-muted uppercase font-bold mb-1">App P95</div>
+                    <div class="text-sm font-mono settings-text truncate">{{ performanceInfo.appP95 }}</div>
+                  </div>
+                  <div class="settings-subcard rounded-xl p-3 border min-w-0">
+                    <div class="text-[10px] settings-muted uppercase font-bold mb-1">Network P95</div>
+                    <div class="text-sm font-mono settings-text truncate">{{ performanceInfo.networkP95 }}</div>
+                  </div>
+                </div>
+
+                <div class="settings-divider my-4"></div>
+                <div class="flex items-center justify-between gap-4 min-w-0">
+                  <span class="text-xs settings-muted shrink-0">最近超限</span>
+                  <span class="text-xs font-mono settings-text truncate">{{ performanceInfo.lastBudgetViolation }}</span>
                 </div>
               </div>
 

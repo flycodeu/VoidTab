@@ -279,15 +279,66 @@ test('app exposes semantic landmarks and skip navigation', async () => {
 test('boot loading is fast-path with post-boot recovery', async () => {
   const lifecycle = await read('src/stores/config/lifecycleActions.ts');
   const repository = await read('src/core/config/repository.ts');
+  const main = await read('src/main.ts');
+  const performance = await read('src/shared/utils/performance.ts');
+  const systemStats = await read('src/core/system/systemStats.ts');
 
   assert.match(lifecycle, /BOOT_SOFT_TIMEOUT_MS/);
+  assert.match(lifecycle, /loadConfigPromise/);
   assert.match(lifecycle, /config\.load\.boot/);
   assert.match(lifecycle, /fallback-timeout/);
   assert.match(lifecycle, /config\.postBoot/);
   assert.match(lifecycle, /localRevision\.value !== fallbackRevision/);
+  assert.match(main, /const configReady = store\.loadConfig\(\)/);
+  assert.match(main, /app\.mount\('#app'\)/);
+  assert.doesNotMatch(main, /await store\.loadConfig\(\)/);
+  assert.match(performance, /DEFAULT_PERFORMANCE_BUDGETS/);
+  assert.match(performance, /getPerformanceBudgetReport/);
+  assert.match(systemStats, /budgets: VoidTabPerformanceBudgetReport/);
   assert.match(repository, /ConfigBootDeferredWork/);
   assert.match(repository, /deferred\.wallpaper/);
   assert.match(repository, /deferred\.legacySave/);
+});
+
+test('network widgets defer first external request until visible idle time', async () => {
+  const deferred = await read('src/shared/composables/useDeferredWidgetLoad.ts');
+  const weather = await read('src/features/widgets/builtins/weather/WeatherWidget.vue');
+  const github = await read('src/features/widgets/builtins/github-trending/GitHubTrendingWidget.vue');
+  const stock = await read('src/features/widgets/builtins/stock-ticker/StockTickerWidget.vue');
+  const ip = await read('src/features/widgets/builtins/ip-info/IpInfoWidget.vue');
+  const holiday = await read('src/features/widgets/builtins/holiday/HolidayWidget.vue');
+
+  assert.match(deferred, /IntersectionObserver/);
+  assert.match(deferred, /document\.visibilityState === 'hidden'/);
+  assert.match(deferred, /requestIdleCallback/);
+  assert.match(deferred, /widget\.load\.deferred/);
+
+  for (const source of [weather, github, stock, ip, holiday]) {
+    assert.match(source, /useDeferredWidgetLoad/);
+    assert.match(source, /ref="rootEl"/);
+  }
+
+  assert.doesNotMatch(weather, /useGeolocation/);
+  assert.doesNotMatch(weather, /onMounted\(fetchData\)/);
+  assert.doesNotMatch(github, /onMounted\(\(\) => fetchTrends\(\)\)/);
+  assert.match(stock, /useIntervalFn\(fetchData,\s*config\.value\.refreshRate \* 1000,\s*\{immediate:\s*false\}\)/);
+  assert.match(ip, /readCachedIpInfo/);
+});
+
+test('site icon work is throttled during the startup window', async () => {
+  const grid = await read('src/features/home/components/MainGrid.vue');
+  const card = await read('src/features/home/components/GlassCard.vue');
+
+  assert.match(grid, /PRELOAD_STARTUP_CURRENT_GROUP_LIMIT\s*=\s*18/);
+  assert.match(grid, /isStartupPreloadWindow/);
+  assert.match(grid, /idleTimeoutMs: startup \? 1200 : 250/);
+  assert.match(grid, /const neighborUrls = startup \? \[\] : collectAutoIconUrls/);
+  assert.match(grid, /steadyIconPreloadTimer/);
+
+  assert.match(card, /CARD_ICON_STARTUP_WINDOW_MS/);
+  assert.match(card, /scheduleAutoIconResolve/);
+  assert.match(card, /requestIdleCallback/);
+  assert.match(card, /props\.priority === "low"/);
 });
 
 test('main wheel navigation switches groups only at scroll boundaries', async () => {

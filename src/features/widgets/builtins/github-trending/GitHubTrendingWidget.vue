@@ -7,12 +7,14 @@ import GithubTrendModal from './GithubTrendModal.vue';
 import {tempStorage} from '../../../../core/storage/tempStorage';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 
 const props = defineProps<{ item: SiteItem }>();
 const toast = useToast();
 const trends = ref<any[]>([]);
 const isLoading = ref(true);
 const showModal = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 
 const EXPIRE_TIME = 2 * 60 * 60 * 1000; // 2小时过期
 type GitHubSearchResponse = {items?: any[]};
@@ -64,7 +66,23 @@ const fetchTrends = async (force = false) => {
   }
 };
 
-onMounted(() => fetchTrends());
+const restoreCachedTrends = () => {
+  const cache = tempStorage.get('github');
+  if (!cache || !tempStorage.isValid(cache.ts, EXPIRE_TIME)) return false;
+  trends.value = Array.isArray(cache.data) ? cache.data : [];
+  isLoading.value = false;
+  return trends.value.length > 0;
+};
+
+onMounted(() => {
+  restoreCachedTrends();
+});
+
+useDeferredWidgetLoad(rootEl, () => fetchTrends(false), {
+  delayMs: 1500,
+  idleTimeoutMs: 6000,
+  metricName: 'githubTrending.initial',
+});
 
 const layout = computed(() => {
   const w = Number(props.item?.w ?? 2);
@@ -91,6 +109,7 @@ const topRepos = computed(() => {
 
 <template>
   <div
+      ref="rootEl"
       class="gh-card w-full h-full relative flex flex-col rounded-[22px] overflow-hidden cursor-pointer select-none"
       :data-layout="layout.key"
       @click="showModal = true"

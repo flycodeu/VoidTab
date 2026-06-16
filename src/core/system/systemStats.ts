@@ -1,5 +1,11 @@
 // src/core/system/systemStats.ts
 import {
+    getPerformanceBudgetReport,
+    getPerformanceSummary,
+    type VoidTabPerformanceBudgetReport,
+    type VoidTabPerformanceSummary,
+} from '../../shared/utils/performance';
+import {
     fetchJsonWithRetry,
     fetchWithRetry,
     getNetworkPerformanceSummary,
@@ -50,6 +56,8 @@ export type SystemStats = {
 
 export type SystemPerformanceStats = {
     network: NetworkPerformanceSummary;
+    app: VoidTabPerformanceSummary;
+    budgets: VoidTabPerformanceBudgetReport;
     measures: {
         recentCount: number;
         failureCount: number;
@@ -207,6 +215,8 @@ function collectPerformanceStats(): SystemPerformanceStats {
 
     return {
         network: getNetworkPerformanceSummary(),
+        app: getPerformanceSummary(),
+        budgets: getPerformanceBudgetReport(),
         measures: {
             recentCount: measures.length,
             failureCount: measures.filter((entry) => !entry.ok).length,

@@ -8,12 +8,14 @@ import {
 import {tempStorage} from "../../../../core/storage/tempStorage.ts";
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 
 const HolidayDetailModal = defineAsyncComponent(() => import('./HolidayDetailModal.vue'));
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const toast = useToast();
 const showModal = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 
 // 优化：每分钟刷新一次即可，不需要每秒刷新
 const now = useNow({interval: 60 * 1000});
@@ -43,6 +45,14 @@ const defaultHolidays: HolidayItem[] = [
 ];
 
 const holidays = ref<HolidayItem[]>(defaultHolidays);
+
+const restoreCachedHolidays = () => {
+  const year = new Date().getFullYear();
+  const cache = tempStorage.get('holiday');
+  if (!cache || cache.year !== year || !tempStorage.isValid(cache.ts, 24 * 60 * 60 * 1000)) return false;
+  holidays.value = transformData(cache.data);
+  return true;
+};
 
 //  核心逻辑：每天只获取一次
 const fetchHolidays = async () => {
@@ -122,7 +132,15 @@ function transformData(apiData: any): HolidayItem[] {
   return result.length ? result : defaultHolidays;
 }
 
-onMounted(fetchHolidays);
+onMounted(() => {
+  restoreCachedHolidays();
+});
+
+useDeferredWidgetLoad(rootEl, fetchHolidays, {
+  delayMs: 2200,
+  idleTimeoutMs: 7000,
+  metricName: 'holiday.initial',
+});
 
 const upcomingList = computed(() => {
   const today = now.value;
@@ -158,6 +176,7 @@ const layout = computed(() => {
 
 <template>
   <div
+      ref="rootEl"
       class="w-full h-full relative cursor-pointer group rounded-[22px] overflow-hidden transition-all duration-300 shadow-sm hover:shadow-md select-none"
       :class="[
         !isEditMode ? 'cursor-pointer' : 'cursor-move',
