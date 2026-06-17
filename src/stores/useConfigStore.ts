@@ -84,6 +84,13 @@ export const useConfigStore = defineStore('config', () => {
         downloadBackup: syncActions.downloadBackup,
         destroy,
 
+        // Conflict resolution
+        syncConflictState: syncActions.conflictState,
+        syncConflictSnapshot: syncActions.conflictSnapshot,
+        resolveKeepLocal: syncActions.resolveKeepLocal,
+        resolveUseRemote: syncActions.resolveUseRemote,
+        resolvePostpone: syncActions.resolvePostpone,
+
         resetToDefault: lifecycleActions.resetToDefault,
     };
 });

@@ -2,6 +2,27 @@
 
 export type SyncProviderId = 'webdav' | 'none';
 
+export type SyncConflictState = 'none' | 'detected' | 'pending' | 'resolving';
+
+export interface ConflictSummary {
+    localGroupCount: number;
+    remoteGroupCount: number;
+    localSiteCount: number;
+    remoteSiteCount: number;
+    localThemeLabel: string;
+    remoteThemeLabel: string;
+    localLastModified: number;
+    remoteLastModified: number;
+}
+
+export interface ConflictSnapshot {
+    remoteText: string;
+    remoteMeta: { etag?: string; mtime?: string };
+    localHash: string;
+    detectedAt: number;
+    summary: ConflictSummary;
+}
+
 export interface SyncProfileBase {
     provider: SyncProviderId;
     enabled: boolean;
@@ -14,6 +35,11 @@ export interface SyncProfileBase {
 
     // 定时同步间隔（分钟）不填默认 10（scheduler 用）
     intervalMinutes?: number;
+
+    // 冲突检测
+    lastSyncedHash?: string;
+    conflictState?: SyncConflictState;
+    conflictSnapshot?: ConflictSnapshot;
 }
 
 export interface WebDavProfile extends SyncProfileBase {

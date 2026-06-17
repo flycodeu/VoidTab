@@ -1,24 +1,25 @@
 // src/core/sync/scheduler.ts
-import type { SyncOpResult, SyncProfile } from './types';
+import type { SyncOpResult, SyncProfile, ConflictSnapshot } from './types';
 import { syncService } from './service';
 
 export interface SyncSchedulerOptions {
-    /** 取当前 sync profile */
     getProfile: () => SyncProfile;
-
-    /** 取要上传的文本（通常 JSON.stringify(config)） */
     getUploadPayload: () => string;
-
-    /** 本地配置变更版本号（每次用户修改 +1） */
     getLocalRevision: () => number;
 
-    /** 当远端有更新时：把远端原始文本交给上层（store）去 parse+migrate+normalize */
+    /** Current content hash of local config (for dirty detection). */
+    getCurrentHash: () => string;
+
+    /** Hash that was recorded at the last successful sync. */
+    getLastSyncedHash: () => string;
+
+    /** Called when remote is newer AND local is clean → safe to auto-apply. */
     onRemotePayload: (remoteText: string, meta?: { etag?: string; mtime?: string }) => Promise<void> | void;
 
-    /** 同步成功后，允许上层更新 profile 的 lastSyncTime/etag/mtime */
-    onSyncMeta?: (meta: { lastSyncTime: number; etag?: string; mtime?: string }) => void;
+    /** Called when both local and remote changed → show conflict UI, do NOT auto-apply. */
+    onConflictDetected: (snapshot: ConflictSnapshot) => void;
 
-    /** 失败时回调（可选） */
+    onSyncMeta?: (meta: { lastSyncTime: number; etag?: string; mtime?: string }) => void;
     onError?: (err: unknown) => void;
 }
 
@@ -32,11 +33,8 @@ export class SyncScheduler {
     start() {
         if (this.running) return;
         this.running = true;
-
-        // 启动时先记录当前 revision（避免一启动就误判要上传）
         this.lastUploadedRevision = this.opt.getLocalRevision();
-
-        this.tick(); // 立即跑一次
+        this.tick();
         this.scheduleNext();
     }
 
@@ -48,65 +46,78 @@ export class SyncScheduler {
         }
     }
 
-    /** 手动触发（比如 UI 点一次“立即同步”时也可以用） */
     async tick() {
         if (!this.running) return;
 
         const profile = this.opt.getProfile();
         if (!profile.enabled || profile.provider === 'none') return;
+        if (!profile.autoSync) return;
+
+        // If a conflict is pending user decision, pause auto-sync entirely.
+        if (profile.conflictState === 'pending' || profile.conflictState === 'detected') return;
 
         const intervalMin = profile.intervalMinutes ?? 10;
 
-        // autoSync=false 时：scheduler 仍可存在，但只在手动 tick 时执行
-        // 如果你希望 autoSync=false 完全不跑 tick，把下面改成 return
-        if (!profile.autoSync) return;
-
         try {
-            // 1) 先下载，判断远端是否变化（以 etag/mtime 为准）
             const dl: SyncOpResult = await syncService.download(profile);
-
-            // download 失败：直接结束本轮
-            if (!dl.ok) return;
-
-            const remoteChanged =
-                (dl.remoteEtag && dl.remoteEtag !== (profile.lastRemoteEtag || '')) ||
-                (dl.remoteMtime && dl.remoteMtime !== (profile.lastRemoteMtime || ''));
-
-            // 2) 如果远端变了：交给上层合并/覆盖（这里不做 merge，交给 config 层）
-            if (remoteChanged && dl.data) {
-                await this.opt.onRemotePayload(dl.data, { etag: dl.remoteEtag, mtime: dl.remoteMtime });
-
-                // 更新 meta
-                this.opt.onSyncMeta?.({
-                    lastSyncTime: Date.now(),
-                    etag: dl.remoteEtag,
-                    mtime: dl.remoteMtime
-                });
-
-                // 远端覆盖本地后，本地 revision 应该算“已同步”
-                this.lastUploadedRevision = this.opt.getLocalRevision();
-
-                // 本轮结束
+            if (!dl.ok) {
+                this.scheduleNext(intervalMin);
                 return;
             }
 
-            // 3) 远端没变：如果本地有变更 revision -> 上传
+            const remoteChanged =
+                (dl.remoteEtag && dl.remoteEtag !== (profile.lastRemoteEtag ?? '')) ||
+                (dl.remoteMtime && dl.remoteMtime !== (profile.lastRemoteMtime ?? ''));
+
+            if (remoteChanged && dl.data) {
+                const currentHash = this.opt.getCurrentHash();
+                const syncedHash = this.opt.getLastSyncedHash();
+                const localDirty = !!syncedHash && currentHash !== syncedHash;
+
+                if (localDirty) {
+                    // True conflict: both sides changed since last sync.
+                    // Build a minimal snapshot and hand off to the UI layer.
+                    const snapshot: ConflictSnapshot = {
+                        remoteText: dl.data,
+                        remoteMeta: { etag: dl.remoteEtag, mtime: dl.remoteMtime },
+                        localHash: currentHash,
+                        detectedAt: Date.now(),
+                        // summary is filled in by syncActions which has access to full config
+                        summary: {
+                            localGroupCount: 0,
+                            remoteGroupCount: 0,
+                            localSiteCount: 0,
+                            remoteSiteCount: 0,
+                            localThemeLabel: '',
+                            remoteThemeLabel: '',
+                            localLastModified: 0,
+                            remoteLastModified: 0,
+                        },
+                    };
+                    this.opt.onConflictDetected(snapshot);
+                    // Do not schedule next tick — scheduler stays paused until conflict is resolved.
+                    return;
+                }
+
+                // Local is clean (or first sync) → safe to auto-apply remote.
+                await this.opt.onRemotePayload(dl.data, { etag: dl.remoteEtag, mtime: dl.remoteMtime });
+                this.opt.onSyncMeta?.({ lastSyncTime: Date.now(), etag: dl.remoteEtag, mtime: dl.remoteMtime });
+                this.lastUploadedRevision = this.opt.getLocalRevision();
+                this.scheduleNext(intervalMin);
+                return;
+            }
+
+            // Remote unchanged: upload if local has new changes.
             const localRev = this.opt.getLocalRevision();
             if (localRev > this.lastUploadedRevision) {
                 const payload = this.opt.getUploadPayload();
                 const up: SyncOpResult = await syncService.upload(profile, payload);
-
                 if (up.ok) {
                     this.lastUploadedRevision = localRev;
-                    this.opt.onSyncMeta?.({
-                        lastSyncTime: Date.now(),
-                        etag: up.remoteEtag,
-                        mtime: up.remoteMtime
-                    });
+                    this.opt.onSyncMeta?.({ lastSyncTime: Date.now(), etag: up.remoteEtag, mtime: up.remoteMtime });
                 }
             }
 
-            // 4) 继续下一轮
             this.scheduleNext(intervalMin);
         } catch (e) {
             this.opt.onError?.(e);
@@ -117,12 +128,7 @@ export class SyncScheduler {
     private scheduleNext(intervalMinutes?: number) {
         if (!this.running) return;
         if (this.timer != null) clearTimeout(this.timer);
-
         const min = intervalMinutes ?? (this.opt.getProfile().intervalMinutes ?? 10);
-        const ms = Math.max(1, min) * 60 * 1000;
-
-        this.timer = window.setTimeout(() => {
-            this.tick();
-        }, ms);
+        this.timer = window.setTimeout(() => this.tick(), Math.max(1, min) * 60 * 1000);
     }
 }

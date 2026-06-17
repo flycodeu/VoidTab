@@ -90,6 +90,10 @@ function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
         lastRemoteEtag: typeof input.lastRemoteEtag === 'string' ? input.lastRemoteEtag : fallback.lastRemoteEtag,
         lastRemoteMtime: typeof input.lastRemoteMtime === 'string' ? input.lastRemoteMtime : fallback.lastRemoteMtime,
         intervalMinutes: clampInt(input.intervalMinutes, 1, 1440, fallback.intervalMinutes ?? 10),
+        // Conflict detection fields — preserved as-is when restoring from remote
+        lastSyncedHash: typeof input.lastSyncedHash === 'string' ? input.lastSyncedHash : undefined,
+        conflictState: undefined,     // never restore conflict state from remote payload
+        conflictSnapshot: undefined,  // never restore conflict snapshot from remote payload
     };
 
     if (provider === 'webdav') {
@@ -500,6 +504,11 @@ export function normalizeConfig(raw: any): Config {
                 desaturate: 0,
             }
         ),
+        activeThemePack: (() => {
+            const v = (input.theme as any)?.activeThemePack;
+            const valid = ['clean', 'glass', 'office', 'void-cyber'];
+            return valid.includes(v) ? v : null;
+        })(),
     };
 
 

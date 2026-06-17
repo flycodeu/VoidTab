@@ -1,5 +1,7 @@
 import {watch} from 'vue';
 import {applyThemeToDom} from './applyThemeToDom.ts';
+import {applyThemePackCssVars, clearThemePackCssVars} from '../../../core/theme/applyThemePack.ts';
+import {themePackMap} from '../../../core/theme/themePackPresets.ts';
 
 type ReadabilityMode = 'auto' | 'darken' | 'lighten';
 
@@ -155,6 +157,15 @@ function applyReadability(theme: ThemeLike) {
     html.style.setProperty('--readability-saturate', String(1 - (desaturate / 100)));
 }
 
+function applyActivePack(theme: ThemeLike) {
+    const packId = (theme as any).activeThemePack as string | null | undefined;
+    if (packId) {
+        const preset = themePackMap.get(packId as any);
+        if (preset) { applyThemePackCssVars(preset); return; }
+    }
+    clearThemePackCssVars();
+}
+
 export function useThemeRuntimeSync(store: StoreLike) {
     watch(
         () => store.config.theme,
@@ -163,9 +174,8 @@ export function useThemeRuntimeSync(store: StoreLike) {
             applyTechFont(theme);
             applyBreathing(theme);
             applyNeon(theme);
-
-            //  新增
             applyReadability(theme);
+            applyActivePack(theme);
         },
         {immediate: true, deep: true}
     );

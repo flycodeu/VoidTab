@@ -8,10 +8,14 @@ import {
   PhPalette,
   PhImage,
   PhTrash,
-  PhFileImage
+  PhFileImage,
+  PhCheck,
 } from '@phosphor-icons/vue';
 import { wallpaperStorage } from '../../../../core/wallpaper/storage';
 import {useToast} from '../../../../shared/composables/useToast';
+import { themePackPresets } from '../../../../core/theme/themePackPresets';
+import type { ThemePackId } from '../../../../core/theme/themePackPresets';
+import { applyThemePackToTheme, applyThemePackCssVars, clearThemePackCssVars } from '../../../../core/theme/applyThemePack';
 
 const store = useConfigStore();
 const toast = useToast();
@@ -307,10 +311,95 @@ const readabilityDesaturate = computed({
     readability.value.desaturate = Math.max(0, Math.min(100, Number(v)));
   },
 });
+
+/** ── Theme Pack ── */
+const activePackId = computed<ThemePackId | null | undefined>(
+  () => (store.config.theme as any).activeThemePack as ThemePackId | null | undefined
+);
+
+const applyThemePack = (packId: ThemePackId) => {
+  const preset = themePackPresets.find(p => p.id === packId);
+  if (!preset) return;
+  applyThemePackToTheme(store.config.theme as unknown as Record<string, unknown>, preset);
+  applyThemePackCssVars(preset);
+  applyTheme();
+  toast.success(`已应用「${preset.nameZh}」主题`);
+};
+
+// When the active pack changes externally (e.g. from sync), re-apply its CSS vars.
+watch(
+  () => (store.config.theme as any).activeThemePack,
+  (packId) => {
+    if (!packId) { clearThemePackCssVars(); return; }
+    const preset = themePackPresets.find(p => p.id === packId);
+    if (preset) applyThemePackCssVars(preset);
+  },
+  { immediate: false }
+);
 </script>
 
 <template>
   <div class="space-y-6 animate-fade-in" style="color: var(--settings-text);">
+
+    <!-- ── Theme Pack Selector ── -->
+    <div
+        class="p-5 rounded-2xl border space-y-3"
+        style="background-color: var(--settings-panel); border-color: var(--settings-border);"
+    >
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-sm opacity-80">主题风格</h3>
+        <span class="text-[11px] opacity-40">应用后壁纸和分组不受影响</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <button
+            v-for="pack in themePackPresets"
+            :key="pack.id"
+            class="relative rounded-xl overflow-hidden border-2 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:outline-none"
+            :style="{
+              borderColor: activePackId === pack.id ? 'var(--accent-color)' : 'transparent',
+              boxShadow: activePackId === pack.id ? '0 0 0 1px var(--accent-color)' : 'none',
+            }"
+            :title="pack.description"
+            @click="applyThemePack(pack.id)"
+        >
+          <!-- Preview gradient -->
+          <div
+              class="h-14 w-full"
+              :style="{ background: pack.previewGradient }"
+          />
+
+          <!-- Label bar -->
+          <div
+              class="px-2 py-1.5 text-left"
+              :style="{ background: pack.previewIsDark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.88)' }"
+          >
+            <div
+                class="font-bold text-[11px] leading-tight truncate"
+                :style="{ color: pack.previewIsDark ? 'rgba(255,255,255,0.92)' : '#111827' }"
+            >
+              {{ pack.nameZh }}
+            </div>
+            <div
+                class="text-[10px] leading-tight opacity-60 truncate"
+                :style="{ color: pack.previewIsDark ? 'rgba(255,255,255,0.7)' : '#374151' }"
+            >
+              {{ pack.name }}
+            </div>
+          </div>
+
+          <!-- Active checkmark -->
+          <div
+              v-if="activePackId === pack.id"
+              class="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+              style="background: var(--accent-color);"
+          >
+            <PhCheck size="11" weight="bold" class="text-white" />
+          </div>
+        </button>
+      </div>
+    </div>
+
     <div
         class="inline-flex w-full p-1 rounded-2xl border"
         style="background-color: var(--settings-panel); border-color: var(--settings-border);"

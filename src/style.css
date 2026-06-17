@@ -124,6 +124,12 @@
     --term-glow-alpha: 0.18;
     --sidebar-active: rgba(var(--accent-color-rgb), 0.12);
 
+    /* ── Theme Pack Tokens (dark defaults, overridden per pack) ─────────── */
+    --theme-pack-card-bg: rgba(255, 255, 255, 0.08);
+    --theme-pack-card-border: rgba(255, 255, 255, 0.12);
+    --neon-glow-color: #00FFD1;
+    --neon-glow-strength: 0;
+
 }
 
 html.light {
@@ -171,6 +177,12 @@ html.light {
     --modal-shadow: var(--overlay-panel-shadow);
     --settings-shadow: var(--overlay-panel-shadow);
     --settings-shadow-soft: var(--overlay-panel-shadow-soft);
+
+    /* ── Theme Pack Tokens (light defaults) ─────────────────────────────── */
+    --theme-pack-card-bg: rgba(255, 255, 255, 0.92);
+    --theme-pack-card-border: rgba(0, 0, 0, 0.08);
+    --neon-glow-color: #00FFD1;
+    --neon-glow-strength: 0;
 
     /*  Widgets（主面板卡片：不透明，浅灰/浅白） */
     --widget-surface: #f3f4f6; /* 浅灰 */
@@ -641,5 +653,69 @@ html.light .panel-modal [class*="text-white"] {
     [class*="glass-"] {
         background: rgba(var(--sidebar-surface-rgb, 21, 21, 24), 0.92) !important;
     }
+}
+
+/* ========================================================================== */
+/* Theme Pack Visual Overrides                                                 */
+/* Targets: .card-shell (GlassCard/site bookmarks) and .widget-card (widgets) */
+/* Each pack gets its own HTML class (tp-*) via applyThemePackCssVars          */
+/* ========================================================================== */
+
+/* ---------- Glass (tp-glass): white-translucent frosted cards -------------- */
+html.tp-glass .card-shell {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08)),
+        rgba(255,255,255,0.06) !important;
+    border-color: rgba(255,255,255,0.22) !important;
+    backdrop-filter: blur(24px) saturate(200%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.28) inset,
+                0 12px 32px rgba(0, 0, 0, 0.40) !important;
+}
+html.tp-glass .site-card:hover .card-shell {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.12)),
+        rgba(255,255,255,0.10) !important;
+    border-color: rgba(var(--accent-color-rgb), 0.55) !important;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.32) inset,
+                0 0 0 1px rgba(var(--accent-color-rgb), 0.18),
+                0 18px 38px rgba(0, 0, 0, 0.48) !important;
+}
+
+/* ---------- Office (tp-office): solid white cards, no blur ---------------- */
+html.tp-office .card-shell {
+    background: rgba(255, 255, 255, 0.90) !important;
+    border-color: rgba(100, 116, 139, 0.16) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(0, 0, 0, 0.05) !important;
+}
+html.tp-office .card-shell::before {
+    opacity: 0.06 !important;
+}
+html.tp-office .site-card:hover .card-shell {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(var(--accent-color-rgb), 0.32) !important;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10),
+                0 0 0 1px rgba(var(--accent-color-rgb), 0.14) !important;
+    transform: translateY(-2px);
+}
+
+/* ---------- Void Cyber: neon glow on site cards & widget cards ------------ */
+/* Uses .theme-neon class (set by useThemeRuntimeSync when neonGlow=true)    */
+.theme-neon .card-shell {
+    border-color: rgba(var(--accent-color-rgb), 0.40) !important;
+    box-shadow: 0 0 8px rgba(var(--accent-color-rgb), 0.28),
+                0 0 20px rgba(var(--accent-color-rgb), 0.10),
+                inset 0 0 6px rgba(var(--accent-color-rgb), 0.05),
+                0 10px 26px rgba(0, 0, 0, 0.60) !important;
+}
+.theme-neon .site-card:hover .card-shell {
+    border-color: rgba(var(--accent-color-rgb), 0.75) !important;
+    box-shadow: 0 0 16px rgba(var(--accent-color-rgb), 0.50),
+                0 0 36px rgba(var(--accent-color-rgb), 0.22),
+                inset 0 0 10px rgba(var(--accent-color-rgb), 0.08),
+                0 18px 40px rgba(0, 0, 0, 0.70) !important;
+    transform: translateY(-2px);
 }
 

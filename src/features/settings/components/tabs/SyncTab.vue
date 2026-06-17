@@ -9,10 +9,11 @@ import {
   PhSpinner,
   PhCheck,
   PhLightning,
-  PhInfo
+  PhInfo,
 } from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
+import SyncConflictDialog from '../SyncConflictDialog.vue';
 import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
@@ -90,6 +91,57 @@ const opResult = ref<{ success: boolean; msg: string } | null>(null);
 
 /** 新增：说明折叠 */
 const showRemoteHelp = ref(false);
+
+/** 冲突状态 */
+const conflictState = computed(() => store.syncConflictState);
+const conflictSnapshot = computed(() => store.syncConflictSnapshot);
+const hasConflict = computed(() =>
+  conflictState.value === 'detected' || conflictState.value === 'pending'
+);
+const showConflictDialog = ref(false);
+const conflictResolving = computed(() => conflictState.value === 'resolving');
+
+const openConflictDialog = () => { showConflictDialog.value = true; };
+
+const handleKeepLocal = async () => {
+  const res = await store.resolveKeepLocal();
+  if (res.success) {
+    showConflictDialog.value = false;
+    toast.success(res.msg);
+  } else {
+    toast.error(res.msg);
+  }
+};
+
+const handleUseRemote = async () => {
+  const res = await store.resolveUseRemote();
+  if (res.success) {
+    showConflictDialog.value = false;
+    toast.success(res.msg);
+  } else {
+    toast.error(res.msg);
+  }
+};
+
+const handlePostpone = () => {
+  store.resolvePostpone();
+  showConflictDialog.value = false;
+};
+
+const handleExportLocal = () => {
+  try {
+    const data = JSON.stringify(store.config, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voidtab-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    toast.info('请前往「数据」标签页导出备份');
+  }
+};
 
 const sensitiveSyncFields = ['AI Key', 'WebDAV 密码', 'JWT 临时 Token'];
 const webdavExamples = [
@@ -229,6 +281,23 @@ const executeRestore = async () => {
             <option :value="60">60</option>
           </select>
         </div>
+      </div>
+
+      <!-- 冲突提示 banner -->
+      <div
+          v-if="hasConflict"
+          class="mt-3 flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer hover:opacity-90 transition-opacity"
+          style="background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.30);"
+          @click="openConflictDialog"
+      >
+        <PhWarning size="16" weight="fill" class="text-amber-400 shrink-0" />
+        <div class="flex-1 min-w-0">
+          <span class="text-xs font-bold text-amber-400">检测到同步冲突</span>
+          <span class="text-xs opacity-60 ml-2" style="color: var(--settings-text);">
+            {{ conflictState === 'pending' ? '已暂停自动同步' : '本设备与云端数据均有改动' }}
+          </span>
+        </div>
+        <span class="text-xs font-bold shrink-0" style="color: var(--accent-color);">处理 →</span>
       </div>
 
       <!-- 操作反馈（更靠下更窄） -->
@@ -422,6 +491,17 @@ const executeRestore = async () => {
         <PhWarning :size="32" weight="duotone"/>
       </template>
     </ConfirmDialog>
+
+    <!-- 冲突解决对话框 -->
+    <SyncConflictDialog
+        v-if="showConflictDialog && conflictSnapshot"
+        :snapshot="conflictSnapshot"
+        :resolving="conflictResolving"
+        @keepLocal="handleKeepLocal"
+        @useRemote="handleUseRemote"
+        @postpone="handlePostpone"
+        @exportLocal="handleExportLocal"
+    />
   </div>
 </template>
 

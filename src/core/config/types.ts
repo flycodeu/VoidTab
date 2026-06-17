@@ -110,6 +110,8 @@ export interface ThemeConfig {
         tint?: string;
     };
 
+    /** Currently active theme pack. null / undefined = user custom. */
+    activeThemePack?: 'clean' | 'glass' | 'office' | 'void-cyber' | null;
 }
 
 export interface SearchEngine {

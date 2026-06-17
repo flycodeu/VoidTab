@@ -11,3 +11,4 @@ test-results/
 novel-layout-*.png
 VOIDTAB_FIX_OPTIMIZATION_PLAN.md
 docs/voidtab-feature-design.md
+docs/**
