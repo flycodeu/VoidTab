@@ -1,3 +1,5 @@
+import type {Config} from './types';
+
 type RecordLike = Record<string, any>;
 
 export interface ConfigImportValidationSummary {
@@ -42,6 +44,7 @@ const SITE_LAYOUT_MODES = new Set(['icon', 'card']);
 const GROUP_SORT_KEYS = new Set(['custom', 'name', 'lastVisited']);
 const ITEM_KINDS = new Set(['site', 'widget']);
 const ICON_TYPES = new Set(['auto', 'text', 'icon']);
+const TERMINAL_THEMES = new Set(['dark', 'light', 'hacker']);
 
 const isRecord = (value: unknown): value is RecordLike =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -280,6 +283,263 @@ export function validateImportedConfig(raw: unknown): ConfigImportValidationResu
         warnings,
         summary,
     };
+}
+
+export interface ConfigSchemaValidationResult {
+    ok: boolean;
+    errors: string[];
+    warnings: string[];
+}
+
+export class ConfigSchemaValidationError extends Error {
+    readonly errors: string[];
+    readonly warnings: string[];
+
+    constructor(result: ConfigSchemaValidationResult) {
+        super(`配置 schema 校验失败：${result.errors.join('；')}`);
+        this.name = 'ConfigSchemaValidationError';
+        this.errors = result.errors;
+        this.warnings = result.warnings;
+    }
+}
+
+const requireRecordField = (root: RecordLike, key: string, errors: string[]) => {
+    if (!isRecord(root[key])) {
+        addLimited(errors, `${key} 必须是对象`);
+        return null;
+    }
+    return root[key] as RecordLike;
+};
+
+const requireArrayField = (root: RecordLike, key: string, errors: string[]) => {
+    if (!Array.isArray(root[key])) {
+        addLimited(errors, `${key} 必须是数组`);
+        return null;
+    }
+    return root[key] as unknown[];
+};
+
+const requireStringField = (root: RecordLike, key: string, label: string, errors: string[]) => {
+    if (typeof root[key] !== 'string') addLimited(errors, `${label} 必须是字符串`);
+};
+
+const hasDefinedField = (root: RecordLike, key: string) => root[key] !== undefined;
+
+const requireBooleanField = (root: RecordLike, key: string, label: string, errors: string[]) => {
+    if (typeof root[key] !== 'boolean') addLimited(errors, `${label} 必须是布尔值`);
+};
+
+const requireNumberField = (root: RecordLike, key: string, label: string, errors: string[]) => {
+    if (!Number.isFinite(root[key])) addLimited(errors, `${label} 必须是有效数字`);
+};
+
+const requireEnumField = (
+    root: RecordLike,
+    key: string,
+    label: string,
+    allowed: Set<string>,
+    errors: string[]
+) => {
+    if (!allowed.has(String(root[key]))) addLimited(errors, `${label} 不在允许范围内`);
+};
+
+const validateThemeForSave = (theme: RecordLike, errors: string[]) => {
+    requireEnumField(theme, 'mode', 'theme.mode', THEME_MODES, errors);
+    requireEnumField(theme, 'sidebarPos', 'theme.sidebarPos', SIDEBAR_POSITIONS, errors);
+    requireEnumField(theme, 'density', 'theme.density', DENSITIES, errors);
+    requireEnumField(theme, 'siteLayoutMode', 'theme.siteLayoutMode', SITE_LAYOUT_MODES, errors);
+
+    [
+        ['accent', 'theme.accent'],
+        ['wallpaper', 'theme.wallpaper'],
+        ['icon', 'theme.icon'],
+        ['customLogoText', 'theme.customLogoText'],
+        ['techFontFamily', 'theme.techFontFamily'],
+    ].forEach(([key, label]) => requireStringField(theme, key, label, errors));
+
+    [
+        ['showSidebar', 'theme.showSidebar'],
+        ['showTime', 'theme.showTime'],
+        ['techFont', 'theme.techFont'],
+        ['breathingLight', 'theme.breathingLight'],
+        ['neonGlow', 'theme.neonGlow'],
+        ['showIconName', 'theme.showIconName'],
+        ['showWidgetName', 'theme.showWidgetName'],
+        ['showLogoText', 'theme.showLogoText'],
+        ['showGroupCount', 'theme.showGroupCount'],
+        ['enableHistory', 'theme.enableHistory'],
+        ['enableTerminal', 'theme.enableTerminal'],
+        ['showAllGroupsInMain', 'theme.showAllGroupsInMain'],
+    ].forEach(([key, label]) => requireBooleanField(theme, key, label, errors));
+
+    [
+        ['gridMaxWidth', 'theme.gridMaxWidth'],
+        ['blur', 'theme.blur'],
+        ['opacity', 'theme.opacity'],
+        ['iconSize', 'theme.iconSize'],
+        ['radius', 'theme.radius'],
+        ['gap', 'theme.gap'],
+        ['iconTextSize', 'theme.iconTextSize'],
+        ['breathingDuration', 'theme.breathingDuration'],
+    ].forEach(([key, label]) => requireNumberField(theme, key, label, errors));
+
+    const siteCard = requireRecordField(theme, 'siteCard', errors);
+    if (siteCard) {
+        requireNumberField(siteCard, 'w', 'theme.siteCard.w', errors);
+        requireNumberField(siteCard, 'h', 'theme.siteCard.h', errors);
+        requireBooleanField(siteCard, 'showRemark', 'theme.siteCard.showRemark', errors);
+        requireBooleanField(siteCard, 'showDomain', 'theme.siteCard.showDomain', errors);
+    }
+
+    const readability = requireRecordField(theme, 'readability', errors);
+    if (readability) {
+        requireBooleanField(readability, 'enabled', 'theme.readability.enabled', errors);
+        requireEnumField(readability, 'mode', 'theme.readability.mode', new Set(['auto', 'darken', 'lighten']), errors);
+        requireNumberField(readability, 'strength', 'theme.readability.strength', errors);
+        requireNumberField(readability, 'blur', 'theme.readability.blur', errors);
+        requireNumberField(readability, 'desaturate', 'theme.readability.desaturate', errors);
+        if (hasDefinedField(readability, 'tint') && typeof readability.tint !== 'string') {
+            addLimited(errors, 'theme.readability.tint 必须是字符串');
+        }
+    }
+};
+
+const validateLayoutForSave = (layout: unknown[], errors: string[]) => {
+    layout.forEach((group, groupIndex) => {
+        if (!isRecord(group)) {
+            addLimited(errors, `layout[${groupIndex}] 必须是对象`);
+            return;
+        }
+
+        requireStringField(group, 'id', `layout[${groupIndex}].id`, errors);
+        requireStringField(group, 'title', `layout[${groupIndex}].title`, errors);
+        requireStringField(group, 'icon', `layout[${groupIndex}].icon`, errors);
+        if (hasDefinedField(group, 'sortKey')) requireEnumField(group, 'sortKey', `layout[${groupIndex}].sortKey`, GROUP_SORT_KEYS, errors);
+
+        if (!Array.isArray(group.items)) {
+            addLimited(errors, `layout[${groupIndex}].items 必须是数组`);
+            return;
+        }
+
+        group.items.forEach((item, itemIndex) => {
+            const itemPath = `layout[${groupIndex}].items[${itemIndex}]`;
+            if (!isRecord(item)) {
+                addLimited(errors, `${itemPath} 必须是对象`);
+                return;
+            }
+
+            requireStringField(item, 'id', `${itemPath}.id`, errors);
+            if (hasDefinedField(item, 'kind')) requireEnumField(item, 'kind', `${itemPath}.kind`, ITEM_KINDS, errors);
+            if (hasDefinedField(item, 'title')) requireStringField(item, 'title', `${itemPath}.title`, errors);
+            if (hasDefinedField(item, 'url')) requireStringField(item, 'url', `${itemPath}.url`, errors);
+            if (hasDefinedField(item, 'iconType')) requireEnumField(item, 'iconType', `${itemPath}.iconType`, ICON_TYPES, errors);
+            if (hasDefinedField(item, 'iconValue')) requireStringField(item, 'iconValue', `${itemPath}.iconValue`, errors);
+            if (hasDefinedField(item, 'bgColor')) requireStringField(item, 'bgColor', `${itemPath}.bgColor`, errors);
+            if (hasDefinedField(item, 'remark')) requireStringField(item, 'remark', `${itemPath}.remark`, errors);
+            if (hasDefinedField(item, 'widgetType')) requireStringField(item, 'widgetType', `${itemPath}.widgetType`, errors);
+            if (hasDefinedField(item, 'w')) requireNumberField(item, 'w', `${itemPath}.w`, errors);
+            if (hasDefinedField(item, 'h')) requireNumberField(item, 'h', `${itemPath}.h`, errors);
+            if (hasDefinedField(item, 'createdAt')) requireNumberField(item, 'createdAt', `${itemPath}.createdAt`, errors);
+            if (hasDefinedField(item, 'tags') && !Array.isArray(item.tags)) addLimited(errors, `${itemPath}.tags 必须是数组`);
+            if (hasDefinedField(item, 'widgetConfig') && !isRecord(item.widgetConfig)) addLimited(errors, `${itemPath}.widgetConfig 必须是对象`);
+        });
+    });
+};
+
+const validateRuntimeForSave = (runtime: RecordLike, errors: string[]) => {
+    ['cron', 'auth', 'terminal_buffer', 'siteState', 'siteIcons', 'widgets', 'widgetState', 'photo', 'siteList', 'terminal']
+        .forEach((key) => {
+            if (!isRecord(runtime[key])) addLimited(errors, `runtime.${key} 必须是对象`);
+        });
+
+    if (isRecord(runtime.auth)) requireStringField(runtime.auth, 'jwtToken', 'runtime.auth.jwtToken', errors);
+
+    if (isRecord(runtime.siteIcons)) {
+        requireNumberField(runtime.siteIcons, 'version', 'runtime.siteIcons.version', errors);
+        if (!isRecord(runtime.siteIcons.records)) addLimited(errors, 'runtime.siteIcons.records 必须是对象');
+    }
+
+    if (isRecord(runtime.terminal)) {
+        if (!Array.isArray(runtime.terminal.history)) addLimited(errors, 'runtime.terminal.history 必须是数组');
+        requireEnumField(runtime.terminal, 'theme', 'runtime.terminal.theme', TERMINAL_THEMES, errors);
+        requireBooleanField(runtime.terminal, 'isOpen', 'runtime.terminal.isOpen', errors);
+    }
+
+    if (isRecord(runtime.terminal_buffer)) {
+        requireStringField(runtime.terminal_buffer, 'buffer', 'runtime.terminal_buffer.buffer', errors);
+        requireStringField(runtime.terminal_buffer, 'theme', 'runtime.terminal_buffer.theme', errors);
+        requireStringField(runtime.terminal_buffer, 'activeCategory', 'runtime.terminal_buffer.activeCategory', errors);
+        if (!Array.isArray(runtime.terminal_buffer.commands)) addLimited(errors, 'runtime.terminal_buffer.commands 必须是数组');
+    }
+};
+
+export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!isRecord(raw)) {
+        return {ok: false, errors: ['根节点必须是 JSON 对象'], warnings};
+    }
+
+    requireNumberField(raw, 'version', 'version', errors);
+    requireStringField(raw, 'currentEngineId', 'currentEngineId', errors);
+    requireBooleanField(raw, 'focusMode', 'focusMode', errors);
+
+    const sync = requireRecordField(raw, 'sync', errors);
+    const theme = requireRecordField(raw, 'theme', errors);
+    const ai = requireRecordField(raw, 'ai', errors);
+    const runtime = requireRecordField(raw, 'runtime', errors);
+    const layout = requireArrayField(raw, 'layout', errors);
+    const searchEngines = requireArrayField(raw, 'searchEngines', errors);
+
+    if (sync) {
+        requireEnumField(sync, 'provider', 'sync.provider', SYNC_PROVIDERS, errors);
+        requireBooleanField(sync, 'enabled', 'sync.enabled', errors);
+        requireBooleanField(sync, 'autoSync', 'sync.autoSync', errors);
+        requireNumberField(sync, 'lastSyncTime', 'sync.lastSyncTime', errors);
+        requireNumberField(sync, 'intervalMinutes', 'sync.intervalMinutes', errors);
+        ['url', 'username', 'password', 'folder', 'filename'].forEach((key) => {
+            if (key in sync) requireStringField(sync, key, `sync.${key}`, errors);
+        });
+    }
+
+    if (theme) validateThemeForSave(theme, errors);
+
+    if (ai) {
+        requireStringField(ai, 'baseUrl', 'ai.baseUrl', errors);
+        requireStringField(ai, 'apiKey', 'ai.apiKey', errors);
+        requireStringField(ai, 'model', 'ai.model', errors);
+        requireNumberField(ai, 'temperature', 'ai.temperature', errors);
+        requireNumberField(ai, 'maxHistory', 'ai.maxHistory', errors);
+    }
+
+    if (runtime) validateRuntimeForSave(runtime, errors);
+    if (layout) validateLayoutForSave(layout, errors);
+
+    if (searchEngines) {
+        if (searchEngines.length === 0) addLimited(errors, 'searchEngines 不能为空');
+        searchEngines.forEach((engine, index) => {
+            if (!isRecord(engine)) {
+                addLimited(errors, `searchEngines[${index}] 必须是对象`);
+                return;
+            }
+            requireStringField(engine, 'id', `searchEngines[${index}].id`, errors);
+            requireStringField(engine, 'name', `searchEngines[${index}].name`, errors);
+            requireStringField(engine, 'url', `searchEngines[${index}].url`, errors);
+            requireStringField(engine, 'icon', `searchEngines[${index}].icon`, errors);
+        });
+    }
+
+    return {
+        ok: errors.length === 0,
+        errors,
+        warnings,
+    };
+}
+
+export function assertConfigValidForSave(raw: unknown): asserts raw is Config {
+    const result = validateConfigForSave(raw);
+    if (!result.ok) throw new ConfigSchemaValidationError(result);
 }
 
 export function createImportValidationMessages(result: ConfigImportValidationResult): string[] {

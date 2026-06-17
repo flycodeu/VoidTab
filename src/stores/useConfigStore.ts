@@ -1,4 +1,5 @@
 import {defineStore} from 'pinia';
+import {ConfigSchemaValidationError} from '../core/config/validate';
 import {useToast} from '../shared/composables/useToast';
 import {initPerformanceMonitor} from '../shared/utils/performance';
 import {createIconActions} from './config/iconActions';
@@ -27,7 +28,14 @@ export const useConfigStore = defineStore('config', () => {
         isLoaded,
         applyingExternal,
         localRevision,
-        onSaveError: () => toast.error('保存配置失败，请检查浏览器存储权限'),
+        onSaveError: (error) => {
+            if (import.meta.env.DEV) console.error('[VoidTab] config save failed', error);
+            if (error instanceof ConfigSchemaValidationError) {
+                toast.error(`保存配置失败：${error.errors[0] || '配置数据格式异常'}`);
+                return;
+            }
+            toast.error('保存配置失败，请检查浏览器存储权限');
+        },
     });
 
     const layoutActions = createLayoutActions(config, persistence.saveConfig);

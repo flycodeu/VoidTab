@@ -65,7 +65,7 @@ const createStockApiDevPlugin = () => ({
             const url = new URL(req.url || '/', 'http://localhost')
 
             res.setHeader('Access-Control-Allow-Origin', '*')
-            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
             if (req.method === 'OPTIONS') {
@@ -122,7 +122,7 @@ const createFaviconApiDevPlugin = () => ({
                 return
             }
 
-            if (req.method !== 'GET') {
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
                 res.statusCode = 405
                 res.setHeader('Content-Type', 'application/json; charset=utf-8')
                 res.end(JSON.stringify({error: 'Method not allowed'}))
@@ -135,7 +135,7 @@ const createFaviconApiDevPlugin = () => ({
                 res.setHeader('Content-Type', payload.contentType)
                 res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800')
                 res.setHeader('X-VoidTab-Favicon-Source', payload.source)
-                res.end(payload.body)
+                res.end(req.method === 'HEAD' ? undefined : payload.body)
             } catch (error: any) {
                 res.statusCode = error?.statusCode || 502
                 res.setHeader('Content-Type', 'application/json; charset=utf-8')

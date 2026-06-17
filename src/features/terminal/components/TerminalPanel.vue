@@ -65,7 +65,7 @@ const terminalStyleVars = computed(() => {
       '--term-fg': 'var(--text-primary)',
       '--term-muted': 'var(--text-secondary)',
       '--term-dim': 'var(--text-tertiary)',
-      '--term-shadow': 'var(--settings-shadow-soft)',
+      '--term-shadow': 'var(--overlay-panel-shadow-soft)',
       '--term-scanline-alpha': '0.20',
       '--term-glow-alpha': '0.10',
     } as Record<string, string>;

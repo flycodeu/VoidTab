@@ -19,6 +19,10 @@ function deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
 }
 
+function isRecordLike(value: any): value is Record<string, any> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function clamp(n: any, min: number, max: number, fallback: number) {
     const v = Number(n);
     if (!Number.isFinite(v)) return fallback;
@@ -47,14 +51,21 @@ function normalizeReadability(inputRb: any, defRb: any) {
         ? rb.mode
         : defRb.mode;
 
-    return {
+    const out: any = {
         enabled: typeof rb.enabled === 'boolean' ? rb.enabled : defRb.enabled,
         mode,
         strength: clamp(rb.strength, 0, 100, defRb.strength),
         blur: clamp(rb.blur, 0, 12, defRb.blur),
         desaturate: clamp(rb.desaturate, 0, 100, defRb.desaturate),
-        tint: typeof rb.tint === 'string' ? rb.tint : defRb.tint,
     };
+
+    if (typeof rb.tint === 'string') {
+        out.tint = rb.tint;
+    } else if (typeof defRb.tint === 'string') {
+        out.tint = defRb.tint;
+    }
+
+    return out;
 }
 
 const SIDEBAR_POSITIONS = new Set<SidebarPosition>(['left', 'right', 'top', 'bottom']);
@@ -243,7 +254,7 @@ function normalizeTerminalCommands(value: any, fallback: TerminalCommandMemo[]):
 }
 
 function normalizeTerminalBuffer(input: any, fallback: RuntimeConfig['terminal_buffer']): RuntimeConfig['terminal_buffer'] {
-    const base = input && typeof input === 'object' ? input : {};
+    const base = isRecordLike(input) ? input : {};
     return {
         buffer: typeof base.buffer === 'string' ? base.buffer : fallback.buffer,
         theme: typeof base.theme === 'string' && base.theme.trim() ? base.theme : fallback.theme,
@@ -252,6 +263,70 @@ function normalizeTerminalBuffer(input: any, fallback: RuntimeConfig['terminal_b
             : fallback.activeCategory,
         commands: normalizeTerminalCommands(base.commands, fallback.commands),
     };
+}
+
+function normalizeRuntimeCron(input: any, fallback: RuntimeConfig['cron']): RuntimeConfig['cron'] {
+    const base = isRecordLike(input) ? input : {};
+    return {
+        expr: typeof base.expr === 'string' && base.expr.trim() ? base.expr : fallback.expr,
+        theme: typeof base.theme === 'string' && base.theme.trim() ? base.theme : fallback.theme,
+    };
+}
+
+function normalizeRuntimeAuth(input: any, fallback: RuntimeConfig['auth']): RuntimeConfig['auth'] {
+    const base = isRecordLike(input) ? input : {};
+    return {
+        jwtToken: typeof base.jwtToken === 'string' ? base.jwtToken : fallback.jwtToken,
+    };
+}
+
+const TERMINAL_RUNTIME_THEMES = new Set<RuntimeConfig['terminal']['theme']>(['dark', 'light', 'hacker']);
+
+function normalizeRuntimeTerminal(input: any, fallback: RuntimeConfig['terminal']): RuntimeConfig['terminal'] {
+    const base = isRecordLike(input) ? input : {};
+    const history = Array.isArray(base.history)
+        ? base.history.filter((item: any): item is string => typeof item === 'string')
+        : [...fallback.history];
+    const theme = TERMINAL_RUNTIME_THEMES.has(base.theme) ? base.theme : fallback.theme;
+
+    return {
+        history,
+        theme,
+        isOpen: typeof base.isOpen === 'boolean' ? base.isOpen : fallback.isOpen,
+    };
+}
+
+function normalizeRuntimeWidgets(input: any, fallback: RuntimeConfig['widgets']): RuntimeConfig['widgets'] {
+    const base = isRecordLike(input) ? input : {};
+    const merit = isRecordLike(base.merit) ? base.merit : {};
+
+    return {
+        ...deepClone(fallback),
+        ...base,
+        merit: {
+            value: isRecordLike(merit.value) ? merit.value : {},
+            sound: isRecordLike(merit.sound) ? merit.sound : {},
+        },
+    };
+}
+
+function normalizeRuntimePhoto(input: any): RuntimeConfig['photo'] {
+    const base = isRecordLike(input) ? input : {};
+    return {
+        widgets: isRecordLike(base.widgets) ? base.widgets : {},
+    };
+}
+
+function normalizeRuntimeSiteList(input: any): RuntimeConfig['siteList'] {
+    const base = isRecordLike(input) ? input : {};
+    const groups = isRecordLike(base.groups) ? base.groups : {};
+    const widgets = isRecordLike(base.widgets) ? base.widgets : {};
+
+    if (Object.keys(groups).length === 0) {
+        groups.default_group = {id: 'default_group', name: '默认清单', items: []};
+    }
+
+    return {groups, widgets};
 }
 
 function normalizeItem(rawItem: any): SiteItem {
@@ -323,14 +398,8 @@ function normalizeGroup(rawGroup: any): Group {
 }
 
 function normalizeRuntime(input: any): RuntimeConfig {
-    const base = input || {};
+    const base = isRecordLike(input) ? input : {};
     const def = defaultConfig.runtime;
-    const siteList = base.siteList || {groups: {}, widgets: {}};
-    if (!siteList.groups) siteList.groups = {};
-    if (Object.keys(siteList.groups).length === 0) {
-        const defId = 'default_group';
-        siteList.groups[defId] = {id: defId, name: '默认清单', items: []};
-    }
     const rawSiteIcons = (base.siteIcons && typeof base.siteIcons === 'object') ? base.siteIcons : {};
     const rawRecords = (rawSiteIcons.records && typeof rawSiteIcons.records === 'object') ? rawSiteIcons.records : {};
     const siteIconRecords: Record<string, SiteIconCacheRecord> = {};
@@ -381,19 +450,19 @@ function normalizeRuntime(input: any): RuntimeConfig {
     };
 
     return {
-        cron: base.cron || def.cron,
-        auth: base.auth || def.auth,
+        cron: normalizeRuntimeCron(base.cron, def.cron),
+        auth: normalizeRuntimeAuth(base.auth, def.auth),
         terminal_buffer: normalizeTerminalBuffer(base.terminal_buffer, def.terminal_buffer),
 
-        siteState: base.siteState || {},
+        siteState: isRecordLike(base.siteState) ? base.siteState : {},
         siteIcons,
-        terminal: base.terminal || def.terminal,
-        widgets: base.widgets || def.widgets,
-        widgetState: base.widgetState || {},
+        terminal: normalizeRuntimeTerminal(base.terminal, def.terminal),
+        widgets: normalizeRuntimeWidgets(base.widgets, def.widgets),
+        widgetState: isRecordLike(base.widgetState) ? base.widgetState : {},
 
-        photo: base.photo || {widgets: {}},
+        photo: normalizeRuntimePhoto(base.photo),
 
-        siteList: siteList
+        siteList: normalizeRuntimeSiteList(base.siteList)
     };
 }
 
@@ -429,7 +498,6 @@ export function normalizeConfig(raw: any): Config {
                 strength: 22,
                 blur: 0,
                 desaturate: 0,
-                tint: undefined,
             }
         ),
     };

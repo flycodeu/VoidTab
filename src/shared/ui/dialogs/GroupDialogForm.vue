@@ -128,7 +128,7 @@ defineExpose({
           backgroundColor: 'var(--modal-bg)',
           color: 'var(--modal-text)',
           borderColor: 'var(--modal-border)',
-          boxShadow: 'var(--modal-shadow)'
+          boxShadow: 'var(--overlay-panel-shadow)'
           }"
           @click.stop
           role="dialog"

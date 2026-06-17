@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import {computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch} from 'vue';
+import {computed, defineAsyncComponent, onMounted, onUnmounted, ref} from 'vue';
+import {PhSpinner, PhWarning} from '@phosphor-icons/vue';
 import {useTheme} from './shared/composables/theme/useTheme.ts';
+import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
 import {useConfigStore} from './stores/useConfigStore';
 import {useUiStore} from './stores/ui/useUiStore.ts';
-import {PhSpinner} from '@phosphor-icons/vue';
 import {useDialogs} from './shared/composables/dialog/useDialogs.ts';
-import {PhWarning} from '@phosphor-icons/vue';
+import {useToast} from './shared/composables/useToast';
+import {useAppDragAutoScroll} from './app/composables/useAppDragAutoScroll';
+import {useAppGroupNavigation} from './app/composables/useAppGroupNavigation';
+import {useBackgroundIconRefresh} from './app/composables/useBackgroundIconRefresh';
+import {useDesktopViewport} from './app/composables/useDesktopViewport';
+import type {SidebarPosition} from './core/config/types.ts';
 
 import SideBar from './features/navigation/components/SideBar.vue';
 import ContextMenu from './features/context-menu/components/ContextMenu.vue';
@@ -14,21 +20,16 @@ import TopActions from './features/navigation/components/TopActions.vue';
 import HomeMain from './features/home/components/HomeMain.vue';
 import MobileGroupNav from './features/navigation/components/MobileGroupNav.vue';
 import DeleteConfirmHost from './features/confirm-delete/components/DeleteConfirmHost.vue';
+import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
+import Toast from './shared/ui/Toast.vue';
+import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
 
 const SettingsModal = defineAsyncComponent(() => import('./features/settings/components/SettingsModal.vue'));
 const WidgetPanel = defineAsyncComponent(() => import('./features/widgets/components/WidgetPanel.vue'));
 const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDialog.vue'));
 const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/GroupDialog.vue'));
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
-const TerminalPanel = defineAsyncComponent(() => import('./features/teminal/components/TerminalPanel.vue'));
-import {useThemeRuntimeSync} from './shared/composables/theme/useThemeRuntimeSync.ts';
-import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
-import Toast from './shared/ui/Toast.vue';
-import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
-import {useToast} from './shared/composables/useToast';
-import {useBoundaryGroupWheel} from './shared/composables/useBoundaryGroupWheel';
-import type {SidebarPosition} from './core/config/types.ts';
-import {isExtensionContext} from './shared/utils/icon.ts';
+const TerminalPanel = defineAsyncComponent(() => import('./features/terminal/components/TerminalPanel.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -40,11 +41,16 @@ const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
 const widgetPanelGroupId = ref('');
-const isDesktopViewport = ref(true);
-
-const activeGroupId = ref('');
 const isGlobalEditMode = ref(false);
+const showDevtoolsTip = ref(false);
+const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
+  width: 0,
+  isNarrow: false,
+});
+
 const sidebarPositionCycle: SidebarPosition[] = ['left', 'right', 'top', 'bottom'];
+const {isDesktopViewport, mount: mountDesktopViewport, unmount: unmountDesktopViewport} = useDesktopViewport();
+const dialogLogic = useDialogs(store, ui);
 
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
 const showSidebarNav = computed(() => store.config.theme.showSidebar !== false);
@@ -60,116 +66,6 @@ const isFocusMode = computed({
   },
 });
 
-const toggleSidebarPos = () => {
-  if (!isDesktopViewport.value) return;
-  const current = store.config.theme.sidebarPos;
-  const index = sidebarPositionCycle.indexOf(current);
-  store.config.theme.sidebarPos = sidebarPositionCycle[(index + 1) % sidebarPositionCycle.length] || 'left';
-  store.saveConfig();
-};
-
-const getGroupTitle = (id: string) => {
-  return store.config.layout.find((group) => group.id === id)?.title || '';
-};
-
-const findMainScrollEl = () => {
-  return document.querySelector('[data-main-scroll="1"]') as HTMLElement | null;
-};
-
-const findGroupSection = (id: string) => {
-  const host = findMainScrollEl();
-  if (!host) return null;
-  const sections = Array.from(host.querySelectorAll<HTMLElement>('[data-group-section="1"]'));
-  return sections.find((section) => section.dataset.groupSectionId === id) || null;
-};
-
-let groupScrollSyncLockedUntil = 0;
-let groupScrollUnlockTimer: number | null = null;
-type MainScrollPosition = 'top' | 'bottom';
-
-const lockGroupScrollSync = (durationMs = 760) => {
-  groupScrollSyncLockedUntil = performance.now() + durationMs;
-  if (groupScrollUnlockTimer != null) window.clearTimeout(groupScrollUnlockTimer);
-  groupScrollUnlockTimer = window.setTimeout(() => {
-    groupScrollUnlockTimer = null;
-    groupScrollSyncLockedUntil = 0;
-  }, durationMs);
-};
-
-const resetMainScroll = (position: MainScrollPosition = 'top', behavior: ScrollBehavior = 'auto') => {
-  lockGroupScrollSync(360);
-  requestAnimationFrame(() => {
-    const host = findMainScrollEl();
-    if (!host) return;
-    const top = position === 'bottom'
-        ? Math.max(0, host.scrollHeight - host.clientHeight)
-        : 0;
-    host.scrollTo({top, behavior});
-  });
-};
-
-const setActiveGroupId = (id: string, announce = false) => {
-  if (!id) return false;
-  const changed = activeGroupId.value !== id;
-  if (changed) activeGroupId.value = id;
-
-  if (announce && changed) {
-    const title = getGroupTitle(id);
-    if (title) ui.announce(`已切换到「${title}」分组`);
-  }
-
-  return changed;
-};
-
-const scrollToGroupSection = (id: string, behavior: ScrollBehavior = 'smooth') => {
-  lockGroupScrollSync(behavior === 'auto' ? 360 : 760);
-  requestAnimationFrame(() => {
-    const section = findGroupSection(id);
-    if (!section) return;
-
-    const host = findMainScrollEl();
-    if (!host) return;
-    const hostRect = host.getBoundingClientRect();
-    const sectionRect = section.getBoundingClientRect();
-    const scrollMarginTop = Number.parseFloat(window.getComputedStyle(section).scrollMarginTop || '0') || 0;
-    const top = Math.max(0, host.scrollTop + sectionRect.top - hostRect.top - scrollMarginTop);
-    host.scrollTo({top, behavior});
-  });
-};
-
-const selectGroupId = (id: string, meta?: { direction?: 1 | -1 }) => {
-  if (!id) return;
-  setActiveGroupId(id, true);
-  if (store.config.theme.showAllGroupsInMain) {
-    scrollToGroupSection(id, meta?.direction ? 'auto' : 'smooth');
-    return;
-  }
-
-  resetMainScroll(meta?.direction === -1 ? 'bottom' : 'top');
-};
-
-const syncActiveGroupIdFromScroll = (id: string) => {
-  if (!id || performance.now() < groupScrollSyncLockedUntil) return;
-  setActiveGroupId(id, false);
-};
-
-watch(
-    () => (store.config.layout || []).map((group) => group.id).join('|'),
-    () => {
-      const groups = store.config.layout || [];
-      if (!groups.length) {
-        activeGroupId.value = '';
-        return;
-      }
-      if (!groups.some((group) => group.id === activeGroupId.value)) {
-        selectGroupId(groups[0].id);
-      }
-    },
-    {flush: 'post'}
-);
-
-const dialogLogic = useDialogs(store, ui);
-
 function canWheelSwitchGroup() {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
@@ -181,167 +77,45 @@ function canWheelSwitchGroup() {
   return true;
 }
 
-const groupWheel = useBoundaryGroupWheel({
+const groupNavigation = useAppGroupNavigation({
   getGroups: () => store.config.layout || [],
-  getActiveGroupId: () => activeGroupId.value,
-  setActiveGroupId: (id, meta) => selectGroupId(id, meta),
-  isDisabled: () => !canWheelSwitchGroup(),
+  getGroupTitle: (id) => store.config.layout.find((group) => group.id === id)?.title || '',
+  shouldUseContinuousScroll: () => store.config.theme.showAllGroupsInMain,
+  isWheelDisabled: () => !canWheelSwitchGroup(),
+  announce: (message) => ui.announce(message),
 });
 
-let iconRefreshIdleId: number | null = null;
-let iconRefreshTimer: number | null = null;
+const {
+  activeGroupId,
+  setActiveGroupId,
+  selectGroupId,
+  syncActiveGroupIdFromScroll,
+} = groupNavigation;
 
-const scheduleBackgroundIconRefresh = () => {
-  const run = () => {
-    iconRefreshIdleId = null;
-    iconRefreshTimer = null;
-    if (!isExtensionContext()) return;
-    void store.refreshAutoSiteIconsBatch({maxDomains: 48});
-  };
-
-  const requestIdle = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: { timeout: number }) => number);
-  if (requestIdle) {
-    iconRefreshIdleId = requestIdle(run, {timeout: 5000});
-  } else {
-    iconRefreshTimer = window.setTimeout(run, 3000);
-  }
-};
-
-const cancelBackgroundIconRefresh = () => {
-  const cancelIdle = (window as any).cancelIdleCallback as undefined | ((id: number) => void);
-  if (iconRefreshIdleId != null && cancelIdle) cancelIdle(iconRefreshIdleId);
-  if (iconRefreshTimer != null) window.clearTimeout(iconRefreshTimer);
-  iconRefreshIdleId = null;
-  iconRefreshTimer = null;
-};
-
-const AUTO_SCROLL_MARGIN = 110;
-const AUTO_SCROLL_BASE_SPEED = 10;
-const AUTO_SCROLL_MAX_SPEED = 28;
-
-let autoScrollRaf: number | null = null;
-let lastPointerY = 0;
-
-function pickMainScrollEl(): HTMLElement | null {
-  const list = Array.from(document.querySelectorAll('[data-main-scroll="1"]')) as HTMLElement[];
-  if (!list.length) return null;
-
-  let best: HTMLElement | null = null;
-  let bestDelta = 0;
-
-  for (const el of list) {
-    const delta = el.scrollHeight - el.clientHeight;
-    if (delta > bestDelta + 1) {
-      best = el;
-      bestDelta = delta;
-    }
-  }
-
-  return best ?? list[0] ?? null;
-}
-
-function isAnyDraggingNow(): boolean {
-  if (ui.dragState?.isDragging) return true;
-  if (ui.isGroupSorting) return true;
-
-  const hit =
-      document.querySelector('.sortable-ghost') ||
-      document.querySelector('.group-ghost') ||
-      document.querySelector('.group-drag') ||
-      document.querySelector('.vue-draggable-dragging') ||
-      document.querySelector('.dragging') ||
-      document.querySelector('[draggable="true"].dragging');
-
-  return !!hit;
-}
-
-function canAutoScroll(): boolean {
+const canRunDragAutoScroll = () => {
   if (!store.isLoaded) return false;
   if (isFocusMode.value) return false;
   if (!isGlobalEditMode.value) return false;
   if (showSettings.value || showWidgetModal.value || showAiPanel.value) return false;
   if (isTerminalOpen.value) return false;
-
-  if (!isAnyDraggingNow()) return false;
-
   return true;
-}
+};
 
-function calcSpeed(y: number): { dir: -1 | 0 | 1; speed: number } {
-  const vh = window.innerHeight;
+const dragAutoScroll = useAppDragAutoScroll({
+  isEnabled: canRunDragAutoScroll,
+  isDragging: () => !!ui.dragState?.isDragging || ui.isGroupSorting,
+});
 
-  if (y <= AUTO_SCROLL_MARGIN) {
-    const k = Math.min(1, (AUTO_SCROLL_MARGIN - y) / AUTO_SCROLL_MARGIN);
-    const speed = AUTO_SCROLL_BASE_SPEED + (AUTO_SCROLL_MAX_SPEED - AUTO_SCROLL_BASE_SPEED) * k;
-    return {dir: -1, speed};
-  }
+const backgroundIconRefresh = useBackgroundIconRefresh((options) => store.refreshAutoSiteIconsBatch(options));
 
-  if (y >= vh - AUTO_SCROLL_MARGIN) {
-    const dist = vh - y;
-    const k = Math.min(1, (AUTO_SCROLL_MARGIN - dist) / AUTO_SCROLL_MARGIN);
-    const speed = AUTO_SCROLL_BASE_SPEED + (AUTO_SCROLL_MAX_SPEED - AUTO_SCROLL_BASE_SPEED) * k;
-    return {dir: 1, speed};
-  }
+const toggleSidebarPos = () => {
+  if (!isDesktopViewport.value) return;
 
-  return {dir: 0, speed: 0};
-}
-
-function stopAutoScroll() {
-  if (autoScrollRaf != null) cancelAnimationFrame(autoScrollRaf);
-  autoScrollRaf = null;
-}
-
-function autoScrollTick() {
-  if (!canAutoScroll()) {
-    stopAutoScroll();
-    return;
-  }
-
-  const sc = pickMainScrollEl();
-  if (!sc) {
-    stopAutoScroll();
-    return;
-  }
-
-  const {dir, speed} = calcSpeed(lastPointerY);
-  if (dir === 0) {
-    stopAutoScroll();
-    return;
-  }
-
-  sc.scrollTop += dir * speed;
-  autoScrollRaf = requestAnimationFrame(autoScrollTick);
-}
-
-function ensureAutoScrollRunning() {
-  if (autoScrollRaf != null) return;
-  autoScrollRaf = requestAnimationFrame(autoScrollTick);
-}
-
-function onDragOverForAutoScroll(e: DragEvent) {
-  if (!e) return;
-
-  if (canAutoScroll()) {
-    if (e.cancelable) {
-      e.preventDefault();
-    }
-  }
-
-  lastPointerY = e.clientY || lastPointerY;
-
-  if (!canAutoScroll()) return;
-
-  const {dir} = calcSpeed(lastPointerY);
-  if (dir !== 0) ensureAutoScrollRunning();
-}
-
-function onMouseMoveForAutoScroll(e: MouseEvent) {
-  lastPointerY = e.clientY || lastPointerY;
-}
-
-function onDragEndForAutoScroll() {
-  stopAutoScroll();
-}
+  const current = store.config.theme.sidebarPos;
+  const index = sidebarPositionCycle.indexOf(current);
+  store.config.theme.sidebarPos = sidebarPositionCycle[(index + 1) % sidebarPositionCycle.length] || 'left';
+  store.saveConfig();
+};
 
 const handleToggleTerminal = () => {
   if (!store.config.runtime.terminal) {
@@ -352,51 +126,10 @@ const handleToggleTerminal = () => {
 };
 
 const closeTerminal = () => {
-  if (store.config.runtime.terminal) {
-    store.config.runtime.terminal.isOpen = false;
-    store.saveConfig();
-  }
+  if (!store.config.runtime.terminal) return;
+  store.config.runtime.terminal.isOpen = false;
+  store.saveConfig();
 };
-
-onMounted(async () => {
-  if (!store.isLoaded) await store.loadConfig();
-  if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
-  scheduleBackgroundIconRefresh();
-
-  desktopViewportMql = window.matchMedia('(min-width: 1024px)');
-  syncDesktopViewport();
-  desktopViewportMql.addEventListener?.('change', syncDesktopViewport);
-
-  document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
-  document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
-
-  groupWheel.mount();
-
-  window.addEventListener('dragover', onDragOverForAutoScroll, {capture: true, passive: false});
-  window.addEventListener('dragend', onDragEndForAutoScroll, {capture: true, passive: true});
-  window.addEventListener('drop', onDragEndForAutoScroll, {capture: true, passive: true});
-
-  window.addEventListener('mousemove', onMouseMoveForAutoScroll, {capture: true, passive: true});
-
-  window.addEventListener('blur', onDragEndForAutoScroll);
-});
-
-onUnmounted(() => {
-  groupWheel.unmount();
-  desktopViewportMql?.removeEventListener?.('change', syncDesktopViewport);
-  desktopViewportMql = null;
-
-  window.removeEventListener('dragover', onDragOverForAutoScroll, true);
-  window.removeEventListener('dragend', onDragEndForAutoScroll, true);
-  window.removeEventListener('drop', onDragEndForAutoScroll, true);
-  window.removeEventListener('mousemove', onMouseMoveForAutoScroll, true);
-  window.removeEventListener('blur', onDragEndForAutoScroll);
-
-  stopAutoScroll();
-  cancelBackgroundIconRefresh();
-  if (groupScrollUnlockTimer != null) window.clearTimeout(groupScrollUnlockTimer);
-  groupScrollUnlockTimer = null;
-});
 
 const handleToggleEdit = () => {
   isGlobalEditMode.value = !isGlobalEditMode.value;
@@ -405,6 +138,7 @@ const handleToggleEdit = () => {
 const handleEditWidgetSettings = (item: any) => {
   widgetPanelGroupId.value = activeGroupId.value;
   showWidgetModal.value = true;
+
   const title = item?.title ? `「${item.title}」` : '该组件';
   toast.info(`已打开组件面板，可在这里管理${title}。`);
   ui.announce(`已打开组件面板，可管理${item?.title || '该组件'}`);
@@ -415,28 +149,12 @@ const openWidgetPanel = (groupId?: string) => {
   showWidgetModal.value = true;
 };
 
-const mobileViewport = ref<{ width: number; isNarrow: boolean }>({
-  width: 0,
-  isNarrow: false,
-});
 const handleMobileViewport = (v: { width: number; isNarrow: boolean }) => {
   mobileViewport.value = v;
 };
 
-let desktopViewportMql: MediaQueryList | null = null;
-const syncDesktopViewport = () => {
-  isDesktopViewport.value = desktopViewportMql?.matches ?? true;
-};
-
-const showDevtoolsTip = ref(false);
-const openDevToolsTip = () => {
-  showDevtoolsTip.value = true;
-};
 const closeDevToolsTip = () => {
   showDevtoolsTip.value = false;
-};
-const handleOpenDevTools = () => {
-  openDevToolsTip();
 };
 
 const tryOpenDevTools = () => {
@@ -452,8 +170,29 @@ const tryOpenDevTools = () => {
     window.dispatchEvent(evt);
   } catch {
   }
-  handleOpenDevTools();
+  showDevtoolsTip.value = true;
 };
+
+onMounted(async () => {
+  if (!store.isLoaded) await store.loadConfig();
+  if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
+
+  backgroundIconRefresh.schedule();
+  mountDesktopViewport();
+
+  document.documentElement.classList.toggle('light', store.config.theme.mode === 'light');
+  document.documentElement.classList.toggle('dark', store.config.theme.mode === 'dark');
+
+  groupNavigation.mount();
+  dragAutoScroll.mount();
+});
+
+onUnmounted(() => {
+  groupNavigation.unmount();
+  dragAutoScroll.unmount();
+  unmountDesktopViewport();
+  backgroundIconRefresh.cancel();
+});
 </script>
 
 <template>

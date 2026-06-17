@@ -43,7 +43,6 @@
     --modal-text: #ffffff;
     --modal-border: rgba(255, 255, 255, 0.1);
     --modal-input-bg: #2a2a2a;
-    --modal-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
 
     /*  1. 右键菜单专用 (Glass / 半透明) */
     --glass-bg: rgba(30, 30, 30, 0.75);
@@ -58,8 +57,11 @@
     --settings-text-secondary: rgba(255, 255, 255, 0.70);
     --settings-input-bg: #1d1d22;
 
-    --settings-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
-    --settings-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.30);
+    --overlay-panel-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+    --overlay-panel-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.30);
+    --modal-shadow: var(--overlay-panel-shadow);
+    --settings-shadow: var(--overlay-panel-shadow);
+    --settings-shadow-soft: var(--overlay-panel-shadow-soft);
 
     /*  Widgets（主面板卡片：不透明） */
     --widget-surface: #151518;
@@ -149,7 +151,6 @@ html.light {
     --modal-text: #111827;
     --modal-border: rgba(0, 0, 0, 0.08);
     --modal-input-bg: #f3f4f6;
-    --modal-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
 
     --glass-bg: rgba(255, 255, 255, 0.85);
     --glass-border: rgba(0, 0, 0, 0.08);
@@ -165,8 +166,11 @@ html.light {
     --settings-text-secondary: rgba(17, 24, 39, 0.68);
     --settings-input-bg: #f1f5f9;
 
-    --settings-shadow: 0 22px 60px rgba(0, 0, 0, 0.14);
-    --settings-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.10);
+    --overlay-panel-shadow: 0 22px 60px rgba(0, 0, 0, 0.14);
+    --overlay-panel-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.10);
+    --modal-shadow: var(--overlay-panel-shadow);
+    --settings-shadow: var(--overlay-panel-shadow);
+    --settings-shadow-soft: var(--overlay-panel-shadow-soft);
 
     /*  Widgets（主面板卡片：不透明，浅灰/浅白） */
     --widget-surface: #f3f4f6; /* 浅灰 */
@@ -218,7 +222,7 @@ html.light {
     --term-fg: var(--text-primary);
     --term-muted: var(--text-secondary);
     --term-dim: var(--text-tertiary);
-    --term-shadow: var(--settings-shadow-soft);
+    --term-shadow: var(--overlay-panel-shadow-soft);
     --term-scanline-alpha: 0.18;
     --term-glow-alpha: 0.10;
 
@@ -323,7 +327,7 @@ body {
 .settings-shell {
     background: var(--settings-surface);
     border: 1px solid var(--settings-border);
-    box-shadow: var(--settings-shadow);
+    box-shadow: var(--overlay-panel-shadow);
 }
 
 .settings-header {
@@ -443,7 +447,7 @@ body {
     background-color: var(--modal-bg);
     border: 1px solid var(--modal-border);
     color: var(--modal-text);
-    box-shadow: var(--modal-shadow);
+    box-shadow: var(--overlay-panel-shadow);
 
     /*  FIX: 圆角 + overflow-hidden 防止底部黑条/黑底漏出 */
     border-radius: 28px;

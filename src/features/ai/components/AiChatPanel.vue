@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, computed, onMounted, nextTick, watch} from 'vue';
+import {ref, computed, onMounted, onUnmounted, nextTick, watch} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useAiStore} from '../../../stores/useAiStores.ts';
 import {
@@ -14,18 +14,16 @@ import ConfirmDialog from '../../../shared/ui/dialogs/ConfirmDialog.vue';
 // 🔒 XSS 防护
 import DOMPurify from 'dompurify';
 import {fetchWithRetry} from '../../../shared/utils/network';
+import {readChatCompletionStream} from '../../../shared/utils/aiStream';
 import {useToast} from '../../../shared/composables/useToast';
 
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import css from 'highlight.js/lib/languages/css';
-import javascript from 'highlight.js/lib/languages/javascript';
-import json from 'highlight.js/lib/languages/json';
-import markdown from 'highlight.js/lib/languages/markdown';
-import python from 'highlight.js/lib/languages/python';
-import typescript from 'highlight.js/lib/languages/typescript';
-import xml from 'highlight.js/lib/languages/xml';
+import {
+  isHighlightLanguageLoaded,
+  loadHighlightLanguage,
+  normalizeHighlightLanguage,
+} from '../utils/highlightLanguages';
 import 'highlight.js/styles/atom-one-dark.css';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
@@ -45,6 +43,7 @@ const isSending = ref(false);
 const showSettings = ref(false);
 const messagesContainer = ref<HTMLElement | null>(null);
 const mdRenderer = ref<MarkdownIt | null>(null);
+const highlightRevision = ref(0);
 
 // 🟢 弹窗与保存状态
 const showKeyAlert = ref(false);
@@ -60,20 +59,6 @@ const PRESETS = [
   {name: 'Local (Ollama)', baseUrl: 'http://localhost:11434/v1', model: 'llama3'},
   {name: '自定义 (Custom)', baseUrl: '', model: '', isCustom: true}
 ];
-
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('js', javascript);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('md', markdown);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('py', python);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('ts', typescript);
-hljs.registerLanguage('html', xml);
-hljs.registerLanguage('xml', xml);
 
 // 应用预设 (只填充，不保存)
 const applyPreset = (preset: any) => {
@@ -130,15 +115,23 @@ onMounted(async () => {
   mdRenderer.value = new MarkdownIt({
     html: false, linkify: true, typographer: true,
     highlight: function (str, lang) {
-      if (lang && hljs.getLanguage(lang)) {
+      const language = normalizeHighlightLanguage(lang);
+      if (language && isHighlightLanguageLoaded(language)) {
         try {
           return `<pre class="hljs"><code>${hljs.highlight(str, {
-            language: lang,
+            language,
             ignoreIllegals: true
           }).value}</code></pre>`;
         } catch (__) {
         }
       }
+
+      if (language) {
+        void loadHighlightLanguage(language).then((loaded) => {
+          if (loaded) highlightRevision.value += 1;
+        });
+      }
+
       return `<pre class="hljs"><code>${mdRenderer.value?.utils.escapeHtml(str)}</code></pre>`;
     }
   });
@@ -149,13 +142,25 @@ const scrollToBottom = async () => {
   await nextTick();
   if (messagesContainer.value) messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
 };
+let scrollRaf: number | null = null;
+const scheduleScrollToBottom = () => {
+  if (scrollRaf != null) return;
+  scrollRaf = window.requestAnimationFrame(() => {
+    scrollRaf = null;
+    void scrollToBottom();
+  });
+};
 watch(() => currentSession.value?.messages.length, scrollToBottom);
 watch(() => aiStore.currentSessionId, scrollToBottom);
+onUnmounted(() => {
+  if (scrollRaf != null) window.cancelAnimationFrame(scrollRaf);
+  scrollRaf = null;
+});
 
 // 发送逻辑
 const sendMessage = async () => {
   const text = userInput.value.trim();
-  const {apiKey, baseUrl, model, maxHistory} = configStore.config.ai;
+  const {apiKey, baseUrl, model, maxHistory, temperature} = configStore.config.ai;
 
   if (!text) return;
 
@@ -201,6 +206,7 @@ const sendMessage = async () => {
       body: JSON.stringify({
         model: model || 'deepseek-chat',
         messages: [{role: "system", content: "You are a helpful assistant."}, ...history],
+        temperature,
         stream: true
       })
     }, {
@@ -217,27 +223,13 @@ const sendMessage = async () => {
       throw new Error(`API Error ${response.status}: ${errText}`);
     }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder('utf-8');
-
-    while (true) {
-      const {done, value} = await reader!.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-          try {
-            const data = JSON.parse(line.slice(6));
-            const content = data.choices[0]?.delta?.content || '';
-            fullContent += content;
-            aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, fullContent, 'loading');
-            if (fullContent.length % 10 === 0) scrollToBottom();
-          } catch (e) {
-          }
-        }
-      }
-    }
+    fullContent = await readChatCompletionStream(response, {
+      onContent: (content) => {
+        fullContent = content;
+        aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, fullContent, 'loading');
+        scheduleScrollToBottom();
+      },
+    });
     aiStore.updateMessageContent(aiStore.currentSessionId, aiMsgId, fullContent, 'done');
   } catch (e: any) {
     const message = e instanceof Error ? e.message : '未知错误';
@@ -261,6 +253,7 @@ const sendMessage = async () => {
 // XSS 防护：使用 DOMPurify 清理 HTML
 const renderMd = (text: string) => {
   if (!mdRenderer.value) return text;
+  void highlightRevision.value;
   const html = mdRenderer.value.render(text);
 
   // 配置允许的标签和属性白名单

@@ -128,22 +128,33 @@ test('sidebar active group has stable scroll target', async () => {
 
 test('AI markdown rendering is sanitized before v-html', async () => {
   const panel = await read('src/features/ai/components/AiChatPanel.vue');
+  const highlight = await read('src/features/ai/utils/highlightLanguages.ts');
+  const stream = await read('src/shared/utils/aiStream.ts');
+
   assert.match(panel, /import DOMPurify from 'dompurify'/);
   assert.match(panel, /html:\s*false/);
   assert.match(panel, /DOMPurify\.sanitize/);
   assert.match(panel, /ALLOWED_URI_REGEXP/);
+  assert.match(panel, /readChatCompletionStream/);
+  assert.doesNotMatch(panel, /highlight\.js\/lib\/languages\/bash/);
+  assert.match(highlight, /import\('highlight\.js\/lib\/languages\/bash'\)/);
+  assert.match(highlight, /loadHighlightLanguage/);
+  assert.match(stream, /decoder\.decode\(value,\s*\{stream:\s*true\}\)/);
+  assert.match(stream, /trimmed\.startsWith\('data:'\)/);
 });
 
 test('config storage encrypts sensitive local fields and strips sync payload', async () => {
   const sensitive = await read('src/core/config/sensitive.ts');
   const repository = await read('src/core/config/repository.ts');
   const syncActions = await read('src/stores/config/syncActions.ts');
+  const validate = await read('src/core/config/validate.ts');
 
   assert.match(sensitive, /sync\.password/);
   assert.match(sensitive, /ai\.apiKey/);
   assert.match(sensitive, /runtime\.auth\.jwtToken/);
   assert.match(sensitive, /ENCRYPTED_VALUE_PREFIX\s*=\s*'enc:v1:'/);
   assert.match(repository, /sealSensitiveConfigForStorage/);
+  assert.match(repository, /assertConfigValidForSave/);
   assert.match(repository, /openSensitiveConfigFromStorage/);
   assert.match(repository, /loadForBoot/);
   assert.match(repository, /completeBootLoad/);
@@ -152,6 +163,45 @@ test('config storage encrypts sensitive local fields and strips sync payload', a
   assert.match(syncActions, /stripSensitiveConfigForSync/);
   assert.match(syncActions, /mergeLocalSensitiveFields/);
   assert.match(syncActions, /buildSyncPayload/);
+  assert.match(validate, /validateConfigForSave/);
+  assert.match(validate, /ConfigSchemaValidationError/);
+
+  await runBundledTypeScript('config-schema-normalized-optionals', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+    import {validateConfigForSave} from '../../../src/core/config/validate.ts';
+
+    const normalized = normalizeConfig({
+      theme: {
+        readability: {
+          enabled: true,
+          mode: 'auto',
+          strength: 22,
+          blur: 0,
+          desaturate: 0,
+          tint: undefined,
+        },
+      },
+      layout: [{
+        id: 'g1',
+        title: '默认',
+        icon: 'Folder',
+        items: [{
+          id: 's1',
+          title: 'Render',
+          url: 'https://render.com/docs',
+          iconType: 'auto',
+          iconValue: undefined,
+          bgColor: undefined,
+          createdAt: undefined,
+        }],
+      }],
+    });
+
+    const result = validateConfigForSave(normalized);
+    assert.equal(result.ok, true, result.errors.join('; '));
+    assert.equal('tint' in normalized.theme.readability, false);
+  `);
 });
 
 test('config store delegates major action groups to focused modules', async () => {
@@ -343,16 +393,20 @@ test('site icon work is throttled during the startup window', async () => {
 
 test('main wheel navigation switches groups only at scroll boundaries', async () => {
   const app = await read('src/App.vue');
+  const groupNav = await read('src/app/composables/useAppGroupNavigation.ts');
+  const iconRefresh = await read('src/app/composables/useBackgroundIconRefresh.ts');
   const home = await read('src/features/home/components/HomeMain.vue');
   const wheel = await read('src/shared/composables/useBoundaryGroupWheel.ts');
 
-  assert.match(app, /useBoundaryGroupWheel/);
-  assert.match(app, /groupWheel\.mount\(\)/);
-  assert.match(app, /groupWheel\.unmount\(\)/);
-  assert.match(app, /resetMainScroll/);
-  assert.match(app, /scheduleBackgroundIconRefresh/);
-  assert.match(app, /if \(!isExtensionContext\(\)\) return/);
-  assert.match(app, /refreshAutoSiteIconsBatch\(\{maxDomains:\s*48\}\)/);
+  assert.match(app, /useAppGroupNavigation/);
+  assert.match(app, /groupNavigation\.mount\(\)/);
+  assert.match(app, /groupNavigation\.unmount\(\)/);
+  assert.match(groupNav, /useBoundaryGroupWheel/);
+  assert.match(groupNav, /groupWheel\.mount\(\)/);
+  assert.match(groupNav, /groupWheel\.unmount\(\)/);
+  assert.match(groupNav, /resetMainScroll/);
+  assert.match(iconRefresh, /if \(!isExtensionContext\(\)\) return/);
+  assert.match(iconRefresh, /refreshAutoSiteIconsBatch\(\{maxDomains:\s*48\}\)/);
   assert.match(home, /data-wheel-boundary-switch/);
   assert.match(home, /data-wheel-lock/);
   assert.match(wheel, /canScrollInDirection/);
@@ -713,6 +767,42 @@ test('terminal command memos normalize old buffer state', async () => {
     assert.ok(Array.isArray(normalized.runtime.terminal_buffer.commands));
     assert.ok(normalized.runtime.terminal_buffer.commands.length >= 3);
     assert.ok(normalized.runtime.terminal_buffer.commands.some((item) => item.command === 'npm run build'));
+  `);
+});
+
+test('runtime config normalizes dirty extension storage before schema validation', async () => {
+  await runBundledTypeScript('runtime-dirty-extension-storage', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+    import {validateConfigForSave} from '../../../src/core/config/validate.ts';
+
+    const normalized = normalizeConfig({
+      runtime: {
+        cron: 'legacy-bad-cron',
+        auth: {jwtToken: 123},
+        terminal: {
+          history: 'npm run build',
+          theme: 'retro',
+          isOpen: 'yes',
+        },
+        siteState: [],
+        widgets: [],
+        widgetState: [],
+        photo: [],
+        siteList: {groups: null, widgets: null},
+      },
+    });
+
+    const result = validateConfigForSave(normalized);
+    assert.equal(result.ok, true, result.errors.join('; '));
+    assert.deepEqual(normalized.runtime.terminal.history, []);
+    assert.equal(normalized.runtime.terminal.theme, 'dark');
+    assert.equal(normalized.runtime.terminal.isOpen, false);
+    assert.equal(normalized.runtime.auth.jwtToken, '');
+    assert.ok(normalized.runtime.cron.expr);
+    assert.ok(normalized.runtime.siteList.groups.default_group);
+    assert.deepEqual(normalized.runtime.photo.widgets, {});
+    assert.deepEqual(normalized.runtime.widgetState, {});
   `);
 });
 

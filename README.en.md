@@ -93,7 +93,7 @@ src/
 │   ├── home/                  # Home grid and site cards
 │   ├── navigation/            # Sidebar, top actions, and mobile group nav
 │   ├── settings/              # Settings modal and tabs
-│   ├── teminal/               # Terminal mode component, historical directory name
+│   ├── terminal/              # Terminal mode component
 │   └── widgets/               # Built-in widgets and widget marketplace
 ├── shared/                    # Shared UI, icons, composables, utilities, and types
 └── stores/                    # Pinia stores

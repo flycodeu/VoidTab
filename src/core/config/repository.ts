@@ -3,6 +3,7 @@ import type {Config} from './types';
 import {defaultConfig} from './default';
 import {migrateConfig} from './migrate';
 import {normalizeConfig} from './normalize';
+import {assertConfigValidForSave} from './validate';
 import {storage} from '../storage';
 import {CONFIG_KEY, WALLPAPER_KEY, LOCAL_WALLPAPER_MARKER} from './keys';
 import {applyLegacyLocalStorageIntoConfig} from "./legacyLocalStorage.ts";
@@ -112,7 +113,10 @@ export const configRepository = {
      * - config 本体写 local（你也可以未来改成：enabled 时写 sync）
      */
     async save(cfg: Config): Promise<void> {
-        const copy: any = await sealSensitiveConfigForStorage(cfg);
+        const normalized = normalizeConfig(migrateConfig(cfg));
+        assertConfigValidForSave(normalized);
+
+        const copy: any = await sealSensitiveConfigForStorage(normalized);
         const wp = copy?.theme?.wallpaper ?? '';
 
         if (isBase64Image(wp)) {
