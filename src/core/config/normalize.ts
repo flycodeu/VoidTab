@@ -11,11 +11,14 @@ import type {
     SidebarPosition,
     PrivacyConfig,
     PrivacyVaultEnvelope,
+    AiConfig,
+    AiPromptTemplate,
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 import {createLegacyBufferNote, normalizeMemoCategories, normalizeMemoNotes} from './memoNotes';
+import {cloneDefaultAiPromptTemplates} from './aiPromptTemplates';
 
 function deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
@@ -107,6 +110,49 @@ function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
     }
 
     return base as SyncProfile;
+}
+
+function normalizeAiPromptTemplate(input: any, fallbackIndex: number): AiPromptTemplate | null {
+    if (!isRecordLike(input)) return null;
+
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    const content = typeof input.content === 'string' ? input.content : '';
+    if (!title || !content.trim()) return null;
+
+    const now = Date.now();
+    return {
+        id: typeof input.id === 'string' && input.id.trim()
+            ? input.id.trim()
+            : `ai-template-${now}-${fallbackIndex}`,
+        title,
+        category: typeof input.category === 'string' && input.category.trim()
+            ? input.category.trim()
+            : '自定义',
+        description: typeof input.description === 'string' ? input.description : '',
+        content,
+        systemPrompt: typeof input.systemPrompt === 'string' ? input.systemPrompt : '',
+        createdAt: Number.isFinite(Number(input.createdAt)) ? Number(input.createdAt) : now,
+        updatedAt: Number.isFinite(Number(input.updatedAt)) ? Number(input.updatedAt) : now,
+    };
+}
+
+function normalizeAi(inputAi: any, fallback: AiConfig): AiConfig {
+    const input = isRecordLike(inputAi) ? inputAi : {};
+    const templates = Array.isArray(input.templates)
+        ? input.templates
+            .map((template: any, index: number) => normalizeAiPromptTemplate(template, index))
+            .filter((template: AiPromptTemplate | null): template is AiPromptTemplate => !!template)
+        : cloneDefaultAiPromptTemplates();
+
+    return {
+        baseUrl: typeof input.baseUrl === 'string' ? input.baseUrl : fallback.baseUrl,
+        apiKey: typeof input.apiKey === 'string' ? input.apiKey : fallback.apiKey,
+        model: typeof input.model === 'string' ? input.model : fallback.model,
+        temperature: clamp(input.temperature, 0, 2, fallback.temperature),
+        maxHistory: clampInt(input.maxHistory, 1, 50, fallback.maxHistory),
+        systemPrompt: typeof input.systemPrompt === 'string' ? input.systemPrompt : fallback.systemPrompt,
+        templates,
+    };
 }
 
 function normalizePrivacyVault(inputVault: any): PrivacyVaultEnvelope | null {
@@ -565,10 +611,7 @@ export function normalizeConfig(raw: any): Config {
 
     out.privacy = normalizePrivacy(input.privacy, base.privacy);
 
-    out.ai = {
-        ...base.ai,
-        ...(input.ai || {})
-    };
+    out.ai = normalizeAi(input.ai, base.ai);
 
     out.searchEngines = Array.isArray(input.searchEngines) && input.searchEngines.length > 0
         ? input.searchEngines.map((e: any) => ({

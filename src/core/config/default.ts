@@ -2,6 +2,7 @@ import type {Config} from './types';
 import {CURRENT_CONFIG_VERSION} from './types';
 import {buildTemplateLayout} from '../templates/presets';
 import {cloneDefaultMemoCategories, cloneDefaultMemoNotes} from './memoNotes';
+import {cloneDefaultAiPromptTemplates} from './aiPromptTemplates';
 
 export const LOCAL_WALLPAPER_MARKER = '_USE_LOCAL_STORAGE_' as const;
 
@@ -26,7 +27,9 @@ export const defaultConfig: Config = {
         apiKey: '',
         model: 'deepseek-chat',
         temperature: 0.7,
-        maxHistory: 10
+        maxHistory: 10,
+        systemPrompt: 'You are a helpful assistant.',
+        templates: cloneDefaultAiPromptTemplates(),
     },
 
     layout: buildTemplateLayout('clean'),

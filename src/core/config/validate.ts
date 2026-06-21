@@ -176,8 +176,27 @@ export function validateImportedConfig(raw: unknown): ConfigImportValidationResu
         warnStringField(raw.ai, 'baseUrl', 'ai.baseUrl', warnings);
         warnStringField(raw.ai, 'apiKey', 'ai.apiKey', warnings);
         warnStringField(raw.ai, 'model', 'ai.model', warnings);
+        warnStringField(raw.ai, 'systemPrompt', 'ai.systemPrompt', warnings);
         warnNumberField(raw.ai, 'temperature', 'ai.temperature', warnings);
         warnNumberField(raw.ai, 'maxHistory', 'ai.maxHistory', warnings);
+        if ('templates' in raw.ai && !Array.isArray(raw.ai.templates)) {
+            addLimited(warnings, 'ai.templates 必须是数组，将使用默认模板');
+        } else if (Array.isArray(raw.ai.templates)) {
+            raw.ai.templates.forEach((template, index) => {
+                if (!isRecord(template)) {
+                    addLimited(warnings, `ai.templates[${index}] 必须是对象，将被清理`);
+                    return;
+                }
+                warnStringField(template, 'id', `ai.templates[${index}].id`, warnings);
+                warnStringField(template, 'title', `ai.templates[${index}].title`, warnings);
+                warnStringField(template, 'category', `ai.templates[${index}].category`, warnings);
+                warnStringField(template, 'content', `ai.templates[${index}].content`, warnings);
+                warnStringField(template, 'description', `ai.templates[${index}].description`, warnings);
+                warnStringField(template, 'systemPrompt', `ai.templates[${index}].systemPrompt`, warnings);
+                warnNumberField(template, 'createdAt', `ai.templates[${index}].createdAt`, warnings);
+                warnNumberField(template, 'updatedAt', `ai.templates[${index}].updatedAt`, warnings);
+            });
+        }
     }
 
     if (isRecord(raw.privacy)) {
@@ -534,6 +553,36 @@ const validatePrivacyForSave = (privacy: RecordLike, errors: string[]) => {
     }
 };
 
+const validateAiForSave = (ai: RecordLike, errors: string[]) => {
+    requireStringField(ai, 'baseUrl', 'ai.baseUrl', errors);
+    requireStringField(ai, 'apiKey', 'ai.apiKey', errors);
+    requireStringField(ai, 'model', 'ai.model', errors);
+    requireStringField(ai, 'systemPrompt', 'ai.systemPrompt', errors);
+    requireNumberField(ai, 'temperature', 'ai.temperature', errors);
+    requireNumberField(ai, 'maxHistory', 'ai.maxHistory', errors);
+
+    if (!Array.isArray(ai.templates)) {
+        addLimited(errors, 'ai.templates 必须是数组');
+        return;
+    }
+
+    ai.templates.forEach((template, index) => {
+        if (!isRecord(template)) {
+            addLimited(errors, `ai.templates[${index}] 必须是对象`);
+            return;
+        }
+
+        requireStringField(template, 'id', `ai.templates[${index}].id`, errors);
+        requireStringField(template, 'title', `ai.templates[${index}].title`, errors);
+        requireStringField(template, 'category', `ai.templates[${index}].category`, errors);
+        requireStringField(template, 'content', `ai.templates[${index}].content`, errors);
+        if (hasDefinedField(template, 'description')) requireStringField(template, 'description', `ai.templates[${index}].description`, errors);
+        if (hasDefinedField(template, 'systemPrompt')) requireStringField(template, 'systemPrompt', `ai.templates[${index}].systemPrompt`, errors);
+        requireNumberField(template, 'createdAt', `ai.templates[${index}].createdAt`, errors);
+        requireNumberField(template, 'updatedAt', `ai.templates[${index}].updatedAt`, errors);
+    });
+};
+
 export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -567,13 +616,7 @@ export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResul
 
     if (theme) validateThemeForSave(theme, errors);
 
-    if (ai) {
-        requireStringField(ai, 'baseUrl', 'ai.baseUrl', errors);
-        requireStringField(ai, 'apiKey', 'ai.apiKey', errors);
-        requireStringField(ai, 'model', 'ai.model', errors);
-        requireNumberField(ai, 'temperature', 'ai.temperature', errors);
-        requireNumberField(ai, 'maxHistory', 'ai.maxHistory', errors);
-    }
+    if (ai) validateAiForSave(ai, errors);
 
     if (privacy) validatePrivacyForSave(privacy, errors);
 

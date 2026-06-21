@@ -143,6 +143,64 @@ test('AI markdown rendering is sanitized before v-html', async () => {
   assert.match(stream, /trimmed\.startsWith\('data:'\)/);
 });
 
+test('AI prompt templates are user-managed config data', async () => {
+  const panel = await read('src/features/ai/components/AiChatPanel.vue');
+  const types = await read('src/core/config/types.ts');
+  const defaults = await read('src/core/config/default.ts');
+  const validate = await read('src/core/config/validate.ts');
+
+  assert.match(types, /interface AiPromptTemplate/);
+  assert.match(defaults, /cloneDefaultAiPromptTemplates/);
+  assert.match(validate, /ai\.templates/);
+  assert.match(panel, /promptTemplates/);
+  assert.match(panel, /configStore\.config\.ai\.templates/);
+  assert.match(panel, /showTemplateLibrary/);
+  assert.match(panel, /aria-controls="ai-template-library"/);
+  assert.match(panel, /openTemplateEditor/);
+  assert.match(panel, /restoreDefaultPromptTemplates/);
+  assert.match(panel, /selectedTemplateId/);
+
+  await runBundledTypeScript('ai-prompt-template-normalization', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+
+    const migrated = normalizeConfig({
+      ai: {
+        baseUrl: 'https://example.com/v1',
+        model: 'custom-model',
+        temperature: 9,
+        maxHistory: 0,
+      },
+    });
+    assert.equal(migrated.ai.baseUrl, 'https://example.com/v1');
+    assert.equal(migrated.ai.model, 'custom-model');
+    assert.equal(migrated.ai.temperature, 2);
+    assert.equal(migrated.ai.maxHistory, 1);
+    assert.ok(migrated.ai.templates.length >= 3);
+
+    const cleared = normalizeConfig({
+      ai: {
+        templates: [],
+        systemPrompt: 'Be direct.',
+      },
+    });
+    assert.deepEqual(cleared.ai.templates, []);
+    assert.equal(cleared.ai.systemPrompt, 'Be direct.');
+
+    const repaired = normalizeConfig({
+      ai: {
+        templates: [
+          { title: '', content: 'drop me', category: 'bad' },
+          { title: 'Keep', content: 'Hello {{name}}', category: 'work' },
+        ],
+      },
+    });
+    assert.equal(repaired.ai.templates.length, 1);
+    assert.equal(repaired.ai.templates[0].title, 'Keep');
+    assert.equal(repaired.ai.templates[0].category, 'work');
+  `);
+});
+
 test('config storage encrypts sensitive local fields and strips sync payload', async () => {
   const sensitive = await read('src/core/config/sensitive.ts');
   const repository = await read('src/core/config/repository.ts');

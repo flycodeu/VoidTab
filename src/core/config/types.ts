@@ -176,12 +176,25 @@ export interface SearchEngine {
     icon: string;
 }
 
+export interface AiPromptTemplate {
+    id: string;
+    title: string;
+    category: string;
+    content: string;
+    description?: string;
+    systemPrompt?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
 export interface AiConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
     temperature: number;
     maxHistory: number;
+    systemPrompt: string;
+    templates: AiPromptTemplate[];
 }
 
 
