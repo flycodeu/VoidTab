@@ -9,11 +9,11 @@ import type {
     SiteIconPathMissRecord,
     SiteIconProviderStatRecord,
     SidebarPosition,
-    TerminalCommandMemo,
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
+import {createLegacyBufferNote, normalizeMemoCategories, normalizeMemoNotes} from './memoNotes';
 
 function deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
@@ -219,53 +219,30 @@ function normalizeProviderStats(value: any): Partial<Record<SiteIconProvider, Si
     return Object.keys(out).length ? out : undefined;
 }
 
-function normalizeTerminalCommands(value: any, fallback: TerminalCommandMemo[]): TerminalCommandMemo[] {
-    const source = Array.isArray(value) && value.length > 0 ? value : fallback;
-    const now = Date.now();
-    const seen = new Set<string>();
-
-    return source
-        .map((raw: any, index: number): TerminalCommandMemo => {
-            const command = typeof raw?.command === 'string' ? raw.command.trim() : '';
-            const title = typeof raw?.title === 'string' && raw.title.trim()
-                ? raw.title.trim()
-                : (command ? command.slice(0, 28) : `命令 ${index + 1}`);
-            const category = typeof raw?.category === 'string' && raw.category.trim()
-                ? raw.category.trim()
-                : 'note';
-            const idSeed = typeof raw?.id === 'string' && raw.id.trim()
-                ? raw.id.trim()
-                : `cmd_${category}_${index}`;
-            let id = idSeed;
-            let suffix = 1;
-            while (seen.has(id)) {
-                suffix += 1;
-                id = `${idSeed}_${suffix}`;
-            }
-            seen.add(id);
-
-            return {
-                id,
-                title,
-                command,
-                category,
-                description: typeof raw?.description === 'string' ? raw.description : '',
-                createdAt: Number.isFinite(Number(raw?.createdAt)) ? Number(raw.createdAt) : now,
-                updatedAt: Number.isFinite(Number(raw?.updatedAt)) ? Number(raw.updatedAt) : now,
-            };
-        })
-        .filter((item) => item.command.length > 0);
-}
-
 function normalizeTerminalBuffer(input: any, fallback: RuntimeConfig['terminal_buffer']): RuntimeConfig['terminal_buffer'] {
     const base = isRecordLike(input) ? input : {};
+    const buffer = typeof base.buffer === 'string' ? base.buffer : fallback.buffer;
+    const categories = normalizeMemoCategories(base.categories, fallback.categories);
+    const activeCategoryCandidate = typeof base.activeCategory === 'string' && base.activeCategory.trim()
+        ? base.activeCategory.trim()
+        : fallback.activeCategory;
+    const activeCategory = activeCategoryCandidate === 'all' || categories.some((item) => item.id === activeCategoryCandidate)
+        ? activeCategoryCandidate
+        : 'all';
+    const notes = (() => {
+        if (Array.isArray(base.notes)) return normalizeMemoNotes(base.notes, fallback.notes, categories);
+        if (Array.isArray(base.commands)) return normalizeMemoNotes(base.commands, [], categories);
+        const legacyNote = createLegacyBufferNote(buffer);
+        if (legacyNote) return [legacyNote];
+        return normalizeMemoNotes(undefined, fallback.notes);
+    })();
+
     return {
-        buffer: typeof base.buffer === 'string' ? base.buffer : fallback.buffer,
+        buffer,
         theme: typeof base.theme === 'string' && base.theme.trim() ? base.theme : fallback.theme,
-        activeCategory: typeof base.activeCategory === 'string' && base.activeCategory.trim()
-            ? base.activeCategory
-            : fallback.activeCategory,
-        commands: normalizeTerminalCommands(base.commands, fallback.commands),
+        activeCategory,
+        categories,
+        notes,
     };
 }
 

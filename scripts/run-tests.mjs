@@ -738,35 +738,81 @@ test('template cards and wallpaper media keep resource use bounded', async () =>
   assert.match(layer, /preload="metadata"/);
 });
 
-test('terminal command memos normalize old buffer state', async () => {
+test('memo notes normalize legacy data and preserve an explicit empty list', async () => {
   const widget = await read('src/features/widgets/builtins/terminal-buffer/TerminalWidget.vue');
   const modal = await read('src/features/widgets/builtins/terminal-buffer/TerminalModal.vue');
   const registry = await read('src/core/registry/widgets.ts');
 
-  assert.match(registry, /label:\s*'命令备忘'/);
-  assert.match(widget, /copyCommand/);
-  assert.match(modal, /saveCommandMemo/);
-  assert.match(modal, /filteredCommands/);
+  assert.match(registry, /label:\s*'备忘录'/);
+  assert.match(widget, /getMemoExcerpt/);
+  assert.match(modal, /saveMemoNote/);
+  assert.match(modal, /filteredNotes/);
+  assert.match(modal, /@contextmenu\.prevent="openNoteContextMenu/);
+  assert.match(modal, /startRenameCategory/);
+  assert.match(modal, /deleteConfirmedCategory/);
 
-  await runBundledTypeScript('terminal-command-memos', `
+  await runBundledTypeScript('memo-note-normalization', `
     import assert from 'node:assert/strict';
     import {normalizeConfig} from '../../../src/core/config/normalize.ts';
 
-    const normalized = normalizeConfig({
+    const cleared = normalizeConfig({
       runtime: {
         terminal_buffer: {
-          buffer: 'legacy notes',
+          buffer: 'stale legacy buffer',
           theme: 'retro',
+          notes: [],
         },
       },
     });
+    assert.deepEqual(cleared.runtime.terminal_buffer.notes, []);
 
-    assert.equal(normalized.runtime.terminal_buffer.buffer, 'legacy notes');
-    assert.equal(normalized.runtime.terminal_buffer.theme, 'retro');
-    assert.equal(normalized.runtime.terminal_buffer.activeCategory, 'all');
-    assert.ok(Array.isArray(normalized.runtime.terminal_buffer.commands));
-    assert.ok(normalized.runtime.terminal_buffer.commands.length >= 3);
-    assert.ok(normalized.runtime.terminal_buffer.commands.some((item) => item.command === 'npm run build'));
+    const migratedCommands = normalizeConfig({
+      runtime: {
+        terminal_buffer: {
+          buffer: '',
+          theme: 'standard',
+          commands: [{
+            id: 'legacy-build',
+            title: 'Build',
+            command: 'npm run build',
+            description: 'legacy command memo',
+            category: 'dev',
+            createdAt: 1,
+            updatedAt: 2,
+          }],
+        },
+      },
+    });
+    assert.equal(migratedCommands.runtime.terminal_buffer.notes.length, 1);
+    assert.equal(migratedCommands.runtime.terminal_buffer.notes[0].content, 'npm run build');
+    assert.equal(migratedCommands.runtime.terminal_buffer.notes[0].summary, 'legacy command memo');
+    assert.equal(migratedCommands.runtime.terminal_buffer.notes[0].category, 'work');
+
+    const migratedBuffer = normalizeConfig({
+      runtime: {terminal_buffer: {buffer: '# old note', theme: 'retro'}},
+    });
+    assert.equal(migratedBuffer.runtime.terminal_buffer.notes.length, 1);
+    assert.equal(migratedBuffer.runtime.terminal_buffer.notes[0].content, '# old note');
+
+    const customTags = normalizeConfig({
+      runtime: {
+        terminal_buffer: {
+          buffer: '',
+          theme: 'standard',
+          categories: [{id: 'client', label: '客户'}],
+          notes: [{
+            id: 'client-note',
+            title: '回访',
+            content: '确认需求',
+            category: 'client',
+            createdAt: 1,
+            updatedAt: 1,
+          }],
+        },
+      },
+    });
+    assert.deepEqual(customTags.runtime.terminal_buffer.categories, [{id: 'client', label: '客户'}]);
+    assert.equal(customTags.runtime.terminal_buffer.notes[0].category, 'client');
   `);
 });
 

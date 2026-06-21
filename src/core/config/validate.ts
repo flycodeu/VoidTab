@@ -469,7 +469,11 @@ const validateRuntimeForSave = (runtime: RecordLike, errors: string[]) => {
         requireStringField(runtime.terminal_buffer, 'buffer', 'runtime.terminal_buffer.buffer', errors);
         requireStringField(runtime.terminal_buffer, 'theme', 'runtime.terminal_buffer.theme', errors);
         requireStringField(runtime.terminal_buffer, 'activeCategory', 'runtime.terminal_buffer.activeCategory', errors);
-        if (!Array.isArray(runtime.terminal_buffer.commands)) addLimited(errors, 'runtime.terminal_buffer.commands 必须是数组');
+        if (!Array.isArray(runtime.terminal_buffer.categories)) addLimited(errors, 'runtime.terminal_buffer.categories 必须是数组');
+        if (!Array.isArray(runtime.terminal_buffer.notes)) addLimited(errors, 'runtime.terminal_buffer.notes 必须是数组');
+        if ('commands' in runtime.terminal_buffer && !Array.isArray(runtime.terminal_buffer.commands)) {
+            addLimited(errors, 'runtime.terminal_buffer.commands 必须是数组');
+        }
     }
 };
 

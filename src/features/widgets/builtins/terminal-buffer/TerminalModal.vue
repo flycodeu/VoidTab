@@ -1,871 +1,956 @@
 <script setup lang="ts">
-import {ref, onMounted, nextTick, computed} from 'vue';
-import { useDateFormat, useNow} from '@vueuse/core';
+import {computed, nextTick, ref, watch} from 'vue';
+import MarkdownIt from 'markdown-it';
+import DOMPurify from 'dompurify';
 import {
-  PhX, PhBroom, PhBracketsCurly, PhClipboardText,
-  PhArrowsLeftRight, PhPaintBucket, PhPlus, PhFloppyDisk, PhPencilSimple,
-  PhTrash, PhCopy, PhArrowLineRight
+  PhArrowLeft,
+  PhBriefcase,
+  PhCheck,
+  PhCheckSquare,
+  PhCode,
+  PhColumns,
+  PhCopy,
+  PhDotsThree,
+  PhEye,
+  PhFloppyDisk,
+  PhLightbulb,
+  PhLink,
+  PhListBullets,
+  PhMagnifyingGlass,
+  PhNotebook,
+  PhPencilSimple,
+  PhPlus,
+  PhPushPin,
+  PhStudent,
+  PhTag,
+  PhTextB,
+  PhTextHOne,
+  PhTrash,
+  PhTray,
+  PhX,
 } from '@phosphor-icons/vue';
+import type {Component} from 'vue';
+import type {MemoCategory, MemoNote} from '../../../../core/config/types';
+import {getMemoNoteCategoryLabel} from '../../../../core/config/memoNotes';
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
-import {useToast} from '../../../../shared/composables/useToast';
 import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
-import {getTerminalCommandCategoryLabel, terminalCommandCategories} from '../../../../core/config/terminalCommands';
-import {createCommandMemo, ensureTerminalBufferState, touchCommandMemo} from './commandMemo';
+import {useToast} from '../../../../shared/composables/useToast';
+import {useConfigStore} from '../../../../stores/useConfigStore';
+import {
+  createMemoNote,
+  ensureTerminalBufferState,
+  getMemoExcerpt,
+  getMemoReadingMinutes,
+  getMemoWordCount,
+  touchMemoNote,
+} from './commandMemo';
 
-const props = defineProps<{ show: boolean }>();
-const emit = defineEmits(['close']);
-useEscapeClose(() => props.show, () => emit('close'));
-
-// === 核心状态 ===
-import { useConfigStore } from '../../../../stores/useConfigStore';
-
+const props = withDefaults(defineProps<{ show: boolean; createOnOpen?: boolean }>(), {createOnOpen: false});
+const emit = defineEmits<{ close: [] }>();
 const store = useConfigStore();
 const toast = useToast();
-const terminalState = computed(() => ensureTerminalBufferState(store.config.runtime));
-const content = computed<string>({
-  get: () => terminalState.value.buffer,
-  set: (v) => (terminalState.value.buffer = v),
-});
-
-const currentTheme = computed<string>({
-  get: () => terminalState.value.theme,
-  set: (v) => (terminalState.value.theme = v),
-});
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
-const statusMsg = ref('READY');
-const showClearConfirm = ref(false);
-const editingCommandId = ref('');
-const commandForm = ref({
-  title: '',
-  command: '',
-  category: 'dev',
-  description: '',
-});
+const categoryInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null);
+const searchQuery = ref('');
+const activeNoteId = ref('');
+const editorMode = ref<'edit' | 'split' | 'preview'>('split');
+const mobileView = ref<'list' | 'editor'>('list');
+const showDeleteConfirm = ref(false);
+const showClearAllConfirm = ref(false);
+const showDeleteCategoryConfirm = ref(false);
+const deleteTargetNoteId = ref('');
+const deleteTargetCategoryId = ref('');
+const editingCategoryId = ref('');
+const categoryNameDraft = ref('');
+const originalSignature = ref('');
+const draft = ref({title: '', content: '', category: 'inbox', summary: '', pinned: false});
+const contextMenu = ref<null | {type: 'note' | 'category'; id: string; x: number; y: number}>(null);
 
-const commandCategoryOptions = terminalCommandCategories.filter((item) => item.id !== 'all');
-const activeCommandCategory = computed<string>({
-  get: () => terminalState.value.activeCategory || 'all',
-  set: (v) => (terminalState.value.activeCategory = v || 'all'),
-});
-
-const sortedCommands = computed(() => {
-  return [...terminalState.value.commands].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-});
-
-const filteredCommands = computed(() => {
-  if (activeCommandCategory.value === 'all') return sortedCommands.value;
-  return sortedCommands.value.filter((item) => item.category === activeCommandCategory.value);
-});
-
-// === 主题定义 ===
-const themes = [
-  {id: 'standard', name: 'Standard (IDE)', class: 'theme-standard'},
-  {id: 'retro', name: 'Retro (CRT)', class: 'theme-retro'},
-  {id: 'cyber', name: 'Cyber (Holo)', class: 'theme-cyber'},
-  {id: 'paper', name: 'Paper (Light)', class: 'theme-paper'},
-];
-
-const activeThemeClass = computed(() => {
-  return themes.find(t => t.id === currentTheme.value)?.class || 'theme-standard';
-});
-
-// === 工具函数 ===
-const showStatus = (msg: string) => {
-  statusMsg.value = msg;
-  setTimeout(() => statusMsg.value = 'READY', 2000);
+const md = new MarkdownIt({html: false, linkify: true, breaks: true, typographer: true});
+const memoState = computed(() => ensureTerminalBufferState(store.config.runtime));
+const categoryOptions = computed(() => memoState.value.categories);
+const allCategories = computed<MemoCategory[]>(() => [{id: 'all', label: '全部'}, ...categoryOptions.value]);
+const categoryIcons: Record<string, Component> = {
+  all: PhListBullets,
+  inbox: PhTray,
+  todo: PhCheckSquare,
+  work: PhBriefcase,
+  study: PhStudent,
+  idea: PhLightbulb,
+  snippet: PhCode,
+  note: PhNotebook,
 };
+const categoryLabel = (id: string) => id === 'all' ? '全部' : getMemoNoteCategoryLabel(id, categoryOptions.value);
+const activeCategory = computed<string>({
+  get: () => memoState.value.activeCategory || 'all',
+  set: (value) => {
+    memoState.value.activeCategory = value || 'all';
+    void store.saveConfig?.();
+  },
+});
+const sortedNotes = computed(() => [...memoState.value.notes].sort((a, b) => {
+  if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+  return (b.updatedAt || 0) - (a.updatedAt || 0);
+}));
+const filteredNotes = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  return sortedNotes.value.filter((note) => {
+    const inCategory = activeCategory.value === 'all' || note.category === activeCategory.value;
+    const haystack = `${note.title} ${note.summary || ''} ${note.content}`.toLocaleLowerCase();
+    return inCategory && (!query || haystack.includes(query));
+  });
+});
+const categoryCounts = computed(() => {
+  const counts: Record<string, number> = {all: memoState.value.notes.length};
+  for (const note of memoState.value.notes) counts[note.category] = (counts[note.category] || 0) + 1;
+  return counts;
+});
+const activeNote = computed(() => memoState.value.notes.find((note) => note.id === activeNoteId.value));
+const contextNote = computed(() => contextMenu.value?.type === 'note'
+  ? memoState.value.notes.find((note) => note.id === contextMenu.value?.id)
+  : undefined);
+const contextCategory = computed(() => contextMenu.value?.type === 'category'
+  ? categoryOptions.value.find((category) => category.id === contextMenu.value?.id)
+  : undefined);
+const deleteTargetNote = computed(() => memoState.value.notes.find((note) => note.id === deleteTargetNoteId.value));
+const deleteTargetCategory = computed(() => categoryOptions.value.find((category) => category.id === deleteTargetCategoryId.value));
+const deleteCategoryNoteCount = computed(() => memoState.value.notes.filter((note) => note.category === deleteTargetCategoryId.value).length);
+const draftSignature = computed(() => JSON.stringify(draft.value));
+const isDirty = computed(() => draftSignature.value !== originalSignature.value);
+const hasDraftContent = computed(() => !!draft.value.title.trim() || !!draft.value.content.trim() || !!draft.value.summary.trim());
+const wordCount = computed(() => getMemoWordCount(draft.value.content));
+const lineCount = computed(() => draft.value.content ? draft.value.content.split('\n').length : 0);
+const readingMinutes = computed(() => getMemoReadingMinutes(draft.value.content));
+const renderedMarkdown = computed(() => DOMPurify.sanitize(md.render(draft.value.content || '')));
 
-const resetCommandForm = () => {
-  editingCommandId.value = '';
-  commandForm.value = {
-    title: '',
-    command: '',
-    category: activeCommandCategory.value === 'all' ? 'dev' : activeCommandCategory.value,
-    description: '',
-  };
+const persistMemoState = () => void store.saveConfig?.();
+const focusCategoryInput = () => {
+  const target = categoryInputRef.value;
+  const input = Array.isArray(target) ? target[0] : target;
+  input?.focus();
 };
+const formatDateTime = (value?: number) => value
+  ? new Date(value).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})
+  : '未保存';
+const defaultCategoryId = () => categoryOptions.value.find((category) => category.id === 'inbox')?.id
+  || categoryOptions.value[0]?.id
+  || 'note';
 
-const persistCommandState = () => {
-  store.saveConfig?.();
-};
-
-const saveCommandMemo = () => {
-  const command = commandForm.value.command.trim();
-  if (!command) {
-    toast.warning('请先填写命令内容');
-    return;
+const setDraft = (note?: MemoNote) => {
+  if (note) {
+    activeNoteId.value = note.id;
+    draft.value = {
+      title: note.title,
+      content: note.content,
+      category: note.category || defaultCategoryId(),
+      summary: note.summary || '',
+      pinned: note.pinned === true,
+    };
+  } else {
+    activeNoteId.value = '';
+    draft.value = {
+      title: '',
+      content: '',
+      category: activeCategory.value === 'all' ? defaultCategoryId() : activeCategory.value,
+      summary: '',
+      pinned: false,
+    };
   }
+  originalSignature.value = JSON.stringify(draft.value);
+};
 
-  const title = commandForm.value.title.trim() || command.slice(0, 28);
-  if (editingCommandId.value) {
-    const idx = terminalState.value.commands.findIndex((item) => item.id === editingCommandId.value);
-    if (idx >= 0) {
-      terminalState.value.commands[idx] = touchCommandMemo({
-        ...terminalState.value.commands[idx],
+const saveMemoNote = (silent = false) => {
+  const content = draft.value.content.trim();
+  const summary = draft.value.summary.trim();
+  const title = draft.value.title.trim() || getMemoExcerpt(content || summary, '未命名备忘').slice(0, 32);
+  if (!title && !content && !summary) {
+    if (!silent) toast.warning('请先写一点内容');
+    return false;
+  }
+  const category = categoryOptions.value.some((item) => item.id === draft.value.category)
+    ? draft.value.category
+    : defaultCategoryId();
+
+  if (activeNoteId.value) {
+    const index = memoState.value.notes.findIndex((note) => note.id === activeNoteId.value);
+    if (index >= 0) {
+      memoState.value.notes[index] = touchMemoNote({
+        ...memoState.value.notes[index],
         title,
-        command,
-        category: commandForm.value.category || 'note',
-        description: commandForm.value.description.trim(),
+        content,
+        summary,
+        category,
+        pinned: draft.value.pinned,
       });
-      toast.success('命令已更新');
     }
   } else {
-    terminalState.value.commands.unshift(createCommandMemo({
-      title,
-      command,
-      category: commandForm.value.category || 'note',
-      description: commandForm.value.description,
-    }));
-    toast.success('命令已保存');
+    const note = createMemoNote({title, content, summary, category, pinned: draft.value.pinned});
+    memoState.value.notes.unshift(note);
+    activeNoteId.value = note.id;
   }
 
-  persistCommandState();
-  resetCommandForm();
+  draft.value.title = title;
+  draft.value.category = category;
+  originalSignature.value = JSON.stringify(draft.value);
+  persistMemoState();
+  if (!silent) toast.success('备忘已保存');
+  return true;
 };
 
-const editCommandMemo = (id: string) => {
-  const command = terminalState.value.commands.find((item) => item.id === id);
-  if (!command) return;
-  editingCommandId.value = command.id;
-  commandForm.value = {
-    title: command.title,
-    command: command.command,
-    category: command.category || 'note',
-    description: command.description || '',
+const saveBeforeLeaving = () => {
+  if (isDirty.value && hasDraftContent.value) saveMemoNote(true);
+};
+const closeContextMenu = () => {
+  contextMenu.value = null;
+};
+const selectCategory = (id: string) => {
+  closeContextMenu();
+  activeCategory.value = id;
+};
+const selectNote = (id: string) => {
+  closeContextMenu();
+  if (id === activeNoteId.value) {
+    mobileView.value = 'editor';
+    return;
+  }
+  saveBeforeLeaving();
+  setDraft(memoState.value.notes.find((item) => item.id === id));
+  mobileView.value = 'editor';
+  nextTick(() => textareaRef.value?.focus());
+};
+const createNewNote = () => {
+  closeContextMenu();
+  saveBeforeLeaving();
+  setDraft();
+  editorMode.value = 'edit';
+  mobileView.value = 'editor';
+  nextTick(() => textareaRef.value?.focus());
+};
+const requestClose = () => {
+  closeContextMenu();
+  saveBeforeLeaving();
+  emit('close');
+};
+
+const showContextMenu = (type: 'note' | 'category', id: string, x: number, y: number) => {
+  const width = 196;
+  const height = type === 'note' ? 252 : 126;
+  contextMenu.value = {
+    type,
+    id,
+    x: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
   };
 };
-
-const deleteCommandMemo = (id: string) => {
-  terminalState.value.commands = terminalState.value.commands.filter((item) => item.id !== id);
-  if (editingCommandId.value === id) resetCommandForm();
-  persistCommandState();
-  toast.success('命令已删除');
+const openNoteContextMenu = (event: MouseEvent, noteId: string) => {
+  showContextMenu('note', noteId, event.clientX, event.clientY);
 };
-
-const copyCommandMemo = async (command: string) => {
+const openCategoryContextMenu = (event: MouseEvent, categoryId: string) => {
+  showContextMenu('category', categoryId, event.clientX, event.clientY);
+};
+const openAnchoredMenu = (event: MouseEvent, type: 'note' | 'category', id: string) => {
+  event.stopPropagation();
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  showContextMenu(type, id, rect.right - 188, rect.bottom + 4);
+};
+const openContextNote = () => {
+  const id = contextMenu.value?.type === 'note' ? contextMenu.value.id : '';
+  if (id) selectNote(id);
+};
+const toggleContextNotePin = () => {
+  const id = contextMenu.value?.type === 'note' ? contextMenu.value.id : '';
+  if (!id) return;
+  if (id === activeNoteId.value && isDirty.value) saveMemoNote(true);
+  const index = memoState.value.notes.findIndex((note) => note.id === id);
+  if (index < 0) return;
+  const note = touchMemoNote({...memoState.value.notes[index], pinned: !memoState.value.notes[index].pinned});
+  memoState.value.notes[index] = note;
+  if (id === activeNoteId.value) setDraft(note);
+  closeContextMenu();
+  persistMemoState();
+};
+const duplicateContextNote = () => {
+  const source = contextNote.value;
+  if (!source) return;
+  const note = createMemoNote({
+    title: `${source.title} 副本`,
+    content: source.content,
+    summary: source.summary,
+    category: source.category,
+    pinned: false,
+  });
+  memoState.value.notes.unshift(note);
+  closeContextMenu();
+  persistMemoState();
+  toast.success('已创建副本');
+};
+const copyNoteMarkdown = async (note?: MemoNote) => {
+  if (!note) return;
   try {
-    await navigator.clipboard.writeText(command);
-    showStatus('COMMAND COPIED');
-    toast.success('命令已复制');
+    await navigator.clipboard.writeText(note.content);
+    closeContextMenu();
+    toast.success('Markdown 已复制');
   } catch {
-    showStatus('ERR: COPY FAIL');
     toast.error('复制失败，请检查浏览器权限');
   }
 };
-
-const insertCommandMemo = (command: string) => {
-  content.value = content.value ? `${content.value}\n${command}` : command;
-  showStatus('COMMAND INSERTED');
-  nextTick(() => textareaRef.value?.focus());
-};
-
-// 1. JSON 格式化/压缩
-const toggleJSON = () => {
+const copyMarkdown = async () => {
   try {
-    const obj = JSON.parse(content.value);
-    if (content.value.includes('\n')) {
-      content.value = JSON.stringify(obj);
-      showStatus('JSON MINIFIED');
-    } else {
-      content.value = JSON.stringify(obj, null, 2);
-      showStatus('JSON FORMATTED');
-    }
-  } catch (e) {
-    showStatus('ERR: INVALID JSON');
-  }
-};
-
-// 2. Base64 编解码
-const toggleBase64 = () => {
-  try {
-    const isBase64 = /^[A-Za-z0-9+/]+={0,2}$/.test(content.value.trim());
-    if (isBase64 && content.value.length > 0) {
-      try {
-        content.value = atob(content.value);
-        showStatus('DECODED BASE64');
-        return;
-      } catch (e) { /* ignore */
-      }
-    }
-    content.value = btoa(content.value);
-    showStatus('ENCODED BASE64');
-  } catch (e) {
-    showStatus('ERR: BASE64 FAIL');
-  }
-};
-
-// 3. 复制全部
-const copyAll = async () => {
-  try {
-    await navigator.clipboard.writeText(content.value);
-    showStatus('COPIED ALL');
-    toast.success('缓冲区内容已复制');
+    await navigator.clipboard.writeText(draft.value.content);
+    toast.success('Markdown 已复制');
   } catch {
-    showStatus('ERR: COPY FAIL');
     toast.error('复制失败，请检查浏览器权限');
   }
 };
-
-// 4. 清空
-const clearAll = () => {
-  showClearConfirm.value = true;
+const confirmDeleteNote = (noteId = activeNoteId.value) => {
+  if (!noteId) return;
+  deleteTargetNoteId.value = noteId;
+  showDeleteConfirm.value = true;
+  closeContextMenu();
 };
-
-const confirmClearAll = () => {
-  showClearConfirm.value = false;
-  content.value = '';
-  showStatus('BUFFER CLEARED');
-  toast.success('缓冲区已清空');
-};
-
-// === 键盘交互逻辑 ===
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const textarea = textareaRef.value!;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    content.value = content.value.substring(0, start) + '  ' + content.value.substring(end);
-    nextTick(() => textarea.selectionStart = textarea.selectionEnd = start + 2);
+const deleteConfirmedNote = () => {
+  const targetId = deleteTargetNoteId.value;
+  const index = memoState.value.notes.findIndex((note) => note.id === targetId);
+  if (index >= 0) memoState.value.notes.splice(index, 1);
+  showDeleteConfirm.value = false;
+  deleteTargetNoteId.value = '';
+  if (targetId === activeNoteId.value) {
+    const next = sortedNotes.value[0];
+    setDraft(next);
+    if (!next) mobileView.value = 'list';
   }
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    showStatus('SAVED');
+  persistMemoState();
+  toast.success('备忘已删除');
+};
+const clearAllNotes = () => {
+  memoState.value.notes.splice(0, memoState.value.notes.length);
+  showClearAllConfirm.value = false;
+  setDraft();
+  mobileView.value = 'list';
+  persistMemoState();
+  toast.success('全部备忘已清空');
+};
+
+const startCreateCategory = () => {
+  closeContextMenu();
+  editingCategoryId.value = '__new__';
+  categoryNameDraft.value = '';
+  nextTick(focusCategoryInput);
+};
+const startRenameCategory = (categoryId: string) => {
+  const category = categoryOptions.value.find((item) => item.id === categoryId);
+  if (!category) return;
+  closeContextMenu();
+  editingCategoryId.value = category.id;
+  categoryNameDraft.value = category.label;
+  nextTick(focusCategoryInput);
+};
+const cancelCategoryEdit = () => {
+  editingCategoryId.value = '';
+  categoryNameDraft.value = '';
+};
+const saveCategoryEdit = () => {
+  const label = categoryNameDraft.value.trim().slice(0, 20);
+  if (!label) {
+    toast.warning('标签名称不能为空');
+    return;
+  }
+  const duplicate = categoryOptions.value.some((item) =>
+    item.id !== editingCategoryId.value && item.label.toLocaleLowerCase() === label.toLocaleLowerCase()
+  );
+  if (duplicate) {
+    toast.warning('已存在同名标签');
+    return;
+  }
+  if (editingCategoryId.value === '__new__') {
+    const category: MemoCategory = {id: `tag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, label};
+    memoState.value.categories.push(category);
+    activeCategory.value = category.id;
+  } else {
+    const category = categoryOptions.value.find((item) => item.id === editingCategoryId.value);
+    if (!category) return;
+    category.label = label;
+    persistMemoState();
+  }
+  cancelCategoryEdit();
+  persistMemoState();
+};
+const confirmDeleteCategory = (categoryId: string) => {
+  if (categoryOptions.value.length <= 1) {
+    toast.warning('至少保留一个标签');
+    closeContextMenu();
+    return;
+  }
+  deleteTargetCategoryId.value = categoryId;
+  showDeleteCategoryConfirm.value = true;
+  closeContextMenu();
+};
+const deleteConfirmedCategory = () => {
+  const categoryId = deleteTargetCategoryId.value;
+  const fallback = categoryOptions.value.find((item) => item.id === 'inbox' && item.id !== categoryId)
+    || categoryOptions.value.find((item) => item.id !== categoryId);
+  if (!categoryId || !fallback) return;
+  if (activeNote.value?.category === categoryId && isDirty.value) saveMemoNote(true);
+  for (let index = 0; index < memoState.value.notes.length; index += 1) {
+    const note = memoState.value.notes[index];
+    if (note.category === categoryId) memoState.value.notes[index] = touchMemoNote({...note, category: fallback.id});
+  }
+  const index = memoState.value.categories.findIndex((item) => item.id === categoryId);
+  if (index >= 0) memoState.value.categories.splice(index, 1);
+  if (activeCategory.value === categoryId) activeCategory.value = 'all';
+  if (draft.value.category === categoryId) draft.value.category = fallback.id;
+  const refreshedActive = memoState.value.notes.find((note) => note.id === activeNoteId.value);
+  if (refreshedActive) setDraft(refreshedActive);
+  if (editingCategoryId.value === categoryId) cancelCategoryEdit();
+  showDeleteCategoryConfirm.value = false;
+  deleteTargetCategoryId.value = '';
+  persistMemoState();
+  toast.success(`标签已删除，相关备忘已移至“${fallback.label}”`);
+};
+
+const insertMarkdown = (before: string, after = '', placeholder = '') => {
+  const textarea = textareaRef.value;
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = draft.value.content.slice(start, end) || placeholder;
+  draft.value.content = `${draft.value.content.slice(0, start)}${before}${selected}${after}${draft.value.content.slice(end)}`;
+  nextTick(() => {
+    textarea.focus();
+    textarea.selectionStart = start + before.length;
+    textarea.selectionEnd = start + before.length + selected.length;
+  });
+};
+const handleEditorKeydown = (event: KeyboardEvent) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    saveMemoNote();
+    return;
+  }
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    insertMarkdown('  ');
   }
 };
 
-const handleInput = (e: Event) => {
-  const target = e.target as HTMLTextAreaElement;
-  const val = target.value;
-
-  if (val.endsWith('/time')) {
-    const now = useDateFormat(useNow(), 'YYYY-MM-DD HH:mm:ss').value;
-    content.value = val.slice(0, -5) + now;
-    showStatus('TIME INSERTED');
-  } else if (val.endsWith('/uuid')) {
-    content.value = val.slice(0, -5) + crypto.randomUUID();
-    showStatus('UUID GENERATED');
-  }
-};
-
-onMounted(() => {
-  nextTick(() => textareaRef.value?.focus());
+useEscapeClose(() => props.show, () => {
+  if (contextMenu.value) closeContextMenu();
+  else if (editingCategoryId.value) cancelCategoryEdit();
+  else requestClose();
 });
+watch(() => props.show, (show) => {
+  if (!show) return;
+  searchQuery.value = '';
+  mobileView.value = 'list';
+  closeContextMenu();
+  cancelCategoryEdit();
+  if (props.createOnOpen) createNewNote();
+  else {
+    const current = memoState.value.notes.find((note) => note.id === activeNoteId.value);
+    setDraft(current || sortedNotes.value[0]);
+  }
+}, {immediate: true});
 </script>
 
 <template>
-  <Transition name="modal-fade">
-    <div v-if="show" class="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+  <Teleport to="body">
+  <Transition name="memo-fade">
+    <div v-if="show" class="memo-overlay fixed inset-0 z-[99999] flex items-center justify-center p-3 md:p-5">
+      <div class="absolute inset-0 bg-black/55 backdrop-blur-sm" @click="requestClose"></div>
 
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" @click="emit('close')"></div>
-
-      <div
-          class="relative w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden rounded-xl shadow-2xl transition-all duration-300"
-          :class="activeThemeClass"
+      <section
+          class="memo-shell relative w-full max-w-[1480px] h-[88vh] overflow-hidden border shadow-2xl"
+          :class="mobileView === 'editor' ? 'show-mobile-editor' : ''"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="memo-title"
       >
-        <div class="absolute inset-0 z-0 pointer-events-none theme-bg-layer"></div>
-        <div class="absolute inset-0 z-0 pointer-events-none theme-overlay-layer"></div>
+        <aside class="memo-nav">
+          <div class="memo-brand">
+            <span class="memo-brand-mark"><PhNotebook size="19" weight="fill"/></span>
+            <div><h2 id="memo-title">备忘录</h2><p>{{ sortedNotes.length }} 条笔记</p></div>
+          </div>
 
-        <div
-            class="relative z-10 flex items-center justify-between px-6 py-3 border-b theme-border bg-opacity-10 select-none theme-header-bg">
-          <div class="flex items-center gap-4">
-            <button @click="emit('close')"
-                    class="group flex items-center justify-center w-6 h-6 rounded-full bg-white/10 hover:bg-red-500/80 transition-colors">
-              <PhX class="w-3 h-3 text-transparent group-hover:text-white" weight="bold"/>
+          <button type="button" class="memo-new" @click="createNewNote">
+            <PhPlus size="16" weight="bold"/><span>新建备忘</span>
+          </button>
+
+          <div class="memo-category-heading">
+            <span>标签</span>
+            <button type="button" title="新建标签" aria-label="新建标签" @click="startCreateCategory">
+              <PhPlus size="14" weight="bold"/>
             </button>
-            <span class="text-sm font-bold tracking-widest opacity-80 theme-text-accent">TERMINAL // BUFFER</span>
           </div>
 
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 text-xs mr-4">
-              <PhPaintBucket size="14" class="opacity-50 theme-text"/>
-              <select
-                  v-model="currentTheme"
-                  class="theme-select bg-transparent outline-none cursor-pointer font-bold text-right appearance-none pr-4"
+          <form v-if="editingCategoryId === '__new__'" class="memo-category-editor" @submit.prevent="saveCategoryEdit">
+            <PhTag size="15"/>
+            <input ref="categoryInputRef" v-model="categoryNameDraft" maxlength="20" placeholder="标签名称" @keydown.esc.prevent="cancelCategoryEdit" />
+            <button type="submit" title="保存标签"><PhCheck size="14" weight="bold"/></button>
+            <button type="button" title="取消" @click="cancelCategoryEdit"><PhX size="14" weight="bold"/></button>
+          </form>
+
+          <nav class="memo-categories" aria-label="备忘标签">
+            <template v-for="category in allCategories" :key="category.id">
+              <form
+                  v-if="editingCategoryId === category.id"
+                  class="memo-category-editor"
+                  @submit.prevent="saveCategoryEdit"
               >
-                <option v-for="t in themes" :key="t.id" :value="t.id">{{ t.name }}</option>
-              </select>
-            </div>
-            <span class="text-xs font-mono theme-text opacity-60">STATUS: {{ statusMsg }}</span>
-          </div>
-        </div>
-
-        <div class="relative z-10 flex flex-wrap items-center gap-2 px-6 py-3 border-b theme-border theme-toolbar-bg">
-          <button @click="toggleJSON" class="tool-btn" title="Format/Minify JSON">
-            <PhBracketsCurly size="16"/>
-            <span>JSON</span>
-          </button>
-
-          <button @click="toggleBase64" class="tool-btn" title="Base64 Encode/Decode">
-            <PhArrowsLeftRight size="16"/>
-            <span>Base64</span>
-          </button>
-
-          <div class="w-[1px] h-6 bg-current opacity-10 mx-2 theme-text"></div>
-
-          <button @click="copyAll" class="tool-btn" title="Copy Content">
-            <PhClipboardText size="16"/>
-            <span>Copy</span>
-          </button>
-
-          <button @click="clearAll" class="tool-btn hover:!text-red-400 hover:!border-red-400/30" title="Clear Buffer">
-            <PhBroom size="16"/>
-            <span>Clear</span>
-          </button>
-
-          <div class="ml-auto text-[10px] theme-text opacity-40 hidden sm:block font-mono">
-            CMD: /time, /uuid, Ctrl+S
-          </div>
-        </div>
-
-        <div class="terminal-workbench relative z-10 flex-1 min-h-0">
-          <aside class="command-panel custom-scrollbar" data-wheel-allow="true">
-            <div class="command-panel-head">
-              <div>
-                <div class="command-panel-title">命令备忘</div>
-                <div class="command-panel-sub">{{ terminalState.commands.length }} saved commands</div>
-              </div>
-              <button class="command-mini-btn" type="button" title="新建命令" aria-label="新建命令" @click="resetCommandForm">
-                <PhPlus size="15" weight="bold"/>
-              </button>
-            </div>
-
-            <div class="command-tabs" role="tablist" aria-label="命令分类">
-              <button
-                  v-for="category in terminalCommandCategories"
-                  :key="category.id"
-                  type="button"
-                  class="command-tab"
-                  :class="activeCommandCategory === category.id ? 'is-active' : ''"
-                  @click="activeCommandCategory = category.id"
+                <PhTag size="15"/>
+                <input ref="categoryInputRef" v-model="categoryNameDraft" maxlength="20" @keydown.esc.prevent="cancelCategoryEdit" />
+                <button type="submit" title="保存标签"><PhCheck size="14" weight="bold"/></button>
+                <button type="button" title="取消" @click="cancelCategoryEdit"><PhX size="14" weight="bold"/></button>
+              </form>
+              <div
+                  v-else
+                  class="memo-category-row"
+                  :class="activeCategory === category.id ? 'is-active' : ''"
+                  @contextmenu.prevent="category.id !== 'all' && openCategoryContextMenu($event, category.id)"
               >
-                {{ category.label }}
-              </button>
-            </div>
-
-            <div class="command-form">
-              <input
-                  v-model="commandForm.title"
-                  class="command-input"
-                  placeholder="标题"
-                  spellcheck="false"
-              />
-              <textarea
-                  v-model="commandForm.command"
-                  class="command-input command-input--code"
-                  placeholder="命令，例如 npm run build"
-                  spellcheck="false"
-              ></textarea>
-              <div class="command-form-row">
-                <select v-model="commandForm.category" class="command-input command-select">
-                  <option v-for="category in commandCategoryOptions" :key="category.id" :value="category.id">
-                    {{ category.label }}
-                  </option>
-                </select>
-                <button class="command-save" type="button" @click="saveCommandMemo">
-                  <component :is="editingCommandId ? PhFloppyDisk : PhPlus" size="14" weight="bold"/>
-                  <span>{{ editingCommandId ? '更新' : '保存' }}</span>
+                <button type="button" class="memo-category-main" @click="selectCategory(category.id)">
+                  <component :is="categoryIcons[category.id] || PhTag" size="16" :weight="activeCategory === category.id ? 'fill' : 'regular'"/>
+                  <span>{{ category.label }}</span>
+                  <em>{{ categoryCounts[category.id] || 0 }}</em>
                 </button>
+                <button
+                    v-if="category.id !== 'all'"
+                    type="button"
+                    class="memo-category-more"
+                    :aria-label="`管理标签 ${category.label}`"
+                    title="标签操作"
+                    @click="openAnchoredMenu($event, 'category', category.id)"
+                ><PhDotsThree size="16" weight="bold"/></button>
               </div>
-              <input
-                  v-model="commandForm.description"
-                  class="command-input"
-                  placeholder="备注"
-                  spellcheck="false"
-              />
+            </template>
+          </nav>
+
+          <button
+              type="button"
+              class="memo-clear"
+              :disabled="sortedNotes.length === 0"
+              @click="showClearAllConfirm = true"
+          >
+            <PhTrash size="15"/><span>清空全部</span>
+          </button>
+        </aside>
+
+        <section class="memo-index">
+          <header class="memo-index-head">
+            <div><strong>{{ categoryLabel(activeCategory) }}</strong><small>{{ filteredNotes.length }} 条</small></div>
+            <div class="memo-index-head-actions">
+              <button type="button" class="memo-icon-btn memo-mobile-new" title="新建备忘" @click="createNewNote"><PhPlus size="17" weight="bold"/></button>
+              <button type="button" class="memo-icon-btn memo-index-close" title="关闭" @click="requestClose"><PhX size="17" weight="bold"/></button>
             </div>
+          </header>
 
-            <div class="command-list">
-              <div v-if="filteredCommands.length === 0" class="command-empty">
-                当前分类暂无命令
-              </div>
-              <template v-else>
-                <div v-for="cmd in filteredCommands" :key="cmd.id" class="command-item">
-                  <div class="command-item-main">
-                    <div class="command-item-title truncate">{{ cmd.title }}</div>
-                    <div class="command-item-code">{{ cmd.command }}</div>
-                    <div class="command-item-meta">
-                      <span>{{ getTerminalCommandCategoryLabel(cmd.category) }}</span>
-                      <span v-if="cmd.description" class="truncate">{{ cmd.description }}</span>
-                    </div>
-                  </div>
-                  <div class="command-actions">
-                    <button type="button" title="插入到缓冲区" aria-label="插入到缓冲区" @click="insertCommandMemo(cmd.command)">
-                      <PhArrowLineRight size="14" weight="bold"/>
-                    </button>
-                    <button type="button" title="复制命令" aria-label="复制命令" @click="copyCommandMemo(cmd.command)">
-                      <PhCopy size="14" weight="bold"/>
-                    </button>
-                    <button type="button" title="编辑命令" aria-label="编辑命令" @click="editCommandMemo(cmd.id)">
-                      <PhPencilSimple size="14" weight="bold"/>
-                    </button>
-                    <button type="button" title="删除命令" aria-label="删除命令" @click="deleteCommandMemo(cmd.id)">
-                      <PhTrash size="14" weight="bold"/>
-                    </button>
-                  </div>
-                </div>
-              </template>
+          <div class="memo-index-tools">
+            <label class="memo-search">
+              <PhMagnifyingGlass size="15" weight="bold"/>
+              <input v-model="searchQuery" type="search" placeholder="搜索笔记" />
+            </label>
+            <select v-model="activeCategory" class="memo-filter-select" aria-label="筛选分类">
+              <option v-for="category in allCategories" :key="category.id" :value="category.id">{{ category.label }}</option>
+            </select>
+          </div>
+
+          <div class="memo-list" data-wheel-allow="true">
+            <article
+                v-for="note in filteredNotes"
+                :key="note.id"
+                class="memo-list-entry"
+                :class="activeNoteId === note.id ? 'is-selected' : ''"
+                @contextmenu.prevent="openNoteContextMenu($event, note.id)"
+            >
+              <button type="button" class="memo-list-item" @click="selectNote(note.id)">
+                <span class="memo-list-title">
+                  <PhPushPin v-if="note.pinned" size="12" weight="fill"/>
+                  <strong>{{ note.title || '未命名备忘' }}</strong>
+                </span>
+                <span class="memo-list-excerpt">{{ note.summary || getMemoExcerpt(note.content) }}</span>
+                <span class="memo-list-meta">
+                  <em>{{ categoryLabel(note.category) }}</em>
+                  <time>{{ formatDateTime(note.updatedAt || note.createdAt) }}</time>
+                </span>
+              </button>
+              <button
+                  type="button"
+                  class="memo-list-more"
+                  :aria-label="`管理备忘 ${note.title}`"
+                  title="备忘操作"
+                  @click="openAnchoredMenu($event, 'note', note.id)"
+              ><PhDotsThree size="18" weight="bold"/></button>
+            </article>
+
+            <div v-if="filteredNotes.length === 0" class="memo-list-empty">
+              <PhNotebook size="30" weight="duotone"/>
+              <strong>{{ sortedNotes.length ? '没有匹配的笔记' : '还没有备忘' }}</strong>
+              <button v-if="sortedNotes.length === 0" type="button" @click="createNewNote">
+                <PhPlus size="14" weight="bold"/>新建备忘
+              </button>
             </div>
-          </aside>
-
-          <textarea
-              ref="textareaRef"
-              v-model="content"
-              spellcheck="false"
-              class="terminal-buffer flex-1 w-full bg-transparent resize-none outline-none p-6 text-sm md:text-base font-mono leading-relaxed custom-scrollbar theme-text placeholder-opacity-30"
-              placeholder="// System Ready.
-// Paste your logs, tokens, commands, or JSON here..."
-              @keydown="handleKeydown"
-              @input="handleInput"
-          ></textarea>
-        </div>
-
-        <div
-            class="relative z-10 px-6 py-2 border-t theme-border bg-opacity-5 text-[10px] flex justify-between theme-text opacity-60 font-mono select-none">
-          <div class="flex gap-4">
-            <span>Ln {{ content.split('\n').length }}</span>
-            <span>Col {{ content.length }}</span>
-            <span>Sel {{ textareaRef?.selectionEnd ? textareaRef.selectionEnd - textareaRef.selectionStart : 0 }}</span>
           </div>
-          <div class="flex gap-4">
-            <span>UTF-8</span>
-            <span>{{ activeThemeClass.replace('theme-', '').toUpperCase() }} MODE</span>
-          </div>
-        </div>
+        </section>
 
-      </div>
+        <main class="memo-editor">
+          <header class="memo-editor-head">
+            <button type="button" class="memo-icon-btn memo-back" title="返回列表" @click="mobileView = 'list'">
+              <PhArrowLeft size="18" weight="bold"/>
+            </button>
+            <input v-model="draft.title" class="memo-title-input" placeholder="未命名备忘" />
+            <div class="memo-actions">
+              <button
+                  type="button"
+                  class="memo-icon-btn"
+                  :class="draft.pinned ? 'is-active' : ''"
+                  title="置顶"
+                  aria-label="置顶"
+                  @click="draft.pinned = !draft.pinned"
+              ><PhPushPin size="17" :weight="draft.pinned ? 'fill' : 'regular'"/></button>
+              <button type="button" class="memo-icon-btn" title="复制 Markdown" :disabled="!draft.content" @click="copyMarkdown">
+                <PhCopy size="17"/>
+              </button>
+              <button type="button" class="memo-icon-btn danger" title="删除" :disabled="!activeNoteId" @click="confirmDeleteNote()">
+                <PhTrash size="17"/>
+              </button>
+              <button type="button" class="memo-save" :class="isDirty ? 'is-dirty' : ''" @click="saveMemoNote()">
+                <PhFloppyDisk size="16" weight="bold"/><span>保存</span>
+              </button>
+              <button type="button" class="memo-icon-btn memo-close" title="关闭" @click="requestClose">
+                <PhX size="18" weight="bold"/>
+              </button>
+            </div>
+          </header>
+
+          <div class="memo-meta">
+            <select v-model="draft.category" aria-label="笔记分类">
+              <option v-for="category in categoryOptions" :key="category.id" :value="category.id">{{ category.label }}</option>
+            </select>
+            <input v-model="draft.summary" placeholder="添加摘要" />
+            <span>{{ activeNote ? formatDateTime(activeNote.updatedAt || activeNote.createdAt) : '新备忘' }}</span>
+          </div>
+
+          <div class="memo-formatbar">
+            <div class="memo-format-actions" aria-label="Markdown 格式">
+              <button type="button" title="一级标题" @click="insertMarkdown('# ', '', '标题')"><PhTextHOne size="16" weight="bold"/></button>
+              <button type="button" title="加粗" @click="insertMarkdown('**', '**', '文本')"><PhTextB size="16" weight="bold"/></button>
+              <button type="button" title="待办" @click="insertMarkdown('- [ ] ', '', '待办事项')"><PhCheckSquare size="16" weight="bold"/></button>
+              <button type="button" title="代码" @click="insertMarkdown('`', '`', 'code')"><PhCode size="16" weight="bold"/></button>
+              <button type="button" title="链接" @click="insertMarkdown('[', '](https://)', '链接文字')"><PhLink size="16" weight="bold"/></button>
+            </div>
+            <div class="memo-mode-switch" aria-label="编辑模式">
+              <button type="button" :class="editorMode === 'edit' ? 'is-active' : ''" title="编辑" @click="editorMode = 'edit'"><PhPencilSimple size="15" weight="bold"/></button>
+              <button type="button" :class="editorMode === 'split' ? 'is-active' : ''" title="分栏" @click="editorMode = 'split'"><PhColumns size="15" weight="bold"/></button>
+              <button type="button" :class="editorMode === 'preview' ? 'is-active' : ''" title="预览" @click="editorMode = 'preview'"><PhEye size="15" weight="bold"/></button>
+            </div>
+          </div>
+
+          <section class="memo-workspace" :data-mode="editorMode">
+            <textarea
+                v-if="editorMode !== 'preview'"
+                ref="textareaRef"
+                v-model="draft.content"
+                class="memo-textarea"
+                spellcheck="false"
+                placeholder="开始记录..."
+                @keydown="handleEditorKeydown"
+            ></textarea>
+            <article v-if="editorMode !== 'edit'" class="memo-preview custom-scrollbar" data-wheel-allow="true">
+              <div v-if="draft.content.trim()" class="memo-markdown" v-html="renderedMarkdown"></div>
+              <div v-else class="memo-preview-empty"><PhNotebook size="34" weight="duotone"/><span>空白笔记</span></div>
+            </article>
+          </section>
+
+          <footer class="memo-statusbar">
+            <span :class="isDirty ? 'is-dirty' : ''">{{ isDirty ? '有未保存更改' : '已保存' }}</span>
+            <span>{{ lineCount }} 行 · {{ wordCount }} 字<span v-if="readingMinutes"> · {{ readingMinutes }} 分钟阅读</span></span>
+          </footer>
+        </main>
+      </section>
     </div>
   </Transition>
 
+  <div
+      v-if="contextMenu"
+      class="memo-context-layer"
+      @click="closeContextMenu"
+      @contextmenu.prevent="closeContextMenu"
+  >
+    <nav
+        class="memo-context-menu"
+        :style="{left: contextMenu.x + 'px', top: contextMenu.y + 'px'}"
+        :aria-label="contextMenu.type === 'note' ? '备忘操作' : '标签操作'"
+        @click.stop
+        @contextmenu.prevent
+    >
+      <template v-if="contextMenu.type === 'note' && contextNote">
+        <strong class="memo-context-title">{{ contextNote.title || '未命名备忘' }}</strong>
+        <button type="button" @click="openContextNote"><PhPencilSimple size="16"/><span>打开编辑</span></button>
+        <button type="button" @click="toggleContextNotePin"><PhPushPin size="16"/><span>{{ contextNote.pinned ? '取消置顶' : '置顶备忘' }}</span></button>
+        <button type="button" @click="copyNoteMarkdown(contextNote)"><PhCopy size="16"/><span>复制 Markdown</span></button>
+        <button type="button" @click="duplicateContextNote"><PhNotebook size="16"/><span>创建副本</span></button>
+        <i></i>
+        <button type="button" class="danger" @click="confirmDeleteNote(contextNote.id)"><PhTrash size="16"/><span>删除备忘</span></button>
+      </template>
+      <template v-else-if="contextMenu.type === 'category' && contextCategory">
+        <strong class="memo-context-title">{{ contextCategory.label }}</strong>
+        <button type="button" @click="startRenameCategory(contextCategory.id)"><PhPencilSimple size="16"/><span>重命名标签</span></button>
+        <button
+            type="button"
+            class="danger"
+            :disabled="categoryOptions.length <= 1"
+            @click="confirmDeleteCategory(contextCategory.id)"
+        ><PhTrash size="16"/><span>删除标签</span></button>
+      </template>
+    </nav>
+  </div>
+
   <ConfirmDialog
-      :show="showClearConfirm"
-      title="清空缓冲区？"
-      :message="['这会删除当前缓冲区内容。', '此操作不可撤销。']"
+      :show="showDeleteConfirm"
+      :title="`删除“${deleteTargetNote?.title || '未命名备忘'}”？`"
+      :message="['这条备忘将被永久删除。', '此操作不可撤销。']"
+      confirmText="删除"
+      cancelText="取消"
+      :danger="true"
+      @confirm="deleteConfirmedNote"
+      @cancel="showDeleteConfirm = false"
+  />
+  <ConfirmDialog
+      :show="showClearAllConfirm"
+      title="清空全部备忘？"
+      :message="['这会删除所有备忘内容。', '清空后不会恢复示例数据。']"
       confirmText="确认清空"
       cancelText="取消"
       :danger="true"
-      @confirm="confirmClearAll"
-      @cancel="showClearConfirm = false"
+      @confirm="clearAllNotes"
+      @cancel="showClearAllConfirm = false"
   />
+  <ConfirmDialog
+      :show="showDeleteCategoryConfirm"
+      :title="`删除标签“${deleteTargetCategory?.label || ''}”？`"
+      :message="[deleteCategoryNoteCount ? `该标签下的 ${deleteCategoryNoteCount} 条备忘将移至其他标签。` : '该标签当前没有备忘。', '标签删除后无法恢复。']"
+      confirmText="删除标签"
+      cancelText="取消"
+      :danger="true"
+      @confirm="deleteConfirmedCategory"
+      @cancel="showDeleteCategoryConfirm = false"
+  />
+  </Teleport>
 </template>
 
 <style scoped>
-/* === 下拉菜单修复 === */
-.theme-select {
-  color: var(--text-color);
-  opacity: 0.8;
-}
-
-.theme-select:hover {
-  opacity: 1;
-}
-
-/* 核心修复：强制 option 背景跟随主题色 */
-.theme-select option {
-  background-color: var(--header-bg); /* 使用头部背景色作为下拉菜单背景 */
-  color: var(--text-color);
-}
-
-/* === 通用按钮样式 === */
-.tool-btn {
-  @apply flex items-center gap-2 px-3 py-1.5 rounded-md border border-transparent transition-all duration-200 text-xs font-medium opacity-80 hover:opacity-100 active:scale-95;
-  background-color: var(--btn-bg);
-  border-color: var(--btn-border);
-  color: var(--text-color);
-}
-
-.tool-btn:hover {
-  background-color: var(--btn-hover-bg);
-  box-shadow: 0 0 10px var(--glow-color);
-}
-
-.terminal-workbench {
+.memo-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  border-bottom: 1px solid var(--border-color);
+  grid-template-columns: 208px 310px minmax(0, 1fr);
+  border-radius: 8px;
+  border-color: var(--settings-border);
+  color: var(--settings-text);
+  background: var(--settings-surface);
 }
-
-.command-panel {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px;
-  border-right: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--header-bg) 72%, transparent);
-}
-
-.command-panel-head {
+.memo-nav, .memo-index, .memo-editor { min-width: 0; min-height: 0; }
+.memo-nav {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  padding: 16px 12px 12px;
+  border-right: 1px solid var(--settings-border);
+  background: var(--settings-panel);
 }
-
-.command-panel-title {
-  color: var(--text-accent);
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.command-panel-sub {
-  margin-top: 5px;
-  color: var(--text-color);
-  opacity: 0.45;
-  font-size: 10px;
-  line-height: 1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.command-mini-btn,
-.command-actions button {
-  display: inline-flex;
+.memo-brand { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 5px; }
+.memo-brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; color: var(--accent-color); background: rgba(var(--accent-color-rgb), 0.12); }
+.memo-brand h2 { margin: 0; font-size: 14px; line-height: 1.1; font-weight: 900; }
+.memo-brand p { margin: 4px 0 0; color: var(--settings-text-secondary); font-size: 10px; line-height: 1; }
+.memo-new {
+  display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-color);
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
-}
-
-.command-mini-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-}
-
-.command-mini-btn:hover,
-.command-actions button:hover {
-  color: var(--text-accent);
-  background: var(--btn-hover-bg);
-}
-
-.command-mini-btn:active,
-.command-actions button:active {
-  transform: scale(0.94);
-}
-
-.command-tabs {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
-}
-
-.command-tab {
-  flex: 0 0 auto;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: var(--text-color);
-  opacity: 0.65;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-  font-size: 11px;
-  font-weight: 850;
-  transition: opacity 0.16s ease, color 0.16s ease, border-color 0.16s ease;
-}
-
-.command-tab.is-active {
-  opacity: 1;
-  color: var(--text-accent);
-  border-color: var(--text-accent);
-}
-
-.command-form {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-}
-
-.command-form-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-}
-
-.command-input {
+  gap: 7px;
   width: 100%;
-  min-width: 0;
-  border-radius: 9px;
-  padding: 8px 9px;
-  color: var(--text-color);
-  background: color-mix(in srgb, var(--bg-color) 82%, transparent);
-  border: 1px solid var(--btn-border);
-  outline: none;
+  height: 36px;
+  margin: 16px 0 12px;
+  border-radius: 7px;
+  color: white;
+  background: var(--accent-color);
   font-size: 12px;
-  line-height: 1.25;
+  font-weight: 800;
 }
-
-.command-input:focus {
-  border-color: var(--text-accent);
-}
-
-.command-input::placeholder {
-  color: var(--text-color);
-  opacity: 0.38;
-}
-
-.command-input--code {
-  min-height: 56px;
-  resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.command-select {
-  appearance: none;
-}
-
-.command-save {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 11px;
-  border-radius: 9px;
-  color: var(--bg-color);
-  background: var(--text-accent);
-  font-size: 11px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.command-list {
-  display: grid;
-  gap: 9px;
-}
-
-.command-empty {
+.memo-new:active, .memo-save:active { transform: scale(0.98); }
+.memo-category-heading { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 7px; color: var(--settings-text-secondary); font-size: 9px; font-weight: 800; }
+.memo-category-heading button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; color: var(--settings-text-secondary); }
+.memo-category-heading button:hover { color: var(--accent-color); background: var(--settings-input-bg); }
+.memo-categories { display: grid; flex: 1; min-height: 0; align-content: start; gap: 2px; overflow-y: auto; }
+.memo-category-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; border-radius: 6px; color: var(--settings-text-secondary); transition: color 0.15s ease, background 0.15s ease; }
+.memo-category-row:hover { color: var(--settings-text); background: var(--settings-input-bg); }
+.memo-category-row.is-active { color: var(--accent-color); background: rgba(var(--accent-color-rgb), 0.11); font-weight: 800; }
+.memo-category-main { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; height: 34px; padding: 0 4px 0 8px; text-align: left; font-size: 11px; }
+.memo-category-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memo-category-main em { min-width: 18px; font-size: 9px; font-style: normal; text-align: right; opacity: 0.7; }
+.memo-category-more { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; opacity: 0; color: var(--settings-text-secondary); transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease; }
+.memo-category-row:hover .memo-category-more, .memo-category-more:focus-visible { opacity: 1; }
+.memo-category-more:hover { color: var(--accent-color); background: var(--settings-surface); }
+.memo-category-editor { display: grid; grid-template-columns: 18px minmax(0, 1fr) 24px 24px; align-items: center; gap: 3px; min-height: 36px; padding: 3px 4px 3px 8px; border: 1px solid rgba(var(--accent-color-rgb), 0.38); border-radius: 6px; color: var(--accent-color); background: var(--settings-input-bg); }
+.memo-category-editor input { min-width: 0; height: 28px; border: 0; outline: 0; color: var(--settings-text); background: transparent; font-size: 11px; }
+.memo-category-editor button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; color: var(--settings-text-secondary); }
+.memo-category-editor button:hover { color: var(--accent-color); background: var(--settings-surface); }
+.memo-clear {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 92px;
-  border-radius: 12px;
-  color: var(--text-color);
-  opacity: 0.45;
-  background: var(--btn-bg);
-  border: 1px dashed var(--btn-border);
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.command-item {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-}
-
-.command-item-main {
-  min-width: 0;
-}
-
-.command-item-title {
-  color: var(--text-color);
-  font-size: 12px;
-  line-height: 1.15;
-  font-weight: 900;
-}
-
-.command-item-code {
-  margin-top: 6px;
-  color: var(--text-accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.command-item-meta {
-  min-width: 0;
-  display: flex;
   gap: 8px;
-  margin-top: 7px;
-  color: var(--text-color);
-  opacity: 0.48;
-  font-size: 10px;
-  line-height: 1;
+  height: 34px;
+  margin-top: auto;
+  padding: 0 9px;
+  border-radius: 6px;
+  color: rgb(220 38 38);
+  font-size: 11px;
 }
-
-.command-actions {
-  display: grid;
-  grid-template-columns: repeat(2, 28px);
-  gap: 5px;
-  align-content: start;
-}
-
-.command-actions button {
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-}
-
-.terminal-buffer {
+.memo-clear:hover { background: rgba(239, 68, 68, 0.09); }
+.memo-clear:disabled { opacity: 0.35; pointer-events: none; }
+.memo-index { display: flex; flex-direction: column; border-right: 1px solid var(--settings-border); background: var(--settings-panel); }
+.memo-index-head { display: flex; flex: 0 0 58px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--settings-border); }
+.memo-index-head > div:first-child { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.memo-index-head strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.memo-index-head small { flex: 0 0 auto; color: var(--settings-text-secondary); font-size: 10px; }
+.memo-index-head-actions { display: flex; gap: 5px; }
+.memo-index-close, .memo-mobile-new, .memo-filter-select, .memo-back { display: none; }
+.memo-index-tools { display: flex; gap: 7px; padding: 10px 12px; border-bottom: 1px solid var(--settings-border); }
+.memo-search {
+  display: flex;
+  flex: 1;
   min-width: 0;
-  min-height: 0;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  color: var(--settings-text-secondary);
+  background: var(--settings-input-bg);
 }
+.memo-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--settings-text); background: transparent; font-size: 11px; }
+.memo-filter-select { width: 82px; height: 34px; padding: 0 7px; border: 1px solid var(--settings-border); border-radius: 6px; color: var(--settings-text); background: var(--settings-input-bg); font-size: 11px; }
+.memo-list { flex: 1; min-height: 0; overflow-y: auto; }
+.memo-list-entry { position: relative; border-bottom: 1px solid var(--settings-border); transition: background 0.15s ease, box-shadow 0.15s ease; }
+.memo-list-entry:hover { background: var(--settings-input-bg); }
+.memo-list-entry.is-selected { background: rgba(var(--accent-color-rgb), 0.09); box-shadow: inset 3px 0 0 var(--accent-color); }
+.memo-list-item { display: grid; gap: 7px; width: 100%; min-height: 92px; padding: 13px 42px 13px 14px; text-align: left; }
+.memo-list-more { position: absolute; top: 9px; right: 9px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--settings-text-secondary); background: var(--settings-surface); opacity: 0; transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease; }
+.memo-list-entry:hover .memo-list-more, .memo-list-more:focus-visible { opacity: 1; }
+.memo-list-more:hover { color: var(--accent-color); background: rgba(var(--accent-color-rgb), 0.11); }
+.memo-list-title { display: flex; min-width: 0; align-items: center; gap: 5px; color: var(--accent-color); }
+.memo-list-title strong { overflow: hidden; color: var(--settings-text); font-size: 12px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.memo-list-excerpt { display: -webkit-box; overflow: hidden; color: var(--settings-text-secondary); -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 10px; line-height: 1.45; }
+.memo-list-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--settings-text-secondary); font-size: 9px; }
+.memo-list-meta em { color: var(--accent-color); font-style: normal; font-weight: 700; }
+.memo-list-meta time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.75; }
+.memo-list-empty { display: flex; min-height: 240px; align-items: center; justify-content: center; flex-direction: column; gap: 9px; padding: 20px; color: var(--settings-text-secondary); }
+.memo-list-empty strong { font-size: 11px; }
+.memo-list-empty button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid rgba(var(--accent-color-rgb), 0.28); border-radius: 6px; color: var(--accent-color); font-size: 10px; }
+.memo-editor { display: flex; flex-direction: column; background: var(--settings-surface); }
+.memo-editor-head { display: flex; flex: 0 0 58px; align-items: center; gap: 10px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--settings-border); }
+.memo-title-input { flex: 1; min-width: 80px; border: 0; outline: 0; color: var(--settings-text); background: transparent; font-size: 18px; line-height: 1.2; font-weight: 800; }
+.memo-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.memo-icon-btn, .memo-format-actions button, .memo-mode-switch button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--settings-text-secondary);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.memo-icon-btn { border: 1px solid var(--settings-border); background: var(--settings-input-bg); }
+.memo-icon-btn:hover, .memo-icon-btn.is-active { color: var(--accent-color); border-color: rgba(var(--accent-color-rgb), 0.35); }
+.memo-icon-btn.danger:hover { color: rgb(220 38 38); border-color: rgba(239, 68, 68, 0.3); }
+.memo-icon-btn:disabled { opacity: 0.35; pointer-events: none; }
+.memo-save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 6px; color: white; background: var(--accent-color); font-size: 11px; font-weight: 800; transition: transform 0.15s ease, opacity 0.15s ease; }
+.memo-save:not(.is-dirty) { opacity: 0.72; }
+.memo-meta { display: grid; grid-template-columns: 104px minmax(140px, 1fr) auto; align-items: center; gap: 8px; min-height: 44px; padding: 5px 18px; border-bottom: 1px solid var(--settings-border); background: var(--settings-panel); }
+.memo-meta select, .memo-meta input { min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--settings-border); border-radius: 6px; outline: 0; color: var(--settings-text); background: var(--settings-input-bg); font-size: 10px; }
+.memo-meta span { color: var(--settings-text-secondary); font-size: 9px; white-space: nowrap; }
+.memo-formatbar { display: flex; flex: 0 0 42px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--settings-border); }
+.memo-format-actions, .memo-mode-switch { display: flex; align-items: center; gap: 2px; }
+.memo-format-actions button, .memo-mode-switch button { width: 29px; height: 28px; }
+.memo-format-actions button:hover, .memo-mode-switch button:hover { color: var(--settings-text); background: var(--settings-input-bg); }
+.memo-mode-switch { padding: 2px; border: 1px solid var(--settings-border); border-radius: 7px; background: var(--settings-input-bg); }
+.memo-mode-switch button { width: 27px; height: 24px; }
+.memo-mode-switch button.is-active { color: white; background: var(--accent-color); }
+.memo-workspace { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.memo-workspace[data-mode="edit"], .memo-workspace[data-mode="preview"] { grid-template-columns: minmax(0, 1fr); }
+.memo-textarea { width: 100%; min-width: 0; min-height: 0; height: 100%; resize: none; padding: 22px 24px; border: 0; border-right: 1px solid var(--settings-border); outline: 0; color: var(--settings-text); background: transparent; font-family: var(--tech-font-family), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.75; }
+.memo-workspace[data-mode="edit"] .memo-textarea { border-right: 0; }
+.memo-preview { min-width: 0; min-height: 0; overflow-y: auto; padding: 22px 26px; background: var(--settings-surface); }
+.memo-preview-empty { display: flex; height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: 8px; color: var(--settings-text-secondary); font-size: 11px; }
+.memo-statusbar { display: flex; flex: 0 0 30px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 18px; border-top: 1px solid var(--settings-border); color: var(--settings-text-secondary); background: var(--settings-panel); font-size: 9px; }
+.memo-statusbar .is-dirty { color: rgb(217 119 6); }
+.memo-markdown { max-width: 780px; color: var(--settings-text); font-size: 13px; line-height: 1.75; }
+.memo-markdown :deep(h1), .memo-markdown :deep(h2), .memo-markdown :deep(h3), .memo-markdown :deep(h4) { margin: 0 0 0.65em; color: var(--settings-text); line-height: 1.3; font-weight: 850; }
+.memo-markdown :deep(h1) { font-size: 1.65em; }
+.memo-markdown :deep(h2) { padding-bottom: 0.3em; border-bottom: 1px solid var(--settings-border); font-size: 1.35em; }
+.memo-markdown :deep(h3) { font-size: 1.15em; }
+.memo-markdown :deep(p), .memo-markdown :deep(ul), .memo-markdown :deep(ol), .memo-markdown :deep(blockquote), .memo-markdown :deep(pre), .memo-markdown :deep(table) { margin: 0 0 1em; }
+.memo-markdown :deep(ul), .memo-markdown :deep(ol) { padding-left: 1.5em; }
+.memo-markdown :deep(blockquote) { padding: 8px 12px; border-left: 3px solid var(--accent-color); color: var(--settings-text-secondary); background: rgba(var(--accent-color-rgb), 0.07); }
+.memo-markdown :deep(code) { padding: 0.12em 0.35em; border-radius: 4px; color: rgb(190 24 93); background: var(--settings-input-bg); font-family: var(--tech-font-family), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+.memo-markdown :deep(pre) { overflow: auto; padding: 14px; border-radius: 7px; color: #e5e7eb; background: #17191e; }
+.memo-markdown :deep(pre code) { padding: 0; color: inherit; background: transparent; }
+.memo-markdown :deep(a) { color: var(--accent-color); text-decoration: underline; text-underline-offset: 3px; }
+.memo-markdown :deep(hr) { margin: 1.5em 0; border: 0; border-top: 1px solid var(--settings-border); }
+.memo-markdown :deep(table) { width: 100%; border-collapse: collapse; }
+.memo-markdown :deep(th), .memo-markdown :deep(td) { padding: 7px 9px; border: 1px solid var(--settings-border); text-align: left; }
+.memo-markdown :deep(img) { max-width: 100%; border-radius: 6px; }
+.custom-scrollbar::-webkit-scrollbar, .memo-list::-webkit-scrollbar { width: 7px; }
+.custom-scrollbar::-webkit-scrollbar-thumb, .memo-list::-webkit-scrollbar-thumb { border-radius: 7px; background: var(--settings-border); }
+.memo-context-layer { position: fixed; inset: 0; z-index: 100000; }
+.memo-context-menu { position: fixed; z-index: 1; display: grid; width: 196px; padding: 6px; border: 1px solid var(--settings-border); border-radius: 7px; color: var(--settings-text); background: var(--settings-surface); box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28); animation: memo-context-in 0.12s ease-out; }
+.memo-context-title { overflow: hidden; padding: 6px 9px 8px; color: var(--settings-text-secondary); font-size: 9px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.memo-context-menu button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 0 9px; border-radius: 5px; color: var(--settings-text); text-align: left; font-size: 11px; }
+.memo-context-menu button:hover { color: var(--accent-color); background: var(--settings-input-bg); }
+.memo-context-menu button.danger { color: rgb(220 38 38); }
+.memo-context-menu button.danger:hover { background: rgba(239, 68, 68, 0.09); }
+.memo-context-menu button:disabled { opacity: 0.38; pointer-events: none; }
+.memo-context-menu i { height: 1px; margin: 5px 4px; background: var(--settings-border); }
+@keyframes memo-context-in { from { opacity: 0; transform: translateY(-3px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.memo-fade-enter-active, .memo-fade-leave-active { transition: opacity 0.16s ease; }
+.memo-fade-enter-from, .memo-fade-leave-to { opacity: 0; }
 
+@media (max-width: 1150px) {
+  .memo-shell { grid-template-columns: 176px 280px minmax(0, 1fr); }
+  .memo-meta { grid-template-columns: 96px minmax(120px, 1fr); }
+  .memo-meta > span { display: none; }
+  .memo-action span { display: none; }
+}
 @media (max-width: 900px) {
-  .terminal-workbench {
-    grid-template-columns: 1fr;
-  }
-
-  .command-panel {
-    max-height: 46vh;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-color);
-  }
+  .memo-shell { grid-template-columns: 300px minmax(0, 1fr); }
+  .memo-nav { display: none; }
+  .memo-mobile-new { display: grid; }
+  .memo-list-more { opacity: 1; }
+  .memo-filter-select { display: block; }
+  .memo-workspace[data-mode="split"] { grid-template-columns: minmax(0, 1fr); }
+  .memo-workspace[data-mode="split"] .memo-preview { display: none; }
+  .memo-meta { grid-template-columns: 94px minmax(0, 1fr); }
 }
-
-/* === 主题变量定义 === */
-
-/* 1. Standard (IDE/VSCode 风格) - 默认 */
-.theme-standard {
-  --bg-color: #1e1e1e;
-  --header-bg: #252526;
-  --text-color: #d4d4d4;
-  --text-accent: #4ec9b0;
-  --border-color: #3e3e42;
-  --btn-bg: #2d2d2d;
-  --btn-border: #3e3e42;
-  --btn-hover-bg: #37373d;
-  --glow-color: transparent;
-  --caret-color: #aeafad;
+@media (max-width: 680px) {
+  .memo-overlay { padding: 0; }
+  .memo-shell { grid-template-columns: minmax(0, 1fr); width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .memo-index { display: flex; border-right: 0; }
+  .memo-editor { display: none; }
+  .memo-shell.show-mobile-editor .memo-index { display: none; }
+  .memo-shell.show-mobile-editor .memo-editor { display: flex; }
+  .memo-index-close, .memo-back { display: grid; }
+  .memo-editor-head { flex-wrap: wrap; min-height: 104px; padding: 10px 12px; }
+  .memo-title-input { order: 2; flex: 1 0 calc(100% - 44px); height: 36px; font-size: 16px; }
+  .memo-back { order: 1; }
+  .memo-actions { order: 3; width: 100%; justify-content: flex-end; }
+  .memo-close { margin-left: auto; }
+  .memo-meta { grid-template-columns: 94px minmax(0, 1fr); padding: 5px 12px; }
+  .memo-formatbar { padding: 0 10px 0 12px; }
+  .memo-textarea, .memo-preview { padding: 18px 16px; }
+  .memo-statusbar { padding: 0 12px; }
 }
-
-/* 2. Retro (CRT 风格) - 怀旧科技 */
-.theme-retro {
-  --bg-color: #0d0d0d;
-  --header-bg: #1a1a1a; /* 修改这里，避免半透明导致option透视问题 */
-  --text-color: #33ff00;
-  --text-accent: #33ff00;
-  --border-color: rgba(51, 255, 0, 0.3);
-  --btn-bg: rgba(51, 255, 0, 0.05);
-  --btn-border: rgba(51, 255, 0, 0.2);
-  --btn-hover-bg: rgba(51, 255, 0, 0.15);
-  --glow-color: rgba(51, 255, 0, 0.2);
-  --caret-color: #33ff00;
-}
-
-/* Retro 特有的辉光 */
-.theme-retro .theme-text,
-.theme-retro textarea {
-  text-shadow: 0 0 4px rgba(51, 255, 0, 0.5);
-}
-
-.theme-retro .theme-overlay-layer {
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  background-size: 100% 2px, 3px 100%;
-  opacity: 0.3;
-}
-
-.theme-retro .theme-bg-layer {
-  background: radial-gradient(circle at center, transparent 0%, #000 130%);
-}
-
-/* 3. Cyber (赛博朋克/全息) - 未来感 */
-.theme-cyber {
-  --bg-color: #050a14;
-  --header-bg: #071224; /* 稍微深一点的实色背景，保证文字清晰 */
-  --text-color: #00f3ff;
-  --text-accent: #ff0055;
-  --border-color: rgba(0, 243, 255, 0.3);
-  --btn-bg: rgba(0, 243, 255, 0.05);
-  --btn-border: rgba(0, 243, 255, 0.2);
-  --btn-hover-bg: rgba(0, 243, 255, 0.15);
-  --glow-color: rgba(0, 243, 255, 0.3);
-  --caret-color: #ff0055;
-}
-
-.theme-cyber .theme-bg-layer {
-  background-image: linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
-  linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-
-.theme-cyber {
-  box-shadow: 0 0 30px rgba(0, 243, 255, 0.15);
-  border: 1px solid rgba(0, 243, 255, 0.4);
-}
-
-/* 4. Paper (亮色护眼) - 极简 */
-.theme-paper {
-  --bg-color: #f7f6f3;
-  --header-bg: #eae9e5;
-  --text-color: #37352f;
-  --text-accent: #d44c47;
-  --border-color: #e0e0e0;
-  --btn-bg: #ffffff;
-  --btn-border: #d0d0d0;
-  --btn-hover-bg: #eaeaea;
-  --glow-color: transparent;
-  --caret-color: #37352f;
-}
-
-/* === CSS 绑定 === */
-.theme-standard, .theme-retro, .theme-cyber, .theme-paper {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  border-color: var(--border-color);
-}
-
-.theme-header-bg {
-  background-color: var(--header-bg);
-}
-
-.theme-border {
-  border-color: var(--border-color);
-}
-
-.theme-text {
-  color: var(--text-color);
-}
-
-.theme-text-accent {
-  color: var(--text-accent);
-}
-
-textarea {
-  caret-color: var(--caret-color);
-}
-
-/* 滚动条美化 */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--btn-border);
-  border-radius: 4px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--text-accent);
-}
-
-/* 动画 */
-.modal-fade-enter-active, .modal-fade-leave-active {
-  transition: all 0.2s ease;
-}
-
-.modal-fade-enter-from, .modal-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
+@media (max-width: 430px) {
+  .memo-save span { display: none; }
+  .memo-save { width: 32px; padding: 0; }
+  .memo-actions { gap: 4px; }
+  .memo-icon-btn { width: 31px; }
+  .memo-statusbar > span:first-child { display: none; }
+  .memo-statusbar { justify-content: flex-end; }
 }
 </style>

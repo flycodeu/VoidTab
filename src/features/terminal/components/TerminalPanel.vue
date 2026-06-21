@@ -3,8 +3,8 @@ import {ref, nextTick, onMounted, computed} from 'vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
 import {fetchWithRetry} from '../../../shared/utils/network';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
-import {getTerminalCommandCategoryLabel} from '../../../core/config/terminalCommands';
-import {ensureTerminalBufferState} from '../../widgets/builtins/terminal-buffer/commandMemo';
+import {getMemoNoteCategoryLabel} from '../../../core/config/memoNotes';
+import {ensureTerminalBufferState, getMemoExcerpt} from '../../widgets/builtins/terminal-buffer/commandMemo';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
@@ -177,8 +177,8 @@ VoidTab Shell (v2.4) - Available Commands:
   config engine <name>   Set default search engine
   config engine add <name> <url>  Add new engine
   config engine list     List all engines
-  memo list              List saved command memos
-  memo copy <id|title>   Copy a saved command
+  memo list              List saved memo notes
+  memo copy <id|title>   Copy a memo note
 
   ai <prompt>            Ask AI (Context maintained)
   ai --reset             Clear AI context memory
@@ -395,15 +395,16 @@ const handleMemo = async (args: string[]) => {
   const subCmd = args[1];
 
   if (subCmd === 'list' || !subCmd) {
-    if (state.commands.length === 0) {
-      logs.value.push({type: 'warn', content: 'No saved command memos.'});
+    if (state.notes.length === 0) {
+      logs.value.push({type: 'warn', content: 'No saved memo notes.'});
       return;
     }
-    logs.value.push({type: 'success', content: 'Saved command memos:'});
-    state.commands.forEach((item) => {
+    logs.value.push({type: 'success', content: 'Saved memo notes:'});
+    state.notes.forEach((item) => {
+      const pinned = item.pinned ? ' [pinned]' : '';
       logs.value.push({
         type: 'info',
-        content: `  ${item.id}  [${getTerminalCommandCategoryLabel(item.category)}] ${item.title} -> ${item.command}`,
+        content: `  ${item.id}  [${getMemoNoteCategoryLabel(item.category, state.categories)}]${pinned} ${item.title} -> ${getMemoExcerpt(item.content)}`,
       });
     });
     return;
@@ -412,12 +413,12 @@ const handleMemo = async (args: string[]) => {
   if (subCmd === 'copy') {
     const target = args.slice(2).join(' ').trim().toLowerCase();
     if (!target) throw new Error('Usage: memo copy <id|title>');
-    const memo = state.commands.find((item) =>
+    const memo = state.notes.find((item) =>
         item.id.toLowerCase() === target || item.title.toLowerCase().includes(target)
     );
     if (!memo) throw new Error(`Memo "${target}" not found.`);
-    await navigator.clipboard.writeText(memo.command);
-    logs.value.push({type: 'success', content: `Copied memo: ${memo.title}`});
+    await navigator.clipboard.writeText(memo.content);
+    logs.value.push({type: 'success', content: `Copied note: ${memo.title}`});
     return;
   }
 

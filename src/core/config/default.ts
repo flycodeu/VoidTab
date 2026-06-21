@@ -1,7 +1,7 @@
 import type {Config} from './types';
 import {CURRENT_CONFIG_VERSION} from './types';
 import {buildTemplateLayout} from '../templates/presets';
-import {cloneDefaultTerminalCommands} from './terminalCommands';
+import {cloneDefaultMemoCategories, cloneDefaultMemoNotes} from './memoNotes';
 
 export const LOCAL_WALLPAPER_MARKER = '_USE_LOCAL_STORAGE_' as const;
 
@@ -102,7 +102,8 @@ export const defaultConfig: Config = {
             buffer: '',
             theme: 'standard',
             activeCategory: 'all',
-            commands: cloneDefaultTerminalCommands(),
+            categories: cloneDefaultMemoCategories(),
+            notes: cloneDefaultMemoNotes(),
         },
         siteState: {},
         siteIcons: {

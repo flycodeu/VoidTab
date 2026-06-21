@@ -1,4 +1,5 @@
 import type { Config } from './types';
+import {createLegacyBufferNote} from './memoNotes';
 
 const isJson = (s: string) => {
     try { JSON.parse(s); return true; } catch { return false; }
@@ -39,6 +40,10 @@ export const applyLegacyLocalStorageIntoConfig = (cfg: Config) => {
     const termTheme = ls.getItem('voidtab_terminal_theme');
     if (termBuf !== null && termBuf !== undefined) {
         cfg.runtime.terminal_buffer.buffer = termBuf;
+        if (termBuf.trim() && cfg.runtime.terminal_buffer.notes.length === 0) {
+            const legacyNote = createLegacyBufferNote(termBuf);
+            if (legacyNote) cfg.runtime.terminal_buffer.notes.push(legacyNote);
+        }
         removedKeys.push('voidtab_terminal_buffer');
         changed = true;
     }

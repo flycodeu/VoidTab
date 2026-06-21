@@ -1,5 +1,12 @@
-import type {RuntimeConfig, TerminalCommandMemo} from '../../../../core/config/types';
-import {cloneDefaultTerminalCommands} from '../../../../core/config/terminalCommands';
+import type {MemoNote, RuntimeConfig} from '../../../../core/config/types';
+import {
+  createLegacyBufferNote,
+  cloneDefaultMemoCategories,
+  getMemoExcerpt,
+  getMemoPlainText,
+  getMemoWordCount,
+  normalizeMemoNotes,
+} from '../../../../core/config/memoNotes';
 
 export function ensureTerminalBufferState(runtime: RuntimeConfig) {
   if (!runtime.terminal_buffer) {
@@ -7,42 +14,79 @@ export function ensureTerminalBufferState(runtime: RuntimeConfig) {
       buffer: '',
       theme: 'standard',
       activeCategory: 'all',
-      commands: cloneDefaultTerminalCommands(),
+      categories: cloneDefaultMemoCategories(),
+      notes: [],
     };
   }
 
-  runtime.terminal_buffer.buffer ||= '';
-  runtime.terminal_buffer.theme ||= 'standard';
-  runtime.terminal_buffer.activeCategory ||= 'all';
-
-  if (!Array.isArray(runtime.terminal_buffer.commands) || runtime.terminal_buffer.commands.length === 0) {
-    runtime.terminal_buffer.commands = cloneDefaultTerminalCommands();
+  const state = runtime.terminal_buffer as RuntimeConfig['terminal_buffer'];
+  state.buffer ||= '';
+  state.theme ||= 'standard';
+  state.activeCategory ||= 'all';
+  if (!Array.isArray(state.categories)) state.categories = cloneDefaultMemoCategories();
+  if (state.activeCategory !== 'all' && !state.categories.some((item) => item.id === state.activeCategory)) {
+    state.activeCategory = 'all';
   }
 
-  return runtime.terminal_buffer;
+  if (!Array.isArray(state.notes)) {
+    if (Array.isArray(state.commands)) {
+      state.notes = normalizeMemoNotes(state.commands, [], state.categories);
+    } else {
+      const legacyNote = createLegacyBufferNote(state.buffer);
+      state.notes = legacyNote ? [legacyNote] : [];
+    }
+  }
+
+  return state;
 }
 
-export function createCommandMemo(input: {
+export function createMemoNote(input: {
   title: string;
-  command: string;
+  content: string;
   category: string;
-  description?: string;
-}): TerminalCommandMemo {
+  summary?: string;
+  pinned?: boolean;
+}): MemoNote {
   const now = Date.now();
   return {
-    id: `cmd_${now}_${Math.random().toString(36).slice(2, 7)}`,
+    id: `note_${now}_${Math.random().toString(36).slice(2, 7)}`,
     title: input.title.trim(),
-    command: input.command.trim(),
-    category: input.category || 'note',
-    description: input.description?.trim() || '',
+    content: input.content.trim(),
+    category: input.category || 'inbox',
+    summary: input.summary?.trim() || '',
+    pinned: input.pinned === true,
     createdAt: now,
     updatedAt: now,
   };
 }
 
-export function touchCommandMemo(command: TerminalCommandMemo): TerminalCommandMemo {
+export function touchMemoNote(note: MemoNote): MemoNote {
   return {
-    ...command,
+    ...note,
     updatedAt: Date.now(),
   };
 }
+
+export function getMemoReadingMinutes(content: string) {
+  const words = getMemoWordCount(content);
+  if (!words) return 0;
+  return Math.max(1, Math.ceil(words / 380));
+}
+
+// Backward-compatible names used by earlier terminal-buffer code.
+export const createCommandMemo = (input: {
+  title: string;
+  command?: string;
+  content?: string;
+  category: string;
+  description?: string;
+  summary?: string;
+}) => createMemoNote({
+  title: input.title,
+  content: input.content ?? input.command ?? '',
+  category: input.category,
+  summary: input.summary ?? input.description ?? '',
+});
+
+export const touchCommandMemo = touchMemoNote;
+export {getMemoExcerpt, getMemoPlainText, getMemoWordCount};

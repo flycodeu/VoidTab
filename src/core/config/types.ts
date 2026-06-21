@@ -198,16 +198,28 @@ export type SiteIconProviderStatRecord = {
     lastStatus?: number;
 };
 
-export type TerminalCommandCategory = 'dev' | 'git' | 'ops' | 'note' | string;
+export type MemoNoteCategory = 'inbox' | 'todo' | 'work' | 'study' | 'idea' | 'snippet' | 'note' | string;
 
-export type TerminalCommandMemo = {
+export type MemoCategory = {
+    id: string;
+    label: string;
+};
+
+export type MemoNote = {
     id: string;
     title: string;
-    command: string;
-    category: TerminalCommandCategory;
-    description?: string;
+    content: string;
+    category: MemoNoteCategory;
+    summary?: string;
+    pinned?: boolean;
     createdAt: number;
     updatedAt: number;
+};
+
+export type TerminalCommandCategory = MemoNoteCategory;
+export type TerminalCommandMemo = MemoNote & {
+    command?: string;
+    description?: string;
 };
 
 export type PhotoRef =
@@ -237,7 +249,9 @@ export type RuntimeConfig = {
         buffer: string;
         theme: string;
         activeCategory: string;
-        commands: TerminalCommandMemo[];
+        categories: MemoCategory[];
+        notes: MemoNote[];
+        commands?: TerminalCommandMemo[];
     };
     siteState: SiteStateMap;
     siteIcons: {
