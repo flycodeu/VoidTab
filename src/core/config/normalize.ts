@@ -9,6 +9,8 @@ import type {
     SiteIconPathMissRecord,
     SiteIconProviderStatRecord,
     SidebarPosition,
+    PrivacyConfig,
+    PrivacyVaultEnvelope,
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
@@ -105,6 +107,74 @@ function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
     }
 
     return base as SyncProfile;
+}
+
+function normalizePrivacyVault(inputVault: any): PrivacyVaultEnvelope | null {
+    if (!isRecordLike(inputVault)) return null;
+
+    const kdf = isRecordLike(inputVault.kdf) ? inputVault.kdf : {};
+    const kdfName = kdf.name === 'PBKDF2-SHA256' || kdf.name === 'Argon2id'
+        ? kdf.name
+        : 'PBKDF2-SHA256';
+    const salt = typeof kdf.salt === 'string' ? kdf.salt : '';
+    const ciphertext = typeof inputVault.ciphertext === 'string' ? inputVault.ciphertext : '';
+    const verifier = typeof inputVault.verifier === 'string' ? inputVault.verifier : '';
+
+    if (!salt || !ciphertext || !verifier) return null;
+
+    const base = {
+        version: 1 as const,
+        alg: 'AES-256-GCM' as const,
+        verifier,
+        ciphertext,
+        updatedAt: Number.isFinite(Number(inputVault.updatedAt)) ? Number(inputVault.updatedAt) : 0,
+    };
+
+    if (kdfName === 'Argon2id') {
+        return {
+            ...base,
+            kdf: {
+                name: 'Argon2id',
+                memoryKiB: clampInt(kdf.memoryKiB, 7168, 262144, 19456),
+                iterations: clampInt(kdf.iterations, 1, 10, 2),
+                parallelism: clampInt(kdf.parallelism, 1, 4, 1),
+                salt,
+            },
+        };
+    }
+
+    return {
+        ...base,
+        kdf: {
+            name: 'PBKDF2-SHA256',
+            iterations: clampInt(kdf.iterations, 100000, 1200000, 600000),
+            salt,
+        },
+    };
+}
+
+function normalizePrivacy(inputPrivacy: any, fallback: PrivacyConfig): PrivacyConfig {
+    const input = isRecordLike(inputPrivacy) ? inputPrivacy : {};
+    const entry = isRecordLike(input.entry) ? input.entry : {};
+    const vault = normalizePrivacyVault(input.vault);
+
+    return {
+        enabled: typeof input.enabled === 'boolean' ? input.enabled : !!vault,
+        vault,
+        entry: {
+            trigger: 'keyboard',
+            phrase: typeof entry.phrase === 'string' && entry.phrase.trim()
+                ? entry.phrase.trim().slice(0, 32)
+                : fallback.entry.phrase,
+            autoLockMinutes: clampInt(entry.autoLockMinutes, 1, 240, fallback.entry.autoLockMinutes),
+            hideWhenLocked: typeof entry.hideWhenLocked === 'boolean'
+                ? entry.hideWhenLocked
+                : fallback.entry.hideWhenLocked,
+            syncEnabled: typeof entry.syncEnabled === 'boolean'
+                ? entry.syncEnabled
+                : fallback.entry.syncEnabled,
+        },
+    };
 }
 
 function generateColor(str: string) {
@@ -492,6 +562,8 @@ export function normalizeConfig(raw: any): Config {
     out.focusMode = typeof input.focusMode === 'boolean'
         ? input.focusMode
         : base.focusMode;
+
+    out.privacy = normalizePrivacy(input.privacy, base.privacy);
 
     out.ai = {
         ...base.ai,

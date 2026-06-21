@@ -6,6 +6,7 @@ import {createIconActions} from './config/iconActions';
 import {createLayoutActions} from './config/layoutActions';
 import {createLifecycleActions} from './config/lifecycleActions';
 import {createConfigPersistence} from './config/persistence';
+import {createPrivacyActions} from './config/privacyActions';
 import {createSearchActions} from './config/searchActions';
 import {createSiteActions} from './config/siteActions';
 import {createConfigState} from './config/state';
@@ -42,6 +43,7 @@ export const useConfigStore = defineStore('config', () => {
     const siteActions = createSiteActions(config, persistence.saveConfig);
     const searchActions = createSearchActions(config);
     const iconActions = createIconActions(config, isLoaded);
+    const privacyActions = createPrivacyActions(config, persistence.saveConfig);
     const syncActions = createSyncActions({
         config,
         applyingExternal,
@@ -62,6 +64,7 @@ export const useConfigStore = defineStore('config', () => {
     });
 
     const destroy = () => {
+        privacyActions.lockPrivacyVault();
         syncActions.destroy();
         persistence.destroy();
     };
@@ -75,6 +78,7 @@ export const useConfigStore = defineStore('config', () => {
         ...siteActions,
         ...layoutActions,
         ...searchActions,
+        ...privacyActions,
 
         rssCache,
         ...iconActions,

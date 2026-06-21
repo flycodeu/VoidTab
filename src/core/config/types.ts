@@ -1,6 +1,6 @@
 import type {SyncProfile} from '../sync/types';
 
-export const CURRENT_CONFIG_VERSION = 4 as const;
+export const CURRENT_CONFIG_VERSION = 5 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
@@ -36,6 +36,61 @@ export interface Group {
     sortKey?: GroupSortKey;
     iconColor?: string;
     iconBgColor?: string;
+}
+
+export type PrivacyVaultKdf =
+    | {
+    name: 'PBKDF2-SHA256';
+    iterations: number;
+    salt: string;
+}
+    | {
+    name: 'Argon2id';
+    memoryKiB: number;
+    iterations: number;
+    parallelism: number;
+    salt: string;
+};
+
+export interface PrivacyVaultEnvelope {
+    version: 1;
+    alg: 'AES-256-GCM';
+    kdf: PrivacyVaultKdf;
+    verifier: string;
+    ciphertext: string;
+    updatedAt: number;
+}
+
+export interface PrivacyConfig {
+    enabled: boolean;
+    vault: PrivacyVaultEnvelope | null;
+    entry: {
+        trigger: 'keyboard';
+        phrase: string;
+        autoLockMinutes: number;
+        hideWhenLocked: boolean;
+        syncEnabled: boolean;
+    };
+}
+
+export interface PrivacyVaultGroupEntry {
+    group: Group;
+    originalIndex: number;
+    movedAt: number;
+}
+
+export interface PrivacyVaultSiteEntry {
+    site: SiteItem;
+    originalGroupId: string;
+    originalGroupTitle?: string;
+    originalIndex: number;
+    movedAt: number;
+}
+
+export interface PrivacyVaultPayload {
+    version: 1;
+    groups: PrivacyVaultGroupEntry[];
+    sites: PrivacyVaultSiteEntry[];
 }
 
 export interface WidgetItem {
@@ -142,6 +197,7 @@ export interface Config {
 
     ai: AiConfig,
     focusMode: boolean;
+    privacy: PrivacyConfig;
 
 
     runtime: RuntimeConfig;

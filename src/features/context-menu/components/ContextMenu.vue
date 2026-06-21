@@ -359,8 +359,8 @@ onUnmounted(() => {
         @addWidget="handleAddWidgetRequest"
         @configWidget="handleConfigWidget"
         @openSettings="handleOpenSettings"
-      @openDevTools="handleOpenDevTools"
-       @edit="() => { emit('edit'); ui.closeContextMenu(); }"
+        @openDevTools="handleOpenDevTools"
+        @edit="() => { emit('edit'); ui.closeContextMenu(); }"
     />
   </div>
   <ConfirmDialog
@@ -378,3 +378,4 @@ onUnmounted(() => {
     </template>
   </ConfirmDialog>
 </template>
+

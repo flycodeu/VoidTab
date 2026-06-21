@@ -68,6 +68,24 @@ export function migrateConfig(raw: any): any {
         cfg.version = 4;
     }
 
+    // v5: encrypted privacy vault metadata.
+    if (cfg.version < 5) {
+        if (!cfg.privacy || typeof cfg.privacy !== 'object') {
+            cfg.privacy = {
+                enabled: false,
+                vault: null,
+                entry: {
+                    trigger: 'keyboard',
+                    phrase: ':void',
+                    autoLockMinutes: 10,
+                    hideWhenLocked: true,
+                    syncEnabled: true,
+                },
+            };
+        }
+        cfg.version = 5;
+    }
+
     cfg.version = CURRENT_CONFIG_VERSION;
     return cfg;
 }

@@ -5,6 +5,7 @@ import {useHistoryStore} from '../../../../stores/useHistoryStore';
 import {
   PhClockCounterClockwise,
   PhDatabase,
+  PhLock,
   PhShieldCheck,
   PhTrash,
   PhWarning
@@ -15,8 +16,8 @@ import {useToast} from '../../../../shared/composables/useToast';
 const store = useConfigStore();
 const historyStore = useHistoryStore();
 const toast = useToast();
-
 const showClearConfirm = ref(false);
+const emit = defineEmits<{ (e: 'openPrivacyVault'): void }>();
 
 const toggleHistory = () => {
   store.config.theme.enableHistory = !store.config.theme.enableHistory;
@@ -37,7 +38,23 @@ const clearUsageRecords = async () => {
         <PhShieldCheck class="text-[var(--accent-color)]" weight="duotone"/>
         隐私设置
       </h3>
-      <p class="text-sm opacity-60">管理 VoidTab 自身的数据记录策略，不涉及浏览器历史权限。</p>
+      <p class="text-sm opacity-60">管理本地记录和数据保存策略。</p>
+    </section>
+
+    <section class="privacy-card">
+      <div class="flex items-center gap-4 min-w-0">
+        <div class="privacy-icon text-violet-500 bg-violet-500/10">
+          <PhLock size="24" weight="duotone"/>
+        </div>
+        <div class="min-w-0">
+          <div class="font-bold text-base">隐私空间</div>
+          <p class="text-xs opacity-60 mt-1 leading-relaxed">加密保存需要隐藏的网站和分组，进入后可筛选、恢复或移除内容。</p>
+        </div>
+      </div>
+
+      <button type="button" class="vault-btn" @click="emit('openPrivacyVault')">
+        打开
+      </button>
     </section>
 
     <section class="privacy-card">
@@ -47,9 +64,7 @@ const clearUsageRecords = async () => {
         </div>
         <div class="min-w-0">
           <div class="font-bold text-base">VoidTab 使用记录</div>
-          <p class="text-xs opacity-60 mt-1 leading-relaxed">
-            开启后仅记录 VoidTab 内部的搜索关键词、站点跳转和 AI 入口行为，用于本地回溯和排序。不会读取浏览器历史、当前网页或剪贴板。
-          </p>
+          <p class="text-xs opacity-60 mt-1 leading-relaxed">用于本地回溯和排序，不读取浏览器历史。</p>
         </div>
       </div>
 
@@ -71,17 +86,11 @@ const clearUsageRecords = async () => {
         </div>
         <div class="min-w-0">
           <div class="font-bold text-base">本地优先</div>
-          <p class="text-xs opacity-60 mt-1 leading-relaxed">
-            配置默认保存在本机浏览器。启用 WebDAV 时，同步载荷会剥离 AI Key、WebDAV 密码和临时 Token。
-          </p>
+          <p class="text-xs opacity-60 mt-1 leading-relaxed">配置默认保存在本机浏览器；同步时敏感字段不会明文上传。</p>
         </div>
       </div>
 
-      <button
-          type="button"
-          class="clear-btn"
-          @click="showClearConfirm = true"
-      >
+      <button type="button" class="clear-btn" @click="showClearConfirm = true">
         <PhTrash size="16" weight="bold"/>
         清空记录
       </button>
@@ -89,14 +98,9 @@ const clearUsageRecords = async () => {
 
     <section class="notice">
       <PhWarning class="shrink-0 mt-0.5" size="20" weight="duotone"/>
-      <div class="space-y-2">
+      <div>
         <p class="font-bold text-sm">权限边界</p>
-        <ul class="list-disc pl-4 space-y-1 opacity-80">
-          <li>当前版本不申请浏览器历史权限，不会分析完整浏览历史。</li>
-          <li>不会自动读取剪贴板；涉及复制/粘贴的能力必须由用户主动触发。</li>
-          <li>AI 面板只发送用户输入内容，不会自动附带本地配置、站点列表或历史记录。</li>
-          <li>网页预览模式会降级到 localStorage，扩展模式使用 Chrome Storage。</li>
-        </ul>
+        <p class="mt-1 opacity-80">VoidTab 不申请浏览器历史权限，不会自动读取剪贴板或当前网页内容。</p>
       </div>
     </section>
 
@@ -192,6 +196,31 @@ const clearUsageRecords = async () => {
   transform: scale(0.98);
 }
 
+.vault-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 72px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 8px 20px rgba(var(--accent-color-rgb), 0.18);
+  transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+.vault-btn:hover {
+  opacity: 0.92;
+}
+
+.vault-btn:active {
+  transform: scale(0.98);
+}
+
 .notice {
   display: flex;
   gap: 14px;
@@ -216,6 +245,13 @@ const clearUsageRecords = async () => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
+  .privacy-card {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

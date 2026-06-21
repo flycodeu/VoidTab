@@ -37,6 +37,7 @@ export const buildSyncPayload = (cfg: Config) => {
         currentEngineId: sealed.currentEngineId,
         ai: sealed.ai,
         focusMode: sealed.focusMode,
+        privacy: sealed.privacy,
     };
 
     // Strip conflict fields from sync payload — they are device-local bookkeeping.

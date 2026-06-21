@@ -95,6 +95,18 @@ export const defaultConfig: Config = {
 
     focusMode: false,
 
+    privacy: {
+        enabled: false,
+        vault: null,
+        entry: {
+            trigger: 'keyboard',
+            phrase: ':void',
+            autoLockMinutes: 10,
+            hideWhenLocked: true,
+            syncEnabled: true,
+        },
+    },
+
     runtime: {
         cron: {expr: '* * * * * ?', theme: 'pure-white'},
         auth: {jwtToken: ''},

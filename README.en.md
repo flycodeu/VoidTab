@@ -25,6 +25,7 @@ VoidTab is a browser new-tab extension built with Vue 3, TypeScript, and Manifes
 - **Immersive interface**: glassmorphism UI, light and dark themes, cyberpunk neon accents, remote images, Bing daily wallpaper, and local image or video backgrounds.
 - **Quick-link management**: groups, drag-and-drop sorting, automatic site icons, bookmark HTML import, and a custom context menu.
 - **Search hub**: built-in Google, Bing, Baidu, and custom search engines with search history.
+- **Privacy Space**: move sites or groups into a locally encrypted space, then open it from Settings, a secret phrase, or a keyboard shortcut.
 - **Terminal mode**: switch between GUI and CLI-style workflows with command input, history, and autocomplete.
 - **Widget ecosystem**: weather, calendar, countdown, Cron parser, GitHub Trending, stock ticker, system monitor, JWT, Base64, photo wall, mini games, and more.
 - **Data sync**: WebDAV sync for settings, groups, sites, and preferences. Works with services such as Jianguoyun and Nextcloud.
@@ -92,6 +93,7 @@ src/
 │   ├── context-menu/          # Custom global context menu
 │   ├── home/                  # Home grid and site cards
 │   ├── navigation/            # Sidebar, top actions, and mobile group nav
+│   ├── privacy/               # Privacy Space
 │   ├── settings/              # Settings modal and tabs
 │   ├── terminal/              # Terminal mode component
 │   └── widgets/               # Built-in widgets and widget marketplace
@@ -123,6 +125,8 @@ src/
 ## Privacy and Data
 
 VoidTab stores settings locally by default. When WebDAV sync is enabled, settings are synced to the user-configured WebDAV service. Sensitive fields for AI, WebDAV, and runtime auth are protected before local storage, and sync payloads strip sensitive values. Third-party APIs are only used by the related enabled widgets.
+
+Privacy Space encrypts hidden content with a local password. Open it from `Settings → Privacy → Privacy Space`, by typing the default secret phrase `:void` in the search box, or with `Ctrl + Shift + .`. After entering, you can filter current sites and groups into Privacy Space, restore or delete items, change the secret phrase, or remove Privacy Space.
 
 ## Credits
 

@@ -29,6 +29,13 @@ const selectedIndex = ref(-1); // -1:输入框, 0:AI/跳转, 1+:本地结果
 
 const emit = defineEmits(['openSettings']);
 
+const isPrivacyCommand = (value: string) => store.isPrivacyEntryPhrase(value);
+
+const openPrivacyVault = () => {
+  window.dispatchEvent(new CustomEvent('voidtab:open-privacy-vault'));
+  closePanel();
+};
+
 // 点击外部关闭
 onClickOutside(searchContainer, () => {
   showEngineMenu.value = false;
@@ -72,6 +79,7 @@ const markEngineIconFailed = (engine: any) => {
 const smartAction = computed(() => {
   const text = searchText.value.trim();
   if (!text) return null;
+  if (isPrivacyCommand(text)) return null;
 
   // 简单判断是否为网址或特定关键词
   const isUrl = /^(https?:\/\/|www\.)|(\.com|\.cn|\.net|\.org)$/i.test(text);
@@ -120,12 +128,17 @@ const localResults = computed(() => {
 });
 
 watch(searchText, (val) => {
-  showSuggestions.value = !!val;
+  showSuggestions.value = !!val && !isPrivacyCommand(val);
   selectedIndex.value = -1;
 });
 
 // --- 4. 键盘交互 ---
 const handleKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && isPrivacyCommand(searchText.value)) {
+    e.preventDefault();
+    openPrivacyVault();
+    return;
+  }
   if (!showSuggestions.value) {
     if (e.key === 'Enter') handleSearch();
     return;
@@ -193,6 +206,10 @@ const closePanel = () => {
 // --- 5. 普通搜索逻辑 (修复记录丢失) ---
 const handleSearch = () => {
   if (!searchText.value) return;
+  if (isPrivacyCommand(searchText.value)) {
+    openPrivacyVault();
+    return;
+  }
   const currentEngine = store.config.searchEngines.find((e: any) => e.id === store.config.currentEngineId);
 
   //   核心修复：添加搜索记录

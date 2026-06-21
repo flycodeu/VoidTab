@@ -26,6 +26,7 @@ const KNOWN_CONFIG_KEYS = [
     'currentEngineId',
     'ai',
     'focusMode',
+    'privacy',
     'runtime',
 ] as const;
 
@@ -45,6 +46,8 @@ const GROUP_SORT_KEYS = new Set(['custom', 'name', 'lastVisited']);
 const ITEM_KINDS = new Set(['site', 'widget']);
 const ICON_TYPES = new Set(['auto', 'text', 'icon']);
 const TERMINAL_THEMES = new Set(['dark', 'light', 'hacker']);
+const PRIVACY_KDF_NAMES = new Set(['PBKDF2-SHA256', 'Argon2id']);
+const PRIVACY_ALGORITHMS = new Set(['AES-256-GCM']);
 
 const isRecord = (value: unknown): value is RecordLike =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -126,6 +129,7 @@ export function validateImportedConfig(raw: unknown): ConfigImportValidationResu
     validateObjectSection(raw, 'sync', errors, warnings);
     validateObjectSection(raw, 'theme', errors, warnings);
     validateObjectSection(raw, 'ai', errors, warnings);
+    validateObjectSection(raw, 'privacy', errors, warnings);
     validateObjectSection(raw, 'runtime', errors, warnings);
 
     if (isRecord(raw.sync)) {
@@ -174,6 +178,22 @@ export function validateImportedConfig(raw: unknown): ConfigImportValidationResu
         warnStringField(raw.ai, 'model', 'ai.model', warnings);
         warnNumberField(raw.ai, 'temperature', 'ai.temperature', warnings);
         warnNumberField(raw.ai, 'maxHistory', 'ai.maxHistory', warnings);
+    }
+
+    if (isRecord(raw.privacy)) {
+        warnBooleanField(raw.privacy, 'enabled', 'privacy.enabled', warnings);
+        if ('entry' in raw.privacy && !isRecord(raw.privacy.entry)) {
+            addLimited(warnings, 'privacy.entry 必须是对象，将使用默认值');
+        }
+        if (isRecord(raw.privacy.entry)) {
+            warnStringField(raw.privacy.entry, 'phrase', 'privacy.entry.phrase', warnings);
+            warnNumberField(raw.privacy.entry, 'autoLockMinutes', 'privacy.entry.autoLockMinutes', warnings);
+            warnBooleanField(raw.privacy.entry, 'hideWhenLocked', 'privacy.entry.hideWhenLocked', warnings);
+            warnBooleanField(raw.privacy.entry, 'syncEnabled', 'privacy.entry.syncEnabled', warnings);
+        }
+        if (raw.privacy.vault !== undefined && raw.privacy.vault !== null && !isRecord(raw.privacy.vault)) {
+            addLimited(warnings, 'privacy.vault 必须是对象或 null，将被清理');
+        }
     }
 
     if (isRecord(raw.runtime)) {
@@ -477,6 +497,43 @@ const validateRuntimeForSave = (runtime: RecordLike, errors: string[]) => {
     }
 };
 
+const validatePrivacyForSave = (privacy: RecordLike, errors: string[]) => {
+    requireBooleanField(privacy, 'enabled', 'privacy.enabled', errors);
+
+    const entry = requireRecordField(privacy, 'entry', errors);
+    if (entry) {
+        requireStringField(entry, 'trigger', 'privacy.entry.trigger', errors);
+        requireStringField(entry, 'phrase', 'privacy.entry.phrase', errors);
+        requireNumberField(entry, 'autoLockMinutes', 'privacy.entry.autoLockMinutes', errors);
+        requireBooleanField(entry, 'hideWhenLocked', 'privacy.entry.hideWhenLocked', errors);
+        requireBooleanField(entry, 'syncEnabled', 'privacy.entry.syncEnabled', errors);
+    }
+
+    if (privacy.vault === null) return;
+    if (!isRecord(privacy.vault)) {
+        addLimited(errors, 'privacy.vault 必须是对象或 null');
+        return;
+    }
+
+    const vault = privacy.vault;
+    requireNumberField(vault, 'version', 'privacy.vault.version', errors);
+    requireEnumField(vault, 'alg', 'privacy.vault.alg', PRIVACY_ALGORITHMS, errors);
+    requireStringField(vault, 'verifier', 'privacy.vault.verifier', errors);
+    requireStringField(vault, 'ciphertext', 'privacy.vault.ciphertext', errors);
+    requireNumberField(vault, 'updatedAt', 'privacy.vault.updatedAt', errors);
+
+    const kdf = requireRecordField(vault, 'kdf', errors);
+    if (kdf) {
+        requireEnumField(kdf, 'name', 'privacy.vault.kdf.name', PRIVACY_KDF_NAMES, errors);
+        requireStringField(kdf, 'salt', 'privacy.vault.kdf.salt', errors);
+        requireNumberField(kdf, 'iterations', 'privacy.vault.kdf.iterations', errors);
+        if (kdf.name === 'Argon2id') {
+            requireNumberField(kdf, 'memoryKiB', 'privacy.vault.kdf.memoryKiB', errors);
+            requireNumberField(kdf, 'parallelism', 'privacy.vault.kdf.parallelism', errors);
+        }
+    }
+};
+
 export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -492,6 +549,7 @@ export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResul
     const sync = requireRecordField(raw, 'sync', errors);
     const theme = requireRecordField(raw, 'theme', errors);
     const ai = requireRecordField(raw, 'ai', errors);
+    const privacy = requireRecordField(raw, 'privacy', errors);
     const runtime = requireRecordField(raw, 'runtime', errors);
     const layout = requireArrayField(raw, 'layout', errors);
     const searchEngines = requireArrayField(raw, 'searchEngines', errors);
@@ -516,6 +574,8 @@ export function validateConfigForSave(raw: unknown): ConfigSchemaValidationResul
         requireNumberField(ai, 'temperature', 'ai.temperature', errors);
         requireNumberField(ai, 'maxHistory', 'ai.maxHistory', errors);
     }
+
+    if (privacy) validatePrivacyForSave(privacy, errors);
 
     if (runtime) validateRuntimeForSave(runtime, errors);
     if (layout) validateLayoutForSave(layout, errors);

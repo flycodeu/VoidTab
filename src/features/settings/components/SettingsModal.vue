@@ -29,7 +29,7 @@ import {useFocusTrap} from '../../../shared/composables/useFocusTrap';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 
 const props = defineProps<{ show: boolean }>();
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'openPrivacyVault']);
 const store = useConfigStore();
 const dialogRef = ref<HTMLElement | null>(null);
 const isDialogActive = computed(() => props.show);
@@ -68,8 +68,13 @@ const tabMap: Record<TabType, any> = {
   author: AuthorTab
 };
 
+function openPrivacyVault() {
+  emit('openPrivacyVault');
+}
+
 const activeTab = computed(() => tabMap[settingsTab.value]);
 const activeMenuLabel = computed(() => menuItems.find(i => i.id === settingsTab.value)?.label || settingsTitle);
+const activeTabListeners = computed(() => settingsTab.value === 'privacy' ? {openPrivacyVault} : {});
 const settingsTabId = (id: TabType) => `settings-tab-${id}`;
 const settingsPanelId = (id: TabType) => `settings-panel-${id}`;
 
@@ -231,7 +236,7 @@ const onSettingsTabKeydown = (event: KeyboardEvent, id: TabType) => {
             :id="settingsPanelId(settingsTab)"
             :aria-labelledby="settingsTabId(settingsTab)"
           >
-            <component :is="activeTab"/>
+            <component :is="activeTab" v-on="activeTabListeners"/>
           </div>
         </div>
       </div>

@@ -30,6 +30,7 @@ const SiteDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/SiteDi
 const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/GroupDialog.vue'));
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/terminal/components/TerminalPanel.vue'));
+const PrivacyVaultModal = defineAsyncComponent(() => import('./features/privacy/components/PrivacyVaultModal.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -40,6 +41,7 @@ useThemeRuntimeSync(store);
 const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
+const showPrivacyVault = ref(false);
 const widgetPanelGroupId = ref('');
 const isGlobalEditMode = ref(false);
 const showDevtoolsTip = ref(false);
@@ -173,6 +175,22 @@ const tryOpenDevTools = () => {
   showDevtoolsTip.value = true;
 };
 
+const handlePrivacyShortcut = (event: KeyboardEvent) => {
+  const isPrivacyShortcut = event.ctrlKey && event.shiftKey && (event.code === 'Period' || event.key === '.' || event.key === '>');
+  if (!isPrivacyShortcut) return;
+  event.preventDefault();
+  showPrivacyVault.value = true;
+};
+
+const openPrivacyVault = () => {
+  showPrivacyVault.value = true;
+};
+
+const openPrivacyVaultFromSettings = () => {
+  showSettings.value = false;
+  showPrivacyVault.value = true;
+};
+
 onMounted(async () => {
   if (!store.isLoaded) await store.loadConfig();
   if (store.config.layout.length > 0) setActiveGroupId(store.config.layout[0].id);
@@ -185,9 +203,13 @@ onMounted(async () => {
 
   groupNavigation.mount();
   dragAutoScroll.mount();
+  window.addEventListener('keydown', handlePrivacyShortcut);
+  window.addEventListener('voidtab:open-privacy-vault', openPrivacyVault);
 });
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', handlePrivacyShortcut);
+  window.removeEventListener('voidtab:open-privacy-vault', openPrivacyVault);
   groupNavigation.unmount();
   dragAutoScroll.unmount();
   unmountDesktopViewport();
@@ -301,8 +323,13 @@ onUnmounted(() => {
       </Transition>
 
       <div class="relative z-[100]">
-        <SettingsModal :show="showSettings" @close="showSettings = false"/>
+        <SettingsModal
+            :show="showSettings"
+            @close="showSettings = false"
+            @openPrivacyVault="openPrivacyVaultFromSettings"
+        />
         <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="widgetPanelGroupId || activeGroupId" @close="showWidgetModal = false"/>
+        <PrivacyVaultModal :show="showPrivacyVault" @close="showPrivacyVault = false"/>
 
         <SiteDialog
             :show="dialogLogic.siteDialog.show"

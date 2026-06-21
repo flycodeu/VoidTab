@@ -64,8 +64,6 @@ const emit = defineEmits<{
           整理桌面
         </button>
 
-        <div class="divider"></div>
-
         <button @click="emit('openSettings')" class="menu-btn" type="button">
           <PhGear size="16" class="opacity-70"/>
           设置
@@ -88,7 +86,6 @@ const emit = defineEmits<{
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
-
         <div class="divider"></div>
 
         <div
@@ -208,7 +205,6 @@ const emit = defineEmits<{
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
-
         <div class="divider"></div>
 
         <button @click="emit('delete')" class="danger-btn group" type="button">
