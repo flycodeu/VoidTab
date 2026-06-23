@@ -23,6 +23,8 @@ import DeleteConfirmHost from './features/confirm-delete/components/DeleteConfir
 import ConfirmDialog from './shared/ui/dialogs/ConfirmDialog.vue';
 import Toast from './shared/ui/Toast.vue';
 import ErrorBoundary from './shared/ui/ErrorBoundary.vue';
+import AmbientController from './app/shell/AmbientController.vue';
+import MusicMiniPlayer from './app/shell/MusicMiniPlayer.vue';
 
 const SettingsModal = defineAsyncComponent(() => import('./features/settings/components/SettingsModal.vue'));
 const WidgetPanel = defineAsyncComponent(() => import('./features/widgets/components/WidgetPanel.vue'));
@@ -375,6 +377,8 @@ onUnmounted(() => {
   </ConfirmDialog>
 
   <Toast />
+  <AmbientController v-if="store.isLoaded"/>
+  <MusicMiniPlayer v-if="store.isLoaded"/>
   </ErrorBoundary>
 </template>
 

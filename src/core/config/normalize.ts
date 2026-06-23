@@ -13,6 +13,7 @@ import type {
     PrivacyVaultEnvelope,
     AiConfig,
     AiPromptTemplate,
+    AudioConfig,
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
@@ -152,6 +153,20 @@ function normalizeAi(inputAi: any, fallback: AiConfig): AiConfig {
         maxHistory: clampInt(input.maxHistory, 1, 50, fallback.maxHistory),
         systemPrompt: typeof input.systemPrompt === 'string' ? input.systemPrompt : fallback.systemPrompt,
         templates,
+    };
+}
+
+function normalizeAudio(inputAudio: any, fallback: AudioConfig): AudioConfig {
+    const input = isRecordLike(inputAudio) ? inputAudio : {};
+    const ambient = isRecordLike(input.ambient) ? input.ambient : {};
+    return {
+        ambient: {
+            enabled: typeof ambient.enabled === 'boolean' ? ambient.enabled : fallback.ambient.enabled,
+            currentId: typeof ambient.currentId === 'string' && ambient.currentId.trim()
+                ? ambient.currentId.trim()
+                : fallback.ambient.currentId,
+            volume: clamp(ambient.volume, 0, 1, fallback.ambient.volume),
+        },
     };
 }
 
@@ -414,6 +429,33 @@ function normalizeRuntimePhoto(input: any): RuntimeConfig['photo'] {
     };
 }
 
+function normalizeRuntimeMusicEmbed(input: any): RuntimeConfig['musicEmbed'] {
+    const base = isRecordLike(input) ? input : {};
+    const rawWidgets = isRecordLike(base.widgets) ? base.widgets : {};
+    const widgets: RuntimeConfig['musicEmbed']['widgets'] = {};
+
+    for (const [id, value] of Object.entries(rawWidgets)) {
+        if (!isRecordLike(value)) continue;
+        const provider = typeof value.provider === 'string' ? value.provider : '';
+        const resourceId = typeof value.resourceId === 'string' ? value.resourceId : '';
+        const customUrl = typeof value.customUrl === 'string' ? value.customUrl : '';
+        const marker = `${provider} ${resourceId} ${customUrl}`.toLowerCase();
+        if (
+            provider === 'netease'
+            || marker.includes('music.163.com')
+            || marker.includes('pt_outchain_player')
+            || marker.includes('outchain/player')
+        ) {
+            continue;
+        }
+        widgets[String(id)] = value as RuntimeConfig['musicEmbed']['widgets'][string];
+    }
+
+    return {
+        widgets,
+    };
+}
+
 function normalizeRuntimeSiteList(input: any): RuntimeConfig['siteList'] {
     const base = isRecordLike(input) ? input : {};
     const groups = isRecordLike(base.groups) ? base.groups : {};
@@ -558,6 +600,7 @@ function normalizeRuntime(input: any): RuntimeConfig {
         widgetState: isRecordLike(base.widgetState) ? base.widgetState : {},
 
         photo: normalizeRuntimePhoto(base.photo),
+        musicEmbed: normalizeRuntimeMusicEmbed(base.musicEmbed),
 
         siteList: normalizeRuntimeSiteList(base.siteList)
     };
@@ -610,6 +653,8 @@ export function normalizeConfig(raw: any): Config {
         : base.focusMode;
 
     out.privacy = normalizePrivacy(input.privacy, base.privacy);
+
+    out.audio = normalizeAudio(input.audio, base.audio);
 
     out.ai = normalizeAi(input.ai, base.ai);
 

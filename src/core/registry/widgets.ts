@@ -235,6 +235,18 @@ export const widgetRegistry: WidgetMeta[] = [
         color: 'from-indigo-400 to-purple-500',
     },
     {
+        type: 'music_embed',
+        label: '音乐播放',
+        description: '嵌入网易云、Spotify、YouTube 等音乐服务的歌单或电台播放器。',
+        defaultW: 4,
+        defaultH: 2,
+        category: 'life',
+        runtime: 'network',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/music-embed/MusicEmbedWidget.vue')),
+        icon: 'MusicNotes',
+        color: 'from-pink-500 to-rose-500',
+    },
+    {
         type: 'site_list',
         label: '捷径库',
         description: '创建自定义网站列表，或将其变为单个网站的快捷入口。',

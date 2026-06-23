@@ -98,6 +98,14 @@ export const defaultConfig: Config = {
 
     focusMode: false,
 
+    audio: {
+        ambient: {
+            enabled: false,
+            currentId: 'rain',
+            volume: 0.5,
+        },
+    },
+
     privacy: {
         enabled: false,
         vault: null,
@@ -129,6 +137,7 @@ export const defaultConfig: Config = {
         widgets: {merit: {value: {}, sound: {}}},
         widgetState: {},
         photo: {widgets: {}},
+        musicEmbed: {widgets: {}},
         siteList: {
             groups: {},
             widgets: {}

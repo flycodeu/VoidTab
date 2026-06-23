@@ -109,6 +109,23 @@ const addWidgetToGroup = (widget: WidgetMeta) => {
 };
 
 const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFour');
+
+// 左侧分类：支持鼠标滚轮切换（带节流，避免一滑跨多个）
+let wheelCooldown = 0;
+const switchCategory = (offset: number) => {
+  const index = categories.findIndex((category) => category.id === activeCategory.value);
+  if (index < 0) return;
+  const next = Math.min(categories.length - 1, Math.max(0, index + offset));
+  if (next !== index) activeCategory.value = categories[next].id;
+};
+
+const onCategoryWheel = (event: WheelEvent) => {
+  if (Math.abs(event.deltaY) < 4) return;
+  const now = Date.now();
+  if (now - wheelCooldown < 220) return;
+  wheelCooldown = now;
+  switchCategory(event.deltaY > 0 ? 1 : -1);
+};
 </script>
 
 <template>
@@ -168,7 +185,7 @@ const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFo
         </div>
 
         <div class="content">
-          <aside class="category-list" data-wheel-allow="true">
+          <aside class="category-list" data-wheel-allow="true" @wheel.prevent="onCategoryWheel">
             <button
                 v-for="category in categories"
                 :key="category.id"

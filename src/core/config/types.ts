@@ -197,6 +197,17 @@ export interface AiConfig {
     templates: AiPromptTemplate[];
 }
 
+/** 内置氛围音全局配置（轻状态，可进 config / sync；音频本身是随包静态资源或程序生成，不入库） */
+export interface AudioConfig {
+    ambient: {
+        enabled: boolean;
+        /** 当前选中的氛围音 id，对应 AMBIENT_SOUNDS 中的条目 */
+        currentId: string;
+        /** 0 ~ 1 */
+        volume: number;
+    };
+}
+
 
 export interface Config {
     version: number;
@@ -212,6 +223,7 @@ export interface Config {
     focusMode: boolean;
     privacy: PrivacyConfig;
 
+    audio: AudioConfig;
 
     runtime: RuntimeConfig;
 
@@ -300,6 +312,21 @@ export type PhotoWidgetState = {
     items: PhotoRef[];
 };
 
+export type MusicEmbedProviderId = 'audio' | 'netease' | 'tencent' | 'spotify' | 'youtube' | 'custom';
+
+/** 音乐嵌入组件的单实例配置（仅轻文本：服务 + 资源 id，无任何音频二进制） */
+export type MusicEmbedWidgetState = {
+    provider: MusicEmbedProviderId;
+    /** song | playlist | album | radio 等，含义随服务而定 */
+    kind: string;
+    resourceId: string;
+    /** audio/custom 服务下直接保存完整资源 URL */
+    customUrl?: string;
+    autoplay: boolean;
+    height: number;
+    title?: string;
+};
+
 export type WeatherCacheEntry = {
     timestamp: number;
     payload: any;
@@ -341,6 +368,9 @@ export type RuntimeConfig = {
     widgetState: Record<string, { meritCount: number; soundEnabled: boolean }>;
     photo: {
         widgets: Record<string, PhotoWidgetState>;
+    };
+    musicEmbed: {
+        widgets: Record<string, MusicEmbedWidgetState>;
     };
     siteList: {
         groups: Record<string, SiteListGroup>;
