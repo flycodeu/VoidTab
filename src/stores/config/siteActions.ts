@@ -2,7 +2,7 @@ import type {Ref} from 'vue';
 import type {Config, Group, SiteItem} from '../../core/config/types';
 import {parseBookmarkContent} from '../../shared/utils/bookmarkImporter';
 import {dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
-import {createTextIconValue, generateColor, normalizeSiteIconType} from './helpers';
+import {clampInt, createTextIconValue, generateColor, MAX_WIDGET_H, MAX_WIDGET_W, normalizeSiteIconType} from './helpers';
 
 type GroupInput = Partial<Omit<Group, 'id' | 'items'>> & {
     title?: string;
@@ -55,8 +55,8 @@ export const createSiteActions = (
         const payload: SiteItem = {
             id: now.toString(),
             kind: 'site',
-            w: 1,
-            h: 1,
+            w: clampInt(site.w, 1, MAX_WIDGET_W, 1),
+            h: clampInt(site.h, 1, MAX_WIDGET_H, 1),
             title: site.title || '',
             url: site.url || '',
             bgColor: site.bgColor || '#3b82f6',
@@ -101,8 +101,8 @@ export const createSiteActions = (
         }
 
         patch.kind = 'site';
-        patch.w = 1;
-        patch.h = 1;
+        patch.w = clampInt(patch.w ?? site.w, 1, MAX_WIDGET_W, 1);
+        patch.h = clampInt(patch.h ?? site.h, 1, MAX_WIDGET_H, 1);
 
         Object.assign(site, patch);
         void saveConfig();
@@ -146,8 +146,8 @@ export const createSiteActions = (
             deduped.groups.forEach((group) => {
                 group.items.forEach((item: SiteItem) => {
                     item.kind = 'site';
-                    item.w = 1;
-                    item.h = 1;
+                    item.w = clampInt(item.w, 1, MAX_WIDGET_W, 1);
+                    item.h = clampInt(item.h, 1, MAX_WIDGET_H, 1);
 
                     if (typeof item.remark !== 'string') item.remark = '';
                     if (!Array.isArray(item.tags)) item.tags = [];

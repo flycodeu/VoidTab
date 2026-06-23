@@ -20,6 +20,8 @@ import {defaultConfig} from './default';
 import {CURRENT_CONFIG_VERSION} from './types';
 import {createLegacyBufferNote, normalizeMemoCategories, normalizeMemoNotes} from './memoNotes';
 import {cloneDefaultAiPromptTemplates} from './aiPromptTemplates';
+import {MAX_TILE_SPAN, normalizeWorkspaceLayout} from '../tiles/gridMetrics';
+import type {GridPlacement, TileLayouts} from '../tiles/contracts';
 
 function deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
@@ -39,12 +41,34 @@ function clampInt(n: any, min: number, max: number, fallback: number) {
     return Math.round(clamp(n, min, max, fallback));
 }
 
+function normalizePlacement(raw: any, fallbackW: number, fallbackH: number): GridPlacement | undefined {
+    if (!isRecordLike(raw)) return undefined;
+    const x = clampInt(raw.x, 0, 10000, 0);
+    const y = clampInt(raw.y, 0, 10000, 0);
+    const w = clampInt(raw.w, 1, MAX_TILE_SPAN, fallbackW);
+    const h = clampInt(raw.h, 1, MAX_TILE_SPAN, fallbackH);
+    return {x, y, w, h};
+}
+
+function normalizeTileLayouts(raw: any, fallbackW: number, fallbackH: number): TileLayouts | undefined {
+    if (!isRecordLike(raw)) return undefined;
+    const desktop = normalizePlacement(raw.desktop, fallbackW, fallbackH);
+    if (!desktop) return undefined;
+    const tablet = normalizePlacement(raw.tablet, fallbackW, fallbackH);
+    const mobile = normalizePlacement(raw.mobile, fallbackW, fallbackH);
+    return {
+        desktop,
+        ...(tablet ? {tablet} : {}),
+        ...(mobile ? {mobile} : {}),
+    };
+}
+
 function normalizeSiteCard(inputSiteCard: any, defSiteCard: any) {
     const siteCard = (inputSiteCard && typeof inputSiteCard === 'object') ? inputSiteCard : {};
 
     return {
-        w: clampInt(siteCard.w, 1, 4, defSiteCard.w),
-        h: clampInt(siteCard.h, 1, 4, defSiteCard.h),
+        w: clampInt(siteCard.w, 1, MAX_TILE_SPAN, defSiteCard.w),
+        h: clampInt(siteCard.h, 1, MAX_TILE_SPAN, defSiteCard.h),
         showRemark: typeof siteCard.showRemark === 'boolean' ? siteCard.showRemark : defSiteCard.showRemark,
         showDomain: typeof siteCard.showDomain === 'boolean' ? siteCard.showDomain : defSiteCard.showDomain,
     };
@@ -470,8 +494,10 @@ function normalizeRuntimeSiteList(input: any): RuntimeConfig['siteList'] {
 
 function normalizeItem(rawItem: any): SiteItem {
     const kind = (rawItem?.kind === 'widget' || rawItem?.kind === 'site') ? rawItem.kind : 'site';
-    const w = kind === 'widget' ? clamp(rawItem?.w, 1, 4, 2) : 1;
-    const h = kind === 'widget' ? clamp(rawItem?.h, 1, 4, 2) : 1;
+    const defaultW = kind === 'widget' ? 2 : 1;
+    const defaultH = kind === 'widget' ? 2 : 1;
+    const w = clamp(rawItem?.w, 1, MAX_TILE_SPAN, defaultW);
+    const h = clamp(rawItem?.h, 1, MAX_TILE_SPAN, defaultH);
 
     const item: SiteItem = {
         id: String(rawItem?.id ?? Date.now()),
@@ -498,6 +524,9 @@ function normalizeItem(rawItem: any): SiteItem {
         delete item.remark;
         delete item.createdAt;
     }
+
+    const layouts = normalizeTileLayouts(rawItem?.layouts, w, h);
+    if (layouts) item.layouts = layouts;
 
     if (!item.iconType) item.iconType = 'auto';
     if (item.iconType !== 'auto' && item.iconType !== 'text' && item.iconType !== 'icon') {
@@ -531,7 +560,10 @@ function normalizeGroup(rawGroup: any): Group {
         iconColor: rawGroup?.iconColor || undefined,
         iconBgColor: rawGroup?.iconBgColor || undefined,
 
-        items: Array.isArray(rawGroup?.items) ? rawGroup.items.map(normalizeItem) : []
+        items: Array.isArray(rawGroup?.items) ? rawGroup.items.map(normalizeItem) : [],
+        ...(isRecordLike(rawGroup?.workspaceLayout)
+            ? {workspaceLayout: normalizeWorkspaceLayout(rawGroup.workspaceLayout)}
+            : {}),
     };
     return group;
 }

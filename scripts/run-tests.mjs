@@ -512,7 +512,7 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     assert.equal(normalized.theme.sidebarPos, 'top');
     assert.equal(normalized.layout[0].items[0].iconType, 'text');
     assert.equal(normalized.layout[0].items[1].kind, 'widget');
-    assert.equal(normalized.layout[0].items[1].w, 4);
+    assert.equal(normalized.layout[0].items[1].w, 16);
     assert.equal(normalized.layout[0].items[1].h, 1);
     assert.equal(normalized.runtime.siteIcons.records['example.com'].cacheMode, 'miss');
     assert.equal(normalized.runtime.siteIcons.records['example.com'].provider, 'google_s2');
@@ -520,6 +520,67 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
     const repairedSync = normalizeConfig({ sync: { provider: 'invalid', intervalMinutes: 0 } });
     assert.equal(repairedSync.sync.provider, 'webdav');
     assert.equal(repairedSync.sync.intervalMinutes, 1);
+  `);
+});
+
+test('P1 supports fixed-unit grids and persists canvas layout bridge fields', async () => {
+  const grid = await read('src/features/home/components/MainGrid.vue');
+  const normalize = await read('src/core/config/normalize.ts');
+  const metrics = await read('src/core/tiles/gridMetrics.ts');
+
+  assert.match(grid, /gridTemplateColumns: `repeat\(\$\{metrics\.cols\}, \$\{metrics\.unit\}px\)`/);
+  assert.match(grid, /gridColumnStart: placement\.x \+ 1/);
+  assert.match(grid, /startCanvasGesture/);
+  assert.match(grid, /toggleCanvasLayout/);
+  assert.match(grid, /recordCanvasHistory/);
+  assert.match(grid, /undoCanvasLayout/);
+  assert.match(normalize, /normalizeTileLayouts/);
+  assert.match(normalize, /normalizeWorkspaceLayout/);
+  assert.match(metrics, /MAX_TILE_SPAN = 16/);
+
+  await runBundledTypeScript('p1-fixed-grid-and-canvas-layout', `
+    import assert from 'node:assert/strict';
+    import {normalizeConfig} from '../../../src/core/config/normalize.ts';
+    import {getGridMetrics, measureTilePixels} from '../../../src/core/tiles/gridMetrics.ts';
+
+    const config = normalizeConfig({
+      layout: [{
+        id: 'canvas-group',
+        title: 'Canvas',
+        icon: 'SquaresFour',
+        workspaceLayout: {
+          mode: 'canvas',
+          profiles: {
+            desktop: {unit: 100, gap: 12, minCols: 4, maxCols: 12},
+          },
+        },
+        items: [{
+          id: 'large-site',
+          kind: 'site',
+          title: 'Large',
+          url: 'https://example.com',
+          w: 9,
+          h: 9,
+          layouts: {
+            desktop: {x: 1, y: 2, w: 9, h: 9},
+            mobile: {x: 0, y: 0, w: 3, h: 6},
+          },
+        }],
+      }],
+    });
+
+    const group = config.layout[0];
+    assert.equal(group.workspaceLayout?.mode, 'canvas');
+    assert.equal(group.items[0].w, 9);
+    assert.deepEqual(group.items[0].layouts?.desktop, {x: 1, y: 2, w: 9, h: 9});
+    assert.deepEqual(group.items[0].layouts?.mobile, {x: 0, y: 0, w: 3, h: 6});
+
+    const desktop = getGridMetrics(1300, 'desktop', group.workspaceLayout);
+    assert.deepEqual(desktop, {profile: 'desktop', unit: 100, gap: 12, cols: 11});
+    assert.deepEqual(measureTilePixels(3, 4, desktop), {width: 324, height: 436});
+
+    const mobile = getGridMetrics(360, 'mobile', group.workspaceLayout, 4);
+    assert.equal(mobile.cols, 4);
   `);
 });
 
@@ -953,6 +1014,102 @@ test('sensitive config helpers encrypt local secrets and keep sync payload clean
     assert.equal(merged.sync.password, 'webdav-pass');
     assert.equal(merged.ai.apiKey, 'ai-key');
     assert.equal(merged.runtime.auth.jwtToken, 'jwt-token');
+  `);
+});
+
+test('P0 tile contracts freeze schemas, deterministic layout behavior, and compatibility gates', async () => {
+  const manifestSchema = JSON.parse(await read('docs/schemas/tile-manifest.v1.schema.json'));
+  const configSchema = JSON.parse(await read('docs/schemas/config-v6-tile-layout.schema.json'));
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const solver = await read('src/core/tiles/layoutSolver.ts');
+  const compatibility = await read('src/core/tiles/compatibility.ts');
+
+  assert.equal(manifestSchema.properties.manifestVersion.const, 1);
+  assert.ok(manifestSchema.properties.id.pattern.includes('/'));
+  assert.equal(configSchema.properties.version.const, 6);
+  assert.ok(configSchema.$defs.workspace);
+  assert.match(contracts, /interface TileManifestWire/);
+  assert.match(contracts, /interface BuiltinTileRegistration/);
+  assert.match(contracts, /interface TileConfigV6Draft/);
+  assert.match(solver, /export function solveCanvasLayout/);
+  assert.match(compatibility, /export function evaluateTileCompatibility/);
+
+  await runBundledTypeScript('p0-tile-contracts', `
+    import assert from 'node:assert/strict';
+    import {solveCanvasLayout} from '../../../src/core/tiles/layoutSolver.ts';
+    import {compareVersions, evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
+    import type {HostCapabilities, TileCompatibility} from '../../../src/core/tiles/contracts.ts';
+
+    const base = {
+      cols: 4,
+      placements: {
+        alpha: {x: 0, y: 0, w: 2, h: 2},
+        beta: {x: 2, y: 0, w: 2, h: 2},
+        gamma: {x: 0, y: 2, w: 2, h: 1},
+      },
+      sizeRules: {
+        alpha: {default: {w: 2, h: 2}, min: {w: 1, h: 1}, max: {w: 3, h: 3}},
+      },
+    };
+
+    const moved = solveCanvasLayout(base, {type: 'move', profile: 'desktop', tileId: 'alpha', x: 0, y: 1});
+    assert.equal(moved.rejected, undefined);
+    assert.deepEqual(moved.placements.alpha, {x: 0, y: 1, w: 2, h: 2});
+    assert.deepEqual(moved.placements.gamma, {x: 0, y: 3, w: 2, h: 1});
+    assert.deepEqual(base.placements.gamma, {x: 0, y: 2, w: 2, h: 1});
+    assert.deepEqual(
+      solveCanvasLayout(base, {type: 'move', profile: 'desktop', tileId: 'alpha', x: 0, y: 1}),
+      moved,
+    );
+
+    const locked = solveCanvasLayout({...base, lockedTileIds: ['beta']}, {type: 'move', profile: 'desktop', tileId: 'alpha', x: 2, y: 0});
+    assert.equal(locked.rejected?.code, 'locked');
+
+    const invalidSize = solveCanvasLayout(base, {type: 'resize', profile: 'desktop', tileId: 'alpha', w: 4, h: 2, anchor: 'nw'});
+    assert.equal(invalidSize.rejected?.code, 'invalid-size');
+
+    const compacted = solveCanvasLayout({
+      cols: 4,
+      placements: {
+        alpha: {x: 0, y: 3, w: 2, h: 1},
+        beta: {x: 2, y: 3, w: 2, h: 1},
+      },
+    }, {type: 'compact', profile: 'desktop'});
+    assert.deepEqual(compacted.placements.alpha, {x: 0, y: 0, w: 2, h: 1});
+    assert.deepEqual(compacted.placements.beta, {x: 2, y: 0, w: 2, h: 1});
+
+    const host: HostCapabilities = {
+      target: 'web',
+      hostVersion: '1.2.0',
+      browser: {family: 'chrome', version: 120},
+      features: {
+        indexedStorage: true,
+        syncStorage: false,
+        networkProxy: false,
+        clipboardWrite: false,
+        notifications: false,
+        openExternal: true,
+        contextMenus: false,
+        localFileImport: true,
+        sandboxRuntime: false,
+      },
+    };
+    const requiredNetwork: TileCompatibility = {
+      targets: ['web'],
+      minHostVersion: '1.2.0',
+      mobileSupport: 'full',
+      capabilities: [{feature: 'networkProxy', level: 'required'}],
+    };
+    assert.equal(evaluateTileCompatibility({compatibility: requiredNetwork, host}).state, 'unsupported');
+    const enabledHost = {...host, features: {...host.features, networkProxy: true}};
+    assert.equal(evaluateTileCompatibility({compatibility: requiredNetwork, host: enabledHost}).state, 'blocked');
+    assert.equal(evaluateTileCompatibility({compatibility: requiredNetwork, host: enabledHost, grantedRequiredFeatures: ['networkProxy']}).state, 'supported');
+    const optionalClipboard: TileCompatibility = {
+      ...requiredNetwork,
+      capabilities: [{feature: 'clipboardWrite', level: 'optional'}],
+    };
+    assert.equal(evaluateTileCompatibility({compatibility: optionalClipboard, host}).state, 'degraded');
+    assert.equal(compareVersions('1.10.0', '1.2.0'), 1);
   `);
 });
 

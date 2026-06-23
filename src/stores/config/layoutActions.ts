@@ -18,8 +18,8 @@ export const createLayoutActions = (
                 if (!item.kind) item.kind = 'site';
 
                 if (item.kind === 'site') {
-                    item.w = 1;
-                    item.h = 1;
+                    item.w = clampInt(item.w, 1, MAX_WIDGET_W, 1);
+                    item.h = clampInt(item.h, 1, MAX_WIDGET_H, 1);
                     return;
                 }
 
@@ -47,8 +47,8 @@ export const createLayoutActions = (
         if (!item) return;
 
         if (item.kind === 'site') {
-            item.w = 1;
-            item.h = 1;
+            item.w = clampInt(w, 1, MAX_WIDGET_W, 1);
+            item.h = clampInt(h, 1, MAX_WIDGET_H, 1);
         } else {
             const meta = getWidgetMeta(item.widgetType);
             const defW = meta?.defaultW ?? 2;

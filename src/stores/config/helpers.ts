@@ -1,7 +1,7 @@
 import type {SiteItem} from '../../core/config/types';
 
-export const MAX_WIDGET_W = 4;
-export const MAX_WIDGET_H = 4;
+export const MAX_WIDGET_W = 16;
+export const MAX_WIDGET_H = 16;
 
 export const deepClone = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
 

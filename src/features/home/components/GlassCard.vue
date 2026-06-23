@@ -301,7 +301,7 @@ const densityMode = ref<DensityMode>("wide");
 const clampSpan = (v: unknown, fallback: number): number => {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
-  return Math.max(1, Math.min(4, Math.round(n)));
+  return Math.max(1, Math.min(16, Math.round(n)));
 };
 
 const cardSpanW = computed(() => clampSpan(props.cardSpanW ?? cardCfg.value.w, 2));

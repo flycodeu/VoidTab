@@ -25,16 +25,14 @@ import {isExtensionContext} from "../../../shared/utils/icon.ts";
 import {cloneConfigSnapshot} from "../../../shared/utils/configSnapshot.ts";
 
 // Types
-import type {GroupSortKey} from "../../../core/config/types.ts";
+import type {Group, GroupSortKey, SiteItem} from "../../../core/config/types.ts";
 import {getWidgetLabel} from "../../../core/registry/widgets.ts";
+import type {GridPlacement, LayoutProfileId, TileLayouts, WorkspaceLayoutProfile} from "../../../core/tiles/contracts.ts";
+import {cloneDefaultWorkspaceLayout, getGridMetrics, MAX_TILE_SPAN, resolveLayoutProfileId, type GridMetrics} from "../../../core/tiles/gridMetrics.ts";
+import {findFirstAvailablePlacement, solveCanvasLayout} from "../../../core/tiles/layoutSolver.ts";
 
-type LayoutItem = any;
-type LayoutGroup = {
-  id: string;
-  title: string;
-  items: LayoutItem[];
-  sortKey?: GroupSortKey;
-};
+type LayoutItem = SiteItem;
+type LayoutGroup = Group;
 
 const props = defineProps<{
   activeGroupId: string;
@@ -84,19 +82,30 @@ const viewportW = ref(typeof window !== "undefined" ? window.innerWidth : 1280);
 const mobileCols = computed(() => viewportW.value < NARROW_MOBILE_WIDTH ? MOBILE_COLS_NARROW : MOBILE_COLS);
 
 const gridHostEl = ref<HTMLElement | null>(null);
-const gridCols = ref(8);
+const availableGridWidth = ref(1280);
 let ro: ResizeObserver | null = null;
 let onWindowResize: (() => void) | null = null;
 
-const widgetLabelH = computed(() => {
-  if (!store.config.theme.showWidgetName && !store.config.theme.showIconName) return 0;
-  const textSize = Number(store.config.theme.iconTextSize || 12);
-  return Math.max(18, Math.ceil(textSize * 1.35 + 6));
+const activeLayoutProfile = computed<LayoutProfileId>(() =>
+    resolveLayoutProfileId(availableGridWidth.value, isMobile.value)
+);
+
+const legacyProfileOverride = computed<Partial<WorkspaceLayoutProfile>>(() => {
+  const iconSize = Number(store.config.theme.iconSize || 60);
+  const labelSpace = store.config.theme.showIconName || store.config.theme.showWidgetName ? 32 : 12;
+  return {
+    unit: Math.max(72, Math.min(160, Math.round(iconSize + labelSpace))),
+    gap: Math.max(0, Math.min(48, Math.round(Number(store.config.theme.gap || 20)))),
+  };
 });
 
-const cellBaseSize = computed(() => Number(store.config.theme.iconSize || 72));
-
-const gridRowHeight = computed(() => cellBaseSize.value + widgetLabelH.value + 8);
+const getGroupMetrics = (group: LayoutGroup): GridMetrics => getGridMetrics(
+    availableGridWidth.value,
+    activeLayoutProfile.value,
+    group.workspaceLayout,
+    activeLayoutProfile.value === 'mobile' ? mobileCols.value : undefined,
+    group.workspaceLayout ? undefined : legacyProfileOverride.value,
+);
 
 const getWidgetTitle = (item: any) => {
   const raw = (item.title || "").trim();
@@ -131,21 +140,7 @@ function recalcGrid() {
   const width = Math.max(0, shellWidth - padX);
   if (width <= 0) return;
 
-  const gap = Number(store.config.theme.gap || 20);
-
-  if (isMobile.value) {
-    gridCols.value = mobileCols.value;
-    return;
-  }
-
-  const MAX_COLS_DESKTOP = 14;
-  const minDesktopCols = width < 560 ? 3 : 4;
-  const siteMinCellWidth = cellBaseSize.value + 24;
-
-  let siteCols = Math.floor((width + gap) / (siteMinCellWidth + gap));
-  siteCols = Math.max(minDesktopCols, Math.min(siteCols, MAX_COLS_DESKTOP));
-
-  gridCols.value = siteCols;
+  availableGridWidth.value = width;
 }
 
 const recalcGridDebounced = useDebounceFn(() => recalcGrid(), 150, {maxWait: 300});
@@ -183,10 +178,11 @@ onBeforeUnmount(() => {
   suppressNextSiteClick = null;
   ro = null;
   onWindowResize = null;
+  stopCanvasGesture(false);
 });
 
 watch(
-    () => [store.config.theme.iconSize, store.config.theme.gap, store.config.theme.siteLayoutMode, store.config.theme.gridMaxWidth],
+    () => [store.config.theme.iconSize, store.config.theme.gap, store.config.theme.showIconName, store.config.theme.showWidgetName, store.config.theme.gridMaxWidth],
     () => recalcGridDebounced()
 );
 
@@ -196,23 +192,25 @@ const gridShellStyle = computed<CSSProperties>(() => {
   return {maxWidth};
 });
 
-/** 网格容器样式 */
-const densityStyle = computed<CSSProperties>(() => {
-  const gap = Number(store.config.theme.gap || 20);
-
+/** 固定单元网格：列数随容器变化，单元本身保持确定。 */
+const gridStyleOf = (group: LayoutGroup): CSSProperties => {
+  const metrics = getGroupMetrics(group);
   return {
     display: 'grid',
-    gridTemplateColumns: `repeat(${gridCols.value}, 1fr)`,
-    gridAutoRows: `${gridRowHeight.value}px`,
-    gap: `${gap}px`,
+    gridTemplateColumns: `repeat(${metrics.cols}, ${metrics.unit}px)`,
+    gridAutoRows: `${metrics.unit}px`,
+    gap: `${metrics.gap}px`,
     width: '100%',
     minWidth: 0,
-    justifyItems: 'center',
+    justifyContent: 'center',
+    justifyItems: 'stretch',
     alignItems: 'start',
-    gridAutoFlow: 'dense',
+    gridAutoFlow: isCanvasLayout(group) ? 'row' : 'dense',
     paddingBottom: '40px',
+    '--grid-unit': `${metrics.unit}px`,
+    '--grid-gap': `${metrics.gap}px`,
   };
-});
+};
 const densityItemClass = computed(() => `density-mode-${store.config.theme.density || "normal"}`);
 
 const PRELOAD_CURRENT_GROUP_LIMIT = 48;
@@ -333,60 +331,365 @@ const iconPreloadSignature = computed(() => {
 watch(iconPreloadSignature, () => scheduleIconPreloadBatches(), {immediate: true, flush: "post"});
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-const MAX_W = 4;
-const MAX_H = 4;
+const clampSpan = (value: unknown, fallback: number, max = MAX_TILE_SPAN) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return clamp(Math.round(numeric), 1, max);
+};
 
-const getItemStyle = (item: any) => {
-  const isWidget = item.kind === "widget";
-  const mode = store.config.theme.siteLayoutMode || 'icon';
+const clampCoordinate = (value: unknown, fallback = 0) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return clamp(Math.round(numeric), 0, 10000);
+};
 
-  // Site：根据主题选择占格（widget 不动）
-  if (!isWidget) {
-    if (mode === 'card') {
-      const w = clamp(Number(props.siteCardW || store.config.theme.siteCard?.w || 3), 1, MAX_W);
-      const h = clamp(Number(props.siteCardH || store.config.theme.siteCard?.h || 1), 1, MAX_H);
-      const spanW = isMobile.value ? Math.min(w, mobileCols.value) : Math.min(w, gridCols.value);
-      const spanH = Math.min(h, MAX_H);
+const isCanvasLayout = (group: LayoutGroup) => group.workspaceLayout?.mode === 'canvas';
 
-      return {
-        gridColumn: `span ${spanW}`,
-        gridRow: `span ${spanH}`,
-        width: "100%",
-        height: "100%",
-        minWidth: 0,
-        minHeight: 0,
-      };
-    }
-
-    // icon 模式：保持原样 1×1
+const getFlowItemSize = (item: LayoutItem, metrics: GridMetrics) => {
+  if (item.kind !== 'widget') {
+    if ((store.config.theme.siteLayoutMode || 'icon') !== 'card') return {w: 1, h: 1};
     return {
-      gridColumn: `span 1`,
-      gridRow: `span 1`,
-      width: "100%",
-      height: "100%",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "flex-start",
+      w: clampSpan(props.siteCardW || store.config.theme.siteCard?.w || 3, 1, metrics.cols),
+      h: clampSpan(props.siteCardH || store.config.theme.siteCard?.h || 1, 1),
     };
   }
-
-  // Widget：保持原来的逻辑
-  const wRaw = Number(item.w || 2);
-  const hRaw = Number(item.h || 2);
-  const w = clamp(wRaw, 1, MAX_W);
-  const h = clamp(hRaw, 1, MAX_H);
-
-  const spanW = isMobile.value ? Math.min(w, mobileCols.value) : Math.min(w, gridCols.value);
-
   return {
-    gridColumn: `span ${spanW}`,
-    gridRow: `span ${h}`,
-    width: "100%",
-    height: "100%",
+    w: clampSpan(item.w, 2, metrics.cols),
+    h: clampSpan(item.h, 2),
+  };
+};
+
+const getCanvasItemSize = (item: LayoutItem, metrics: GridMetrics) => {
+  const hasStoredLayout = !!item.layouts?.desktop;
+  const legacySiteCard = item.kind !== 'widget'
+      && !hasStoredLayout
+      && (store.config.theme.siteLayoutMode || 'icon') === 'card';
+  return {
+    w: legacySiteCard
+        ? clampSpan(props.siteCardW || store.config.theme.siteCard?.w || 3, 1, metrics.cols)
+        : clampSpan(item.w, item.kind === 'widget' ? 2 : 1, metrics.cols),
+    h: legacySiteCard
+        ? clampSpan(props.siteCardH || store.config.theme.siteCard?.h || 1, 1)
+        : clampSpan(item.h, item.kind === 'widget' ? 2 : 1),
+  };
+};
+
+const isPlacementWithinMetrics = (placement: GridPlacement, metrics: GridMetrics) =>
+    placement.x >= 0
+    && placement.y >= 0
+    && placement.w >= 1
+    && placement.h >= 1
+    && placement.x + placement.w <= metrics.cols;
+
+const getStoredPlacement = (item: LayoutItem, profile: LayoutProfileId) =>
+    item.layouts?.[profile] || item.layouts?.desktop;
+
+const collectCanvasPlacements = (group: LayoutGroup, metrics = getGroupMetrics(group)) => {
+  const placements: Record<string, GridPlacement> = {};
+  for (const item of group.items) {
+    const stored = getStoredPlacement(item, metrics.profile);
+    const size = getCanvasItemSize(item, metrics);
+    const candidate = stored
+      ? {
+          x: clampCoordinate(stored.x),
+          y: clampCoordinate(stored.y),
+          w: clampSpan(stored.w, size.w, metrics.cols),
+          h: clampSpan(stored.h, size.h),
+        }
+        : undefined;
+    if (candidate && isPlacementWithinMetrics(candidate, metrics)
+        && !Object.values(placements).some((other) => candidate.x < other.x + other.w
+            && candidate.x + candidate.w > other.x
+            && candidate.y < other.y + other.h
+            && candidate.y + candidate.h > other.y)) {
+      placements[item.id] = candidate;
+      continue;
+    }
+    const placement = findFirstAvailablePlacement(placements, metrics.cols, size);
+    if (placement) placements[item.id] = placement;
+  }
+  return placements;
+};
+
+const getItemStyle = (group: LayoutGroup, item: LayoutItem): CSSProperties => {
+  const metrics = getGroupMetrics(group);
+  const canvas = isCanvasLayout(group);
+  const size = canvas ? getCanvasItemSize(item, metrics) : getFlowItemSize(item, metrics);
+  if (canvas) {
+    const placement = collectCanvasPlacements(group, metrics)[item.id] || {x: 0, y: 0, ...size};
+    return {
+      gridColumnStart: placement.x + 1,
+      gridColumnEnd: `span ${placement.w}`,
+      gridRowStart: placement.y + 1,
+      gridRowEnd: `span ${placement.h}`,
+      width: '100%',
+      height: '100%',
+      minWidth: 0,
+      minHeight: 0,
+    };
+  }
+  return {
+    gridColumn: `span ${size.w}`,
+    gridRow: `span ${size.h}`,
+    width: '100%',
+    height: '100%',
     minWidth: 0,
     minHeight: 0,
   };
 };
+
+const applyCanvasPlacements = (
+    group: LayoutGroup,
+    profile: LayoutProfileId,
+    placements: Record<string, GridPlacement>,
+) => {
+  for (const item of group.items) {
+    const placement = placements[item.id];
+    if (!placement) continue;
+    const existing = item.layouts;
+    const layouts: TileLayouts = {
+      desktop: existing?.desktop || {...placement},
+      ...(existing?.tablet ? {tablet: existing.tablet} : {}),
+      ...(existing?.mobile ? {mobile: existing.mobile} : {}),
+      [profile]: {...placement},
+    };
+    item.layouts = layouts;
+    item.w = placement.w;
+    item.h = placement.h;
+  }
+};
+
+const initializeCanvasLayout = (group: LayoutGroup, metrics = getGroupMetrics(group)) => {
+  const placements = collectCanvasPlacements(group, metrics);
+  applyCanvasPlacements(group, metrics.profile, placements);
+  return placements;
+};
+
+const toggleCanvasLayout = (group: LayoutGroup) => {
+  const current = group.workspaceLayout || cloneDefaultWorkspaceLayout();
+  const nextMode = current.mode === 'canvas' ? 'flow' : 'canvas';
+  group.workspaceLayout = {...current, mode: nextMode};
+  if (nextMode === 'canvas') {
+    group.sortKey = 'custom';
+    initializeCanvasLayout(group);
+    toast.success(`「${group.title}」已切换为自由布局。`);
+    ui.announce(`${group.title}已切换为自由布局`);
+  } else {
+    toast.info(`「${group.title}」已切换为自动排列。`);
+    ui.announce(`${group.title}已切换为自动排列`);
+  }
+  void store.saveConfig();
+};
+
+const compactCanvasLayout = (group: LayoutGroup) => {
+  if (!isCanvasLayout(group)) return;
+  const metrics = getGroupMetrics(group);
+  const before = collectCanvasPlacements(group, metrics);
+  const result = solveCanvasLayout({cols: metrics.cols, placements: before}, {
+    type: 'compact',
+    profile: metrics.profile,
+  });
+  applyCanvasPlacements(group, metrics.profile, result.placements);
+  recordCanvasHistory({
+    groupId: group.id,
+    profile: metrics.profile,
+    before: clonePlacementMap(before),
+    after: clonePlacementMap(result.placements),
+  });
+  void store.saveConfig();
+  toast.success('已整理当前布局。');
+  ui.announce('已整理当前布局');
+};
+
+type CanvasGesture = {
+  group: LayoutGroup;
+  itemId: string;
+  mode: 'move' | 'resize';
+  pointerId: number;
+  startX: number;
+  startY: number;
+  initial: GridPlacement;
+  originalPlacements: Record<string, GridPlacement>;
+  metrics: GridMetrics;
+  changed: boolean;
+};
+
+type CanvasHistoryEntry = {
+  groupId: string;
+  profile: LayoutProfileId;
+  before: Record<string, GridPlacement>;
+  after: Record<string, GridPlacement>;
+};
+
+let canvasGesture: CanvasGesture | null = null;
+const canvasHistory = ref<CanvasHistoryEntry[]>([]);
+const canvasRedoHistory = ref<CanvasHistoryEntry[]>([]);
+const MAX_CANVAS_HISTORY = 40;
+
+const clonePlacementMap = (placements: Record<string, GridPlacement>) => Object.fromEntries(
+    Object.entries(placements).map(([id, placement]) => [id, {...placement}]),
+) as Record<string, GridPlacement>;
+
+const samePlacementMap = (left: Record<string, GridPlacement>, right: Record<string, GridPlacement>) => {
+  const ids = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...ids].every((id) => {
+    const a = left[id];
+    const b = right[id];
+    return !!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+  });
+};
+
+const recordCanvasHistory = (entry: CanvasHistoryEntry) => {
+  if (samePlacementMap(entry.before, entry.after)) return;
+  canvasHistory.value.push(entry);
+  if (canvasHistory.value.length > MAX_CANVAS_HISTORY) canvasHistory.value.shift();
+  canvasRedoHistory.value = [];
+};
+
+const applyCanvasHistory = (entry: CanvasHistoryEntry, direction: 'undo' | 'redo') => {
+  const group = (store.config.layout as LayoutGroup[]).find((candidate) => candidate.id === entry.groupId);
+  if (!group || !isCanvasLayout(group)) return false;
+  applyCanvasPlacements(group, entry.profile, direction === 'undo' ? entry.before : entry.after);
+  void store.saveConfig();
+  return true;
+};
+
+const undoCanvasLayout = (group: LayoutGroup) => {
+  for (let index = canvasHistory.value.length - 1; index >= 0; index -= 1) {
+    const entry = canvasHistory.value[index];
+    if (entry.groupId !== group.id) continue;
+    canvasHistory.value.splice(index, 1);
+    if (applyCanvasHistory(entry, 'undo')) {
+      canvasRedoHistory.value.push(entry);
+      toast.info('已撤销上一次布局操作。');
+      ui.announce('已撤销上一次布局操作');
+    }
+    return;
+  }
+};
+
+const redoCanvasLayout = (group: LayoutGroup) => {
+  for (let index = canvasRedoHistory.value.length - 1; index >= 0; index -= 1) {
+    const entry = canvasRedoHistory.value[index];
+    if (entry.groupId !== group.id) continue;
+    canvasRedoHistory.value.splice(index, 1);
+    if (applyCanvasHistory(entry, 'redo')) {
+      canvasHistory.value.push(entry);
+      toast.info('已恢复布局操作。');
+      ui.announce('已恢复布局操作');
+    }
+    return;
+  }
+};
+
+const canUndoCanvasLayout = (group: LayoutGroup) => canvasHistory.value.some((entry) => entry.groupId === group.id);
+const canRedoCanvasLayout = (group: LayoutGroup) => canvasRedoHistory.value.some((entry) => entry.groupId === group.id);
+
+const stopCanvasGesture = (save = false) => {
+  if (!canvasGesture) return;
+  const gesture = canvasGesture;
+  window.removeEventListener('pointermove', handleCanvasPointerMove);
+  window.removeEventListener('pointerup', handleCanvasPointerUp);
+  window.removeEventListener('pointercancel', handleCanvasPointerUp);
+  canvasGesture = null;
+  ui.setDragState(false);
+  if (save && gesture.changed) {
+    const after = collectCanvasPlacements(gesture.group, gesture.metrics);
+    recordCanvasHistory({
+      groupId: gesture.group.id,
+      profile: gesture.metrics.profile,
+      before: clonePlacementMap(gesture.originalPlacements),
+      after: clonePlacementMap(after),
+    });
+    void store.saveConfig();
+  }
+};
+
+const handleCanvasPointerMove = (event: PointerEvent) => {
+  const gesture = canvasGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  const step = gesture.metrics.unit + gesture.metrics.gap;
+  const deltaX = Math.round((event.clientX - gesture.startX) / step);
+  const deltaY = Math.round((event.clientY - gesture.startY) / step);
+  if (deltaX === 0 && deltaY === 0) return;
+
+  const command = gesture.mode === 'move'
+      ? {
+        type: 'move' as const,
+        profile: gesture.metrics.profile,
+        tileId: gesture.itemId,
+        x: gesture.initial.x + deltaX,
+        y: gesture.initial.y + deltaY,
+      }
+      : {
+        type: 'resize' as const,
+        profile: gesture.metrics.profile,
+        tileId: gesture.itemId,
+        w: gesture.initial.w + deltaX,
+        h: gesture.initial.h + deltaY,
+        anchor: 'nw' as const,
+      };
+  const result = solveCanvasLayout({
+    cols: gesture.metrics.cols,
+    placements: gesture.originalPlacements,
+  }, command);
+  if (result.rejected) return;
+  applyCanvasPlacements(gesture.group, gesture.metrics.profile, result.placements);
+  gesture.changed = result.changedTileIds.length > 0;
+};
+
+const handleCanvasPointerUp = (event: PointerEvent) => {
+  if (!canvasGesture || event.pointerId !== canvasGesture.pointerId) return;
+  stopCanvasGesture(true);
+};
+
+const startCanvasGesture = (
+    event: PointerEvent,
+    group: LayoutGroup,
+    item: LayoutItem,
+    mode: 'move' | 'resize',
+) => {
+  if (!props.isEditMode || !isCanvasLayout(group) || event.button !== 0) return;
+  const target = event.target as Element | null;
+  if (mode === 'move' && target?.closest('.delete-btn, .canvas-resize-handle')) return;
+  stopCanvasGesture(false);
+  const metrics = getGroupMetrics(group);
+  const originalPlacements = initializeCanvasLayout(group, metrics);
+  const initial = originalPlacements[item.id];
+  if (!initial) return;
+  event.preventDefault();
+  event.stopPropagation();
+  canvasGesture = {
+    group,
+    itemId: item.id,
+    mode,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    initial,
+    originalPlacements,
+    metrics,
+    changed: false,
+  };
+  ui.setDragState(true, group.id, item);
+  window.addEventListener('pointermove', handleCanvasPointerMove, {passive: false});
+  window.addEventListener('pointerup', handleCanvasPointerUp, {passive: true});
+  window.addEventListener('pointercancel', handleCanvasPointerUp, {passive: true});
+};
+
+const canvasLayoutPresence = computed(() => (store.config.layout as LayoutGroup[])
+    .map((group) => `${group.id}:${group.workspaceLayout?.mode || 'flow'}:${group.items.map((item) => `${item.id}:${item.layouts?.desktop ? '1' : '0'}`).join(',')}`)
+    .join('|'));
+
+watch(canvasLayoutPresence, () => {
+  let changed = false;
+  for (const group of store.config.layout as LayoutGroup[]) {
+    if (!isCanvasLayout(group) || group.items.every((item) => item.layouts?.desktop)) continue;
+    initializeCanvasLayout(group);
+    changed = true;
+  }
+  if (changed) void store.saveConfig();
+}, {flush: 'post'});
 
 const widgetNameMode = (item: any) => {
   if (!store.config.theme.showWidgetName) return "none";
@@ -402,6 +705,7 @@ const widgetNameMode = (item: any) => {
 const getSortKey = (group: LayoutGroup): GroupSortKey => (group.sortKey || "custom") as GroupSortKey;
 
 const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
+  if (isCanvasLayout(group)) return group.items;
   const key = getSortKey(group);
   if (key === "custom") return group.items;
 
@@ -420,11 +724,12 @@ const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
   return items;
 };
 
-const canFreeReorder = (group: LayoutGroup) => !props.isEditMode && getSortKey(group) === "custom";
+const canFreeReorder = (group: LayoutGroup) => !isCanvasLayout(group) && !props.isEditMode && getSortKey(group) === "custom";
 
 const modelValueOf = (group: LayoutGroup) => (props.isEditMode ? group.items : getDisplayItems(group));
 
 const updateModelValue = (group: LayoutGroup, val: LayoutItem[]) => {
+  if (isCanvasLayout(group)) return;
   if (props.isEditMode) {
     group.items = val;
     store.saveConfig();
@@ -672,7 +977,7 @@ const confirmDelete = () => {
               v-if="!isEditMode"
               :group-name="group.title"
               :count="group.items?.length || 0"
-              :sort-key="getSortKey(group)"
+              :sort-key="isCanvasLayout(group) ? 'custom' : getSortKey(group)"
               @update:sortKey="(key) => store.updateGroupSort(group.id, key)"
               :key="`header-${group.id}`"
           />
@@ -683,7 +988,44 @@ const confirmDelete = () => {
               class="group-edit-title px-2 mb-3 font-bold tracking-wider text-sm flex items-center gap-2 select-none"
           >
             <div class="w-1 h-4 rounded-full group-edit-bar"></div>
-            {{ group.title }}
+            <span>{{ group.title }}</span>
+            <div class="ml-auto flex items-center gap-2">
+              <button
+                  type="button"
+                  class="layout-mode-chip ignore-drag"
+                  :class="{ 'is-canvas': isCanvasLayout(group) }"
+                  :aria-pressed="isCanvasLayout(group)"
+                  @click.stop="toggleCanvasLayout(group)"
+              >
+                {{ isCanvasLayout(group) ? '自由布局' : '自动排列' }}
+              </button>
+              <button
+                  v-if="isCanvasLayout(group)"
+                  type="button"
+                  class="layout-compact-btn ignore-drag"
+                  @click.stop="compactCanvasLayout(group)"
+              >
+                整理
+              </button>
+              <button
+                  v-if="isCanvasLayout(group)"
+                  type="button"
+                  class="layout-compact-btn ignore-drag"
+                  :disabled="!canUndoCanvasLayout(group)"
+                  @click.stop="undoCanvasLayout(group)"
+              >
+                撤销
+              </button>
+              <button
+                  v-if="isCanvasLayout(group)"
+                  type="button"
+                  class="layout-compact-btn ignore-drag"
+                  :disabled="!canRedoCanvasLayout(group)"
+                  @click.stop="redoCanvasLayout(group)"
+              >
+                重做
+              </button>
+            </div>
           </div>
 
           <EmptyState
@@ -708,12 +1050,12 @@ const confirmDelete = () => {
               :group="isEditMode ? 'voidtab-shared-group' : viewOnlyGroup(group.id)"
               filter=".ignore-drag"
               class="w-full min-h-[120px]"
-              :class="[{ 'edit-grid-shell': isEditMode }]"
+              :class="[{ 'edit-grid-shell': isEditMode, 'canvas-grid-shell': isCanvasLayout(group) }]"
               ghost-class="sortable-ghost"
               @start="(e) => onDragStart(e, group)"
               @end="onDragEnd"
-              :style="densityStyle"
-              :disabled="!isEditMode && !canFreeReorder(group)"
+              :style="gridStyleOf(group)"
+              :disabled="isCanvasLayout(group) || (!isEditMode && !canFreeReorder(group))"
               @contextmenu.prevent.self="handleBlankContextMenu($event, group.id)"
               role="list"
               :aria-label="`${group.title}内容网格`"
@@ -721,10 +1063,11 @@ const confirmDelete = () => {
             <div
                 v-for="item in modelValueOf(group)"
                 :key="item.id"
-                :style="getItemStyle(item)"
+                :style="getItemStyle(group, item)"
                 class="site-tile relative"
-                :class="[{ 'arrange-mode': isEditMode }, densityItemClass]"
+                :class="[{ 'arrange-mode': isEditMode, 'canvas-tile': isCanvasLayout(group), 'canvas-arrange-mode': isCanvasLayout(group) && isEditMode }, densityItemClass]"
                 role="listitem"
+                @pointerdown.capture="(e:any) => startCanvasGesture(e, group, item, 'move')"
             >
               <div
                   class="site-wrap relative w-full h-full min-w-0 min-h-0"
@@ -758,12 +1101,12 @@ const confirmDelete = () => {
                     @pointerleave="(e:any) => handleSitePointerEnd(e)"
                     @click.capture="(e:any) => handleSiteClickCapture(e, item)"
                 >
-                  <GlassCard
-                      :item="item"
-                      :isEditMode="isEditMode"
-                      :density="store.config.theme.density"
-                      :cardSpanW="Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
-                      :cardSpanH="Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
+                   <GlassCard
+                       :item="item"
+                       :isEditMode="isEditMode"
+                       :density="store.config.theme.density"
+                       :cardSpanW="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).w : Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
+                       :cardSpanH="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).h : Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
                       :priority="group.id === activeGroupId ? 'high' : 'low'"
                       @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
                   />
@@ -778,6 +1121,17 @@ const confirmDelete = () => {
                     @click.stop="askDelete(group.id, item.id)"
                 >
                   <PhX size="12" weight="bold" aria-hidden="true"/>
+                </button>
+
+                <button
+                    v-if="isEditMode && isCanvasLayout(group)"
+                    type="button"
+                    class="canvas-resize-handle ignore-drag"
+                    title="拖动调整卡片尺寸"
+                    aria-label="拖动调整卡片尺寸"
+                    @pointerdown.stop="(e:any) => startCanvasGesture(e, group, item, 'resize')"
+                >
+                  <span aria-hidden="true">↘</span>
                 </button>
               </div>
             </div>
@@ -887,6 +1241,48 @@ const confirmDelete = () => {
   isolation: isolate;
 }
 
+.canvas-grid-shell {
+  position: relative;
+  background-image:
+      linear-gradient(rgba(var(--accent-color-rgb), 0.075) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--accent-color-rgb), 0.075) 1px, transparent 1px);
+  background-size: calc(var(--grid-unit) + var(--grid-gap)) calc(var(--grid-unit) + var(--grid-gap));
+  background-position: 16px 16px;
+}
+
+.layout-mode-chip,
+.layout-compact-btn {
+  min-height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.22);
+  color: var(--text-primary);
+  background: rgba(var(--overlay-rgb), 0.16);
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.layout-mode-chip:hover,
+.layout-compact-btn:hover {
+  border-color: rgba(var(--accent-color-rgb), 0.55);
+  background: rgba(var(--accent-color-rgb), 0.14);
+  transform: translateY(-1px);
+}
+
+.layout-mode-chip.is-canvas {
+  color: var(--accent-color);
+  border-color: rgba(var(--accent-color-rgb), 0.55);
+  background: rgba(var(--accent-color-rgb), 0.18);
+}
+
+.layout-compact-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .site-tile:hover {
   transform: translateY(-3px) scale(1.035);
   z-index: 10;
@@ -894,6 +1290,42 @@ const confirmDelete = () => {
 
 .site-tile.arrange-mode:hover {
   transform: translateY(-2px) scale(1.01);
+}
+
+.canvas-arrange-mode {
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas-arrange-mode:active {
+  cursor: grabbing;
+}
+
+.canvas-resize-handle {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  z-index: 51;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.5);
+  color: var(--text-primary);
+  background: rgba(var(--overlay-rgb), 0.54);
+  box-shadow: 0 7px 18px rgba(15, 23, 42, 0.18);
+  cursor: nwse-resize;
+  font-size: 14px;
+  line-height: 1;
+  touch-action: none;
+}
+
+.canvas-resize-handle:hover {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.18);
 }
 
 /* ---------------------------------

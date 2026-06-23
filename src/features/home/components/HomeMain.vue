@@ -32,7 +32,7 @@ const ui = useUiStore();
 
 const userCardW = computed(() => {
   const w = Number((store.config.theme as any)?.siteCard?.w ?? 2);
-  return Number.isFinite(w) ? Math.max(1, Math.min(4, Math.round(w))) : 2;
+  return Number.isFinite(w) ? Math.max(1, Math.min(16, Math.round(w))) : 2;
 });
 
 const effectiveCardW = computed(() => {
@@ -42,7 +42,7 @@ const effectiveCardW = computed(() => {
 
 const userCardH = computed(() => {
   const h = Number((store.config.theme as any)?.siteCard?.h ?? 1);
-  return Number.isFinite(h) ? Math.max(1, Math.min(4, Math.round(h))) : 1;
+  return Number.isFinite(h) ? Math.max(1, Math.min(16, Math.round(h))) : 1;
 });
 
 const mainContainerClass = computed(() => {

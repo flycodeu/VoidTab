@@ -1,4 +1,5 @@
 import type {SyncProfile} from '../sync/types';
+import type {TileLayouts, WorkspaceLayout} from '../tiles/contracts';
 
 export const CURRENT_CONFIG_VERSION = 5 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
@@ -26,6 +27,9 @@ export interface SiteItem {
 
     widgetType?: WidgetType;
     widgetConfig?: Record<string, any>;
+
+    /** P1 bridge field. P3 migrates this into the canonical TileInstance shape. */
+    layouts?: TileLayouts;
 }
 
 export interface Group {
@@ -36,6 +40,8 @@ export interface Group {
     sortKey?: GroupSortKey;
     iconColor?: string;
     iconBgColor?: string;
+    /** P1 bridge field. Existing groups default to flow and remain order-compatible. */
+    workspaceLayout?: WorkspaceLayout;
 }
 
 export type PrivacyVaultKdf =

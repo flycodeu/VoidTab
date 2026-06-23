@@ -29,24 +29,24 @@ const clampCardSize = (value: unknown, min: number, max: number, fallback: numbe
 
 const cardW = computed<number>({
   get() {
-    return clampCardSize((store.config.theme as any).siteCard?.w, 1, 4, 3);
+    return clampCardSize((store.config.theme as any).siteCard?.w, 1, 16, 3);
   },
   set(v) {
     (store.config.theme as any).siteCard = {
       ...(store.config.theme as any).siteCard,
-      w: clampCardSize(v, 1, 4, 3),
+      w: clampCardSize(v, 1, 16, 3),
     };
   },
 });
 
 const cardH = computed<number>({
   get() {
-    return clampCardSize((store.config.theme as any).siteCard?.h, 1, 2, 1);
+    return clampCardSize((store.config.theme as any).siteCard?.h, 1, 16, 1);
   },
   set(v) {
     (store.config.theme as any).siteCard = {
       ...(store.config.theme as any).siteCard,
-      h: clampCardSize(v, 1, 2, 1),
+      h: clampCardSize(v, 1, 16, 1),
     };
   },
 });
@@ -81,7 +81,7 @@ const preset = computed<CardPreset>({
 });
 
 const previewCardStyle = computed(() => ({
-  gridColumn: `span ${Math.max(1, Math.min(4, cardW.value))}`,
+  gridColumn: cardW.value > 4 ? '1 / -1' : `span ${Math.max(1, cardW.value)}`,
   minHeight: `${Math.max(72, cardH.value * 76)}px`,
   background: 'rgba(var(--overlay-rgb), 0.14)',
   border: '1px solid rgba(var(--overlay-rgb), 0.14)',
@@ -193,7 +193,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
                 type="range"
                 v-model.number="cardW"
                 min="1"
-                max="4"
+                max="16"
                 step="1"
                 class="w-full accent-[var(--accent-color)]"
             />
@@ -208,7 +208,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
                 type="range"
                 v-model.number="cardH"
                 min="1"
-                max="2"
+                max="16"
                 step="1"
                 class="w-full accent-[var(--accent-color)]"
             />
@@ -216,7 +216,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
         </div>
 
         <div class="text-[11px] opacity-60" style="color: var(--text-secondary);">
-          1×1 是方块磁贴；2×1/3×1 适合备注和域名；4×1 可作为横向入口卡片。
+          支持 1×1 到 16×16。常用入口建议保持较小尺寸；大尺寸更适合自由布局中的信息卡或照片墙。
         </div>
       </div>
 
