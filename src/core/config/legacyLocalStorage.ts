@@ -1,11 +1,11 @@
-import type { Config } from './types';
+import type {ConfigV6} from './types';
 import {createLegacyBufferNote} from './memoNotes';
 
 const isJson = (s: string) => {
     try { JSON.parse(s); return true; } catch { return false; }
 };
 
-export const applyLegacyLocalStorageIntoConfig = (cfg: Config) => {
+export const applyLegacyLocalStorageIntoConfig = (cfg: ConfigV6) => {
     // ⚠️ background/service worker 没有 window
     if (typeof window === 'undefined' || !window.localStorage) return { changed: false, removedKeys: [] as string[] };
 

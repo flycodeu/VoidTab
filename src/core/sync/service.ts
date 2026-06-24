@@ -1,5 +1,5 @@
 // src/core/sync/service.ts
-import type {SyncProfile, SyncOpResult, SyncTestResult} from './types';
+import type {SyncFileOptions, SyncProfile, SyncOpResult, SyncTestResult} from './types';
 import {providerRegistry} from './registry';
 
 function getProvider(profile: SyncProfile) {
@@ -14,14 +14,14 @@ export class SyncService {
         return getProvider(profile).test(profile);
     }
 
-    async upload(profile: SyncProfile, payload: any): Promise<SyncOpResult> {
+    async upload(profile: SyncProfile, payload: any, options?: SyncFileOptions): Promise<SyncOpResult> {
         if (profile.provider === 'none') return {ok: false, message: '未启用同步'};
-        return getProvider(profile).upload(profile, payload);
+        return getProvider(profile).upload(profile, payload, options);
     }
 
-    async download(profile: SyncProfile): Promise<SyncOpResult> {
+    async download(profile: SyncProfile, options?: SyncFileOptions): Promise<SyncOpResult> {
         if (profile.provider === 'none') return {ok: false, message: '未启用同步'};
-        return getProvider(profile).download(profile);
+        return getProvider(profile).download(profile, options);
     }
 }
 

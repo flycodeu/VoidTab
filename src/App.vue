@@ -58,6 +58,7 @@ const dialogLogic = useDialogs(store, ui);
 
 const isTerminalOpen = computed(() => store.config.runtime?.terminal?.isOpen || false);
 const showSidebarNav = computed(() => store.config.theme.showSidebar !== false);
+const workspaceLayout = computed(() => store.config.layout);
 const effectiveSidebarPos = computed<SidebarPosition>(() => {
   return isDesktopViewport.value ? store.config.theme.sidebarPos : 'bottom';
 });
@@ -82,8 +83,8 @@ function canWheelSwitchGroup() {
 }
 
 const groupNavigation = useAppGroupNavigation({
-  getGroups: () => store.config.layout || [],
-  getGroupTitle: (id) => store.config.layout.find((group) => group.id === id)?.title || '',
+  getGroups: () => workspaceLayout.value,
+  getGroupTitle: (id) => workspaceLayout.value.find((group) => group.id === id)?.title || '',
   shouldUseContinuousScroll: () => store.config.theme.showAllGroupsInMain,
   isWheelDisabled: () => !canWheelSwitchGroup(),
   announce: (message) => ui.announce(message),

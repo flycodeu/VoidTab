@@ -1,5 +1,6 @@
 // core/bookmarks/export.ts
-type AnyConfig = any;
+import type {ConfigV6} from '../config/types.ts';
+import {getTileUrl, isSiteTile} from '../tiles/tileAccess.ts';
 
 const escapeHtml = (s: string) =>
     String(s ?? "")
@@ -21,8 +22,8 @@ const safeUrl = (url: string) => {
  * 只导出：分组 + 站点(title/url/remark)
  * 不导出：主题/同步/widget/runtime/terminal 等任何其它字段
  */
-export function exportBookmarksToHtml(config: AnyConfig) {
-    const groups = Array.isArray(config?.layout) ? config.layout : [];
+export function exportBookmarksToHtml(config: ConfigV6) {
+    const groups = config.layout;
 
     const now = Math.floor(Date.now() / 1000);
 
@@ -43,13 +44,13 @@ export function exportBookmarksToHtml(config: AnyConfig) {
         html += `  <DT><H3 ADD_DATE="${now}" LAST_MODIFIED="${now}">${groupTitle}</H3>\n`;
         html += `  <DL><p>\n`;
 
-        const items = Array.isArray(g?.items) ? g.items : [];
-        for (const it of items) {
-            const url = safeUrl(it?.url || "");
+        for (const tile of g.tiles) {
+            if (!isSiteTile(tile)) continue;
+            const url = safeUrl(getTileUrl(tile));
             if (!url) continue;
 
-            const title = escapeHtml(it?.title || url);
-            const remark = String(it?.remark || "").trim();
+            const title = escapeHtml(tile.title || url);
+            const remark = String(tile.remark || "").trim();
 
             // 备注写进 <DD>，Chrome/Edge 导入后一般会变成“备注/描述”
             html += `    <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${now}">${title}</A>\n`;

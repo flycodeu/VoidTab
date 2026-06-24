@@ -1,12 +1,26 @@
 import {computed, ref, type Ref} from 'vue';
-import type {Config, Group, PrivacyVaultPayload, SiteItem} from '../../core/config/types';
+import type {
+    ConfigV6,
+    PrivacyVaultPayloadV2,
+} from '../../core/config/types';
 import {
     createPrivacyVaultEnvelope,
     emptyPrivacyVaultPayload,
     openPrivacyVaultEnvelope,
     resealPrivacyVaultEnvelope,
 } from '../../core/privacy/vaultCrypto';
+import {
+    migratePrivacyVaultPayloadV1ToV2,
+} from '../../core/privacy/payloadMigration';
 import {cloneConfigSnapshot} from '../../shared/utils/configSnapshot';
+import {
+    createWorkspace,
+    findWorkspace,
+    getWorkspaceTiles,
+    isSiteTile,
+    removeTile,
+} from '../../core/tiles/tileAccess.ts';
+import type {TileInstance, Workspace} from '../../core/tiles/contracts.ts';
 
 type PrivacyActionResult = {
     success: boolean;
@@ -21,23 +35,25 @@ type RemovePrivacyOptions = {
 const MIN_PASSWORD_LENGTH = 6;
 const DEFAULT_ENTRY_PHRASE = ':void';
 
-function normalizePayload(payload: PrivacyVaultPayload | null): PrivacyVaultPayload {
-    if (!payload) return emptyPrivacyVaultPayload();
-    return {
-        version: 1,
-        groups: Array.isArray(payload.groups) ? payload.groups : [],
-        sites: Array.isArray(payload.sites) ? payload.sites : [],
-    };
-}
-
-function makeRestoredGroup(originalGroupId: string, title?: string): Group {
-    return {
+function makeRuntimeRestoredWorkspace(originalGroupId: string, title?: string): Workspace {
+    return createWorkspace({
         id: originalGroupId,
         title: title || '恢复的内容',
         icon: 'Folder',
-        items: [],
         sortKey: 'custom',
-    };
+    });
+}
+
+function runtimeWorkspaceToPrivacyWorkspace(workspace: Workspace): Workspace {
+    return cloneConfigSnapshot(workspace) as Workspace;
+}
+
+function privacyWorkspaceToRuntimeWorkspace(workspace: Workspace): Workspace {
+    return cloneConfigSnapshot(workspace) as Workspace;
+}
+
+function privacyTileToRuntimeTile(tile: TileInstance): TileInstance {
+    return cloneConfigSnapshot(tile) as TileInstance;
 }
 
 function passwordLooksUsable(password: string) {
@@ -54,21 +70,34 @@ function entryPhraseLooksUsable(value: string) {
     return phrase.length >= 2 && phrase.length <= 32 && !/\s/.test(phrase);
 }
 
+const createVaultMigrationDeviceId = () => {
+    try {
+        if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+    } catch {
+    }
+    return `privacy-vault-${Date.now().toString(36)}`;
+};
+
 export const createPrivacyActions = (
-    config: Ref<Config>,
+    config: Ref<ConfigV6>,
     saveConfig: () => Promise<void>
 ) => {
-    const privacyPayload = ref<PrivacyVaultPayload | null>(null);
+    const privacyPayload = ref<PrivacyVaultPayloadV2 | null>(null);
     const privacyUnlocked = ref(false);
     const privacyBusy = ref(false);
     let sessionPassword = '';
+    let vaultMigrationDeviceId = '';
     let autoLockTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     const hasPrivacyVault = computed(() => !!config.value.privacy?.vault);
     const privacyItemCount = computed(() => {
         const payload = privacyPayload.value;
         if (!payload) return 0;
-        return payload.groups.length + payload.sites.length;
+        return payload.workspaces.length + payload.tiles.length;
+    });
+    const migrationOptions = () => ({
+        deviceId: vaultMigrationDeviceId || (vaultMigrationDeviceId = createVaultMigrationDeviceId()),
+        migratedAt: Date.now(),
     });
 
     const ensurePrivacyConfig = () => {
@@ -87,7 +116,7 @@ export const createPrivacyActions = (
             return;
         }
 
-        const entry = (config.value.privacy.entry || {}) as Partial<Config['privacy']['entry']>;
+        const entry = (config.value.privacy.entry || {}) as Partial<ConfigV6['privacy']['entry']>;
         config.value.privacy.entry = {
             trigger: 'keyboard',
             phrase: normalizeEntryPhrase(entry.phrase),
@@ -138,7 +167,7 @@ export const createPrivacyActions = (
         return {success: true, message: '入口已更新。'};
     };
 
-    const unlockPrivacyVault = async (password: string): Promise<PrivacyVaultPayload> => {
+    const unlockPrivacyVault = async (password: string): Promise<PrivacyVaultPayloadV2> => {
         ensurePrivacyConfig();
         const vault = config.value.privacy.vault;
         if (!vault) throw new Error('尚未创建。');
@@ -146,7 +175,22 @@ export const createPrivacyActions = (
 
         privacyBusy.value = true;
         try {
-            const payload = await openPrivacyVaultEnvelope(vault, password);
+            const opened = await openPrivacyVaultEnvelope(vault, password);
+            let payload: PrivacyVaultPayloadV2;
+            if (opened.version === 1) {
+                const migrated = migratePrivacyVaultPayloadV1ToV2(opened, migrationOptions());
+                const upgradedVault = await resealPrivacyVaultEnvelope(vault, password, migrated.payload);
+                config.value.privacy.vault = upgradedVault;
+                try {
+                    await saveConfig();
+                } catch (error) {
+                    config.value.privacy.vault = vault;
+                    throw error;
+                }
+                payload = migrated.payload;
+            } else {
+                payload = opened;
+            }
             privacyPayload.value = payload;
             privacyUnlocked.value = true;
             sessionPassword = password;
@@ -183,19 +227,19 @@ export const createPrivacyActions = (
         }
     };
 
-    const ensureUnlocked = async (password?: string) => {
+    const ensureUnlocked = async (password?: string): Promise<PrivacyVaultPayloadV2> => {
         if (privacyUnlocked.value && privacyPayload.value && sessionPassword) {
             touchPrivacySession();
-            return normalizePayload(privacyPayload.value);
+            return privacyPayload.value;
         }
         if (!password) throw new Error('请先解锁。');
         return await unlockPrivacyVault(password);
     };
 
-    const sealPayload = async (payload: PrivacyVaultPayload) => {
+    const sealPayload = async (payload: PrivacyVaultPayloadV2) => {
         const vault = config.value.privacy.vault;
         if (!vault || !sessionPassword) throw new Error('未解锁。');
-        return await resealPrivacyVaultEnvelope(vault, sessionPassword, normalizePayload(payload));
+        return await resealPrivacyVaultEnvelope(vault, sessionPassword, payload);
     };
 
     const moveSiteToPrivacy = async (groupId: string, siteId: string, password?: string): Promise<PrivacyActionResult> => {
@@ -203,21 +247,23 @@ export const createPrivacyActions = (
         if (!config.value.privacy.vault) return {success: false, message: '请先创建。'};
 
         const payload = await ensureUnlocked(password);
-        const group = config.value.layout.find((item) => item.id === groupId);
-        const index = group?.items.findIndex((item) => item.id === siteId) ?? -1;
-        const site = group && index >= 0 ? group.items[index] : null;
+        const group = findWorkspace(config.value, groupId);
+        const tiles = group ? getWorkspaceTiles(group) : [];
+        const index = tiles.findIndex((item) => item.id === siteId);
+        const site = index >= 0 ? tiles[index] : null;
         if (!group || !site) return {success: false, message: '未找到该网站。'};
-        if (site.kind === 'widget') return {success: false, message: '该项目暂不支持添加。'};
+        if (!isSiteTile(site)) return {success: false, message: '该项目暂不支持添加。'};
 
-        const nextPayload: PrivacyVaultPayload = {
-            version: 1,
-            groups: payload.groups,
-            sites: [
-                ...payload.sites.filter((entry) => entry.site.id !== site.id),
+        const tile = cloneConfigSnapshot(site) as TileInstance;
+        const nextPayload: PrivacyVaultPayloadV2 = {
+            version: 2,
+            workspaces: payload.workspaces,
+            tiles: [
+                ...payload.tiles.filter((entry) => entry.tile.id !== tile.id),
                 {
-                    site: cloneConfigSnapshot(site),
-                    originalGroupId: group.id,
-                    originalGroupTitle: group.title,
+                    tile,
+                    originalWorkspaceId: group.id,
+                    originalWorkspaceTitle: group.title,
                     originalIndex: index,
                     movedAt: Date.now(),
                 },
@@ -226,11 +272,11 @@ export const createPrivacyActions = (
         const nextVault = await sealPayload(nextPayload);
 
         config.value.privacy.vault = nextVault;
-        group.items.splice(index, 1);
+        removeTile(group, siteId);
         privacyPayload.value = nextPayload;
         touchPrivacySession();
         await saveConfig();
-        return {success: true, message: `「${site.title || '未命名'}」已添加。`};
+        return {success: true, message: `「${tile.title || '未命名'}」已添加。`};
     };
 
     const moveGroupToPrivacy = async (groupId: string, password?: string): Promise<PrivacyActionResult> => {
@@ -242,17 +288,18 @@ export const createPrivacyActions = (
         const group = index >= 0 ? config.value.layout[index] : null;
         if (!group) return {success: false, message: '未找到该分组。'};
 
-        const nextPayload: PrivacyVaultPayload = {
-            version: 1,
-            groups: [
-                ...payload.groups.filter((entry) => entry.group.id !== group.id),
+        const workspace = runtimeWorkspaceToPrivacyWorkspace(group);
+        const nextPayload: PrivacyVaultPayloadV2 = {
+            version: 2,
+            workspaces: [
+                ...payload.workspaces.filter((entry) => entry.workspace.id !== workspace.id),
                 {
-                    group: cloneConfigSnapshot(group),
+                    workspace,
                     originalIndex: index,
                     movedAt: Date.now(),
                 },
             ],
-            sites: payload.sites,
+            tiles: payload.tiles,
         };
         const nextVault = await sealPayload(nextPayload);
 
@@ -266,91 +313,93 @@ export const createPrivacyActions = (
 
     const restorePrivacySite = async (siteId: string, targetGroupId?: string): Promise<PrivacyActionResult> => {
         const payload = await ensureUnlocked();
-        const index = payload.sites.findIndex((entry) => entry.site.id === siteId);
-        const entry = index >= 0 ? payload.sites[index] : null;
+        const index = payload.tiles.findIndex((entry) => entry.tile.id === siteId);
+        const entry = index >= 0 ? payload.tiles[index] : null;
         if (!entry) return {success: false, message: '未找到该网站。'};
 
-        const nextPayload: PrivacyVaultPayload = {
-            version: 1,
-            groups: payload.groups,
-            sites: payload.sites.filter((item) => item.site.id !== siteId),
+        const nextPayload: PrivacyVaultPayloadV2 = {
+            version: 2,
+            workspaces: payload.workspaces,
+            tiles: payload.tiles.filter((item) => item.tile.id !== siteId),
         };
         const nextVault = await sealPayload(nextPayload);
 
-        let target = config.value.layout.find((group) => group.id === (targetGroupId || entry.originalGroupId));
+        let target = findWorkspace(config.value, targetGroupId || entry.originalWorkspaceId);
         if (!target) {
-            target = makeRestoredGroup(entry.originalGroupId, entry.originalGroupTitle);
+            target = makeRuntimeRestoredWorkspace(entry.originalWorkspaceId, entry.originalWorkspaceTitle);
             config.value.layout.push(target);
         }
-        if (!target.items.some((item) => item.id === entry.site.id)) {
-            const insertAt = Math.max(0, Math.min(entry.originalIndex, target.items.length));
-            target.items.splice(insertAt, 0, cloneConfigSnapshot(entry.site) as SiteItem);
+        const restored = privacyTileToRuntimeTile(entry.tile);
+        const tiles = getWorkspaceTiles(target);
+        if (!tiles.some((item) => item.id === restored.id)) {
+            const insertAt = Math.max(0, Math.min(entry.originalIndex, tiles.length));
+            tiles.splice(insertAt, 0, restored);
         }
 
         config.value.privacy.vault = nextVault;
         privacyPayload.value = nextPayload;
         touchPrivacySession();
         await saveConfig();
-        return {success: true, message: `「${entry.site.title || '未命名'}」已恢复。`};
+        return {success: true, message: `「${entry.tile.title || '未命名'}」已恢复。`};
     };
 
     const restorePrivacyGroup = async (groupId: string): Promise<PrivacyActionResult> => {
         const payload = await ensureUnlocked();
-        const index = payload.groups.findIndex((entry) => entry.group.id === groupId);
-        const entry = index >= 0 ? payload.groups[index] : null;
+        const index = payload.workspaces.findIndex((entry) => entry.workspace.id === groupId);
+        const entry = index >= 0 ? payload.workspaces[index] : null;
         if (!entry) return {success: false, message: '未找到该分组。'};
 
-        const nextPayload: PrivacyVaultPayload = {
-            version: 1,
-            groups: payload.groups.filter((item) => item.group.id !== groupId),
-            sites: payload.sites,
+        const nextPayload: PrivacyVaultPayloadV2 = {
+            version: 2,
+            workspaces: payload.workspaces.filter((item) => item.workspace.id !== groupId),
+            tiles: payload.tiles,
         };
         const nextVault = await sealPayload(nextPayload);
 
         if (!config.value.layout.some((group) => group.id === groupId)) {
             const insertAt = Math.max(0, Math.min(entry.originalIndex, config.value.layout.length));
-            config.value.layout.splice(insertAt, 0, cloneConfigSnapshot(entry.group) as Group);
+            config.value.layout.splice(insertAt, 0, privacyWorkspaceToRuntimeWorkspace(entry.workspace));
         }
 
         config.value.privacy.vault = nextVault;
         privacyPayload.value = nextPayload;
         touchPrivacySession();
         await saveConfig();
-        return {success: true, message: `分组「${entry.group.title || '未命名'}」已恢复。`};
+        return {success: true, message: `分组「${entry.workspace.title || '未命名'}」已恢复。`};
     };
 
     const deletePrivacySite = async (siteId: string): Promise<PrivacyActionResult> => {
         const payload = await ensureUnlocked();
-        const entry = payload.sites.find((item) => item.site.id === siteId);
+        const entry = payload.tiles.find((item) => item.tile.id === siteId);
         if (!entry) return {success: false, message: '未找到该网站。'};
 
         const nextPayload = {
-            version: 1 as const,
-            groups: payload.groups,
-            sites: payload.sites.filter((item) => item.site.id !== siteId),
+            version: 2 as const,
+            workspaces: payload.workspaces,
+            tiles: payload.tiles.filter((item) => item.tile.id !== siteId),
         };
         config.value.privacy.vault = await sealPayload(nextPayload);
         privacyPayload.value = nextPayload;
         touchPrivacySession();
         await saveConfig();
-        return {success: true, message: `已永久删除「${entry.site.title || '未命名'}」。`};
+        return {success: true, message: `已永久删除「${entry.tile.title || '未命名'}」。`};
     };
 
     const deletePrivacyGroup = async (groupId: string): Promise<PrivacyActionResult> => {
         const payload = await ensureUnlocked();
-        const entry = payload.groups.find((item) => item.group.id === groupId);
+        const entry = payload.workspaces.find((item) => item.workspace.id === groupId);
         if (!entry) return {success: false, message: '未找到该分组。'};
 
         const nextPayload = {
-            version: 1 as const,
-            groups: payload.groups.filter((item) => item.group.id !== groupId),
-            sites: payload.sites,
+            version: 2 as const,
+            workspaces: payload.workspaces.filter((item) => item.workspace.id !== groupId),
+            tiles: payload.tiles,
         };
         config.value.privacy.vault = await sealPayload(nextPayload);
         privacyPayload.value = nextPayload;
         touchPrivacySession();
         await saveConfig();
-        return {success: true, message: `已永久删除分组「${entry.group.title || '未命名'}」。`};
+        return {success: true, message: `已永久删除分组「${entry.workspace.title || '未命名'}」。`};
     };
 
     const changePrivacyPassword = async (oldPassword: string, newPassword: string): Promise<PrivacyActionResult> => {
@@ -360,7 +409,10 @@ export const createPrivacyActions = (
 
         privacyBusy.value = true;
         try {
-            const payload = await openPrivacyVaultEnvelope(config.value.privacy.vault, oldPassword);
+            const opened = await openPrivacyVaultEnvelope(config.value.privacy.vault, oldPassword);
+            const payload = opened.version === 1
+                ? migratePrivacyVaultPayloadV1ToV2(opened, migrationOptions()).payload
+                : opened;
             const vault = await createPrivacyVaultEnvelope(newPassword, payload);
             config.value.privacy.vault = vault;
             privacyPayload.value = payload;
@@ -381,22 +433,24 @@ export const createPrivacyActions = (
         const payload = await ensureUnlocked(options.password);
 
         if (options.restore) {
-            const groups = [...payload.groups].sort((a, b) => a.originalIndex - b.originalIndex);
-            for (const entry of groups) {
-                if (config.value.layout.some((group) => group.id === entry.group.id)) continue;
+            const workspaces = [...payload.workspaces].sort((a, b) => a.originalIndex - b.originalIndex);
+            for (const entry of workspaces) {
+                if (config.value.layout.some((group) => group.id === entry.workspace.id)) continue;
                 const insertAt = Math.max(0, Math.min(entry.originalIndex, config.value.layout.length));
-                config.value.layout.splice(insertAt, 0, cloneConfigSnapshot(entry.group) as Group);
+                config.value.layout.splice(insertAt, 0, privacyWorkspaceToRuntimeWorkspace(entry.workspace));
             }
 
-            for (const entry of payload.sites) {
-                let target = config.value.layout.find((group) => group.id === entry.originalGroupId);
+            for (const entry of payload.tiles) {
+                let target = findWorkspace(config.value, entry.originalWorkspaceId);
                 if (!target) {
-                    target = makeRestoredGroup(entry.originalGroupId, entry.originalGroupTitle);
+                    target = makeRuntimeRestoredWorkspace(entry.originalWorkspaceId, entry.originalWorkspaceTitle);
                     config.value.layout.push(target);
                 }
-                if (target.items.some((item) => item.id === entry.site.id)) continue;
-                const insertAt = Math.max(0, Math.min(entry.originalIndex, target.items.length));
-                target.items.splice(insertAt, 0, cloneConfigSnapshot(entry.site) as SiteItem);
+                const restored = privacyTileToRuntimeTile(entry.tile);
+                const tiles = getWorkspaceTiles(target);
+                if (tiles.some((item) => item.id === restored.id)) continue;
+                const insertAt = Math.max(0, Math.min(entry.originalIndex, tiles.length));
+                tiles.splice(insertAt, 0, restored);
             }
         }
 

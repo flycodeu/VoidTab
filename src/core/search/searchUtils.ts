@@ -1,4 +1,6 @@
-import type {Group, SearchEngine, SiteItem} from '../config/types';
+import type {ConfigV6, SearchEngine} from '../config/types';
+import type {SiteTile, Workspace} from '../tiles/contracts.ts';
+import {getTileUrl, isSiteTile} from '../tiles/tileAccess.ts';
 
 export type SearchTemplateValidation = {
     ok: boolean;
@@ -37,7 +39,7 @@ export type SearchSuggestion =
     query: string;
 };
 
-export type LocalSearchResult = SiteItem & {
+export type LocalSearchResult = SiteTile & {
     groupName: string;
     score: number;
 };
@@ -168,19 +170,19 @@ export function normalizeDirectUrl(input: string) {
     return `https://${text.replace(/^www\./i, 'www.')}`;
 }
 
-export function findLocalResults(layout: Group[], query: string, limit = 6): LocalSearchResult[] {
+export function findLocalResults(layout: ConfigV6['layout'] | Workspace[], query: string, limit = 6): LocalSearchResult[] {
     const keyword = query.trim().toLowerCase();
     if (!keyword) return [];
 
     const results: LocalSearchResult[] = [];
     for (const group of layout || []) {
-        for (const item of group.items || []) {
-            if (item.kind === 'widget') continue;
+        for (const tile of group.tiles) {
+            if (!isSiteTile(tile)) continue;
 
-            const title = (item.title || '').toLowerCase();
-            const url = (item.url || '').toLowerCase();
-            const remark = (item.remark || '').toLowerCase();
-            const tags = Array.isArray(item.tags) ? item.tags.join(' ').toLowerCase() : '';
+            const title = (tile.title || '').toLowerCase();
+            const url = getTileUrl(tile).toLowerCase();
+            const remark = (tile.remark || '').toLowerCase();
+            const tags = Array.isArray(tile.tags) ? tile.tags.join(' ').toLowerCase() : '';
             const haystack = `${title} ${url} ${remark} ${tags}`;
             if (!haystack.includes(keyword)) continue;
 
@@ -190,7 +192,7 @@ export function findLocalResults(layout: Group[], query: string, limit = 6): Loc
             if (url.includes(keyword)) score += 2;
             if (tags.includes(keyword)) score += 2;
 
-            results.push({...item, groupName: group.title, score});
+            results.push({...tile, groupName: group.title, score});
         }
     }
 

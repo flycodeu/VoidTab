@@ -1,7 +1,7 @@
 // src/core/theme/wallpaperRepository.ts
 import {storage} from '../../shared/utils/storage.ts';
 import {LOCAL_WALLPAPER_MARKER} from '../config/default.ts';
-import type {Config} from '../config/types.ts';
+import type {ConfigV6} from '../config/types.ts';
 
 const WALLPAPER_KEY = 'voidtab-wallpaper-blob';
 
@@ -11,7 +11,7 @@ export const wallpaperRepository = {
      * - 如果是大体积 base64 => 存 local，并把 config.theme.wallpaper 改成 marker
      * - 如果不是 base64 => 清理 local 存储
      */
-    async normalizeForSave(cfg: Config): Promise<Config> {
+    async normalizeForSave(cfg: ConfigV6): Promise<ConfigV6> {
         const current = cfg.theme.wallpaper || '';
         const isBase64Image = current.startsWith('data:image');
 

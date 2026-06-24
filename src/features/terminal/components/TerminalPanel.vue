@@ -5,10 +5,18 @@ import {fetchWithRetry} from '../../../shared/utils/network';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 import {getMemoNoteCategoryLabel} from '../../../core/config/memoNotes';
 import {ensureTerminalBufferState, getMemoExcerpt} from '../../widgets/builtins/terminal-buffer/commandMemo';
+import {
+  getRuntimeWorkspaces,
+  getTileKind,
+  getTileTitle,
+  getTileUrl,
+  getWorkspaceTiles,
+} from '../../../core/tiles/tileAccess.ts';
 
 const emit = defineEmits(['close']);
 const store = useConfigStore();
 useEscapeClose(true, () => emit('close'));
+const runtimeLayout = computed(() => getRuntimeWorkspaces(store.config));
 
 // === DOM Refs ===
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -249,19 +257,19 @@ VoidTab Shell (v2.4) - Available Commands:
 
 const handleLs = (args: string[]) => {
   if (args[1] === '-g' && args[2]) {
-    const group = store.config.layout.find((g: any) => g.id == args[2]);
+    const group = runtimeLayout.value.find((g) => g.id === args[2]);
     if (!group) throw new Error(`Group ${args[2]} not found.`);
     logs.value.push({type: 'success', content: `Directory: ${group.title} (${group.id})`});
-    group.items.forEach((item: any) => {
+    getWorkspaceTiles(group).forEach((tile) => {
       logs.value.push({
         type: 'info',
-        content: `  - ${item.title || 'Untitled'} [${item.kind || 'site'}] (${item.url || ''})`
+        content: `  - ${getTileTitle(tile) || 'Untitled'} [${getTileKind(tile)}] (${getTileUrl(tile)})`
       });
     });
   } else {
     logs.value.push({type: 'success', content: 'Layout Groups:'});
-    store.config.layout.forEach((g: any) => {
-      logs.value.push({type: 'info', content: `drwxr-xr-x  root  root  ${g.id}  ${g.title} (${g.items.length} items)`});
+    runtimeLayout.value.forEach((group) => {
+      logs.value.push({type: 'info', content: `drwxr-xr-x  root  root  ${group.id}  ${group.title} (${getWorkspaceTiles(group).length} items)`});
     });
   }
 };
@@ -278,26 +286,32 @@ const handleOpen = (args: string[]) => {
     return;
   }
 
-  const groupMatch = store.config.layout.find((g: any) => g.title.toLowerCase() === target.toLowerCase());
+  const groupMatch = runtimeLayout.value.find((group) => group.title.toLowerCase() === target.toLowerCase());
   if (groupMatch) {
     logs.value.push({type: 'info', content: `Group "${groupMatch.title}" contains:`});
-    groupMatch.items.forEach((item: any) => {
-      logs.value.push({type: 'info', content: `  - ${item.title} (${item.url})`});
+    getWorkspaceTiles(groupMatch).forEach((tile) => {
+      logs.value.push({type: 'info', content: `  - ${getTileTitle(tile)} (${getTileUrl(tile)})`});
     });
     return;
   }
 
-  let found: any = null;
-  for (const group of store.config.layout) {
-    const exact = group.items.find((item: any) => item.title && item.title.toLowerCase() === target.toLowerCase());
+  let found = null as ReturnType<typeof getWorkspaceTiles>[number] | null;
+  for (const group of runtimeLayout.value) {
+    const exact = getWorkspaceTiles(group).find((tile) => {
+      const title = getTileTitle(tile);
+      return title && title.toLowerCase() === target.toLowerCase();
+    });
     if (exact) {
       found = exact;
       break;
     }
   }
   if (!found) {
-    for (const group of store.config.layout) {
-      const fuzzy = group.items.find((item: any) => item.title && item.title.toLowerCase().includes(target.toLowerCase()));
+    for (const group of runtimeLayout.value) {
+      const fuzzy = getWorkspaceTiles(group).find((tile) => {
+        const title = getTileTitle(tile);
+        return title && title.toLowerCase().includes(target.toLowerCase());
+      });
       if (fuzzy) {
         found = fuzzy;
         break;
@@ -305,9 +319,10 @@ const handleOpen = (args: string[]) => {
     }
   }
 
-  if (found && found.url) {
-    window.open(found.url, '_blank');
-    logs.value.push({type: 'success', content: `Opening: ${found.title}`});
+  const foundUrl = found ? getTileUrl(found) : '';
+  if (found && foundUrl) {
+    window.open(foundUrl, '_blank');
+    logs.value.push({type: 'success', content: `Opening: ${getTileTitle(found)}`});
   } else {
     throw new Error(`Target "${target}" not found.`);
   }
@@ -320,16 +335,18 @@ const handleLocalFind = (args: string[]) => {
   let count = 0;
   logs.value.push({type: 'info', content: `Searching "${keyword}"...`});
 
-  store.config.layout.forEach((group: any) => {
+  runtimeLayout.value.forEach((group) => {
     if (group.title.toLowerCase().includes(keyword)) {
       logs.value.push({type: 'success', content: `[GROUP] ${group.title} (${group.id})`});
       count++;
     }
-    group.items.forEach((item: any) => {
-      if ((item.title && item.title.toLowerCase().includes(keyword)) || (item.url && item.url.toLowerCase().includes(keyword))) {
+    getWorkspaceTiles(group).forEach((tile) => {
+      const title = getTileTitle(tile);
+      const url = getTileUrl(tile);
+      if ((title && title.toLowerCase().includes(keyword)) || (url && url.toLowerCase().includes(keyword))) {
         logs.value.push({
           type: 'info',
-          content: `  └─ [${item.kind}] ${item.title} - ${item.url || 'Widget'} (in ${group.title})`
+          content: `  └─ [${getTileKind(tile)}] ${title} - ${url || 'Widget'} (in ${group.title})`
         });
         count++;
       }

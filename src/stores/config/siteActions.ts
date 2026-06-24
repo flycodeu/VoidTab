@@ -1,45 +1,71 @@
 import type {Ref} from 'vue';
-import type {Config, Group, SiteItem} from '../../core/config/types';
+import type {ConfigV6, SiteItem} from '../../core/config/types';
+import type {SiteTile, TileInstance, TileStyleOverride, Workspace} from '../../core/tiles/contracts.ts';
 import {parseBookmarkContent} from '../../shared/utils/bookmarkImporter';
 import {dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
 import {clampInt, createTextIconValue, generateColor, MAX_WIDGET_H, MAX_WIDGET_W, normalizeSiteIconType} from './helpers';
+import {exportTileInstance as createTileInstanceExport, importTileInstance} from '../../core/tiles/instanceSharing.ts';
+import {resolveTileDefinition} from '../../core/tiles/registry.ts';
+import {applyTileStyleOverride, resetTileStyleOverride as resetCanonicalTileStyleOverride} from '../../core/tiles/style.ts';
+import {
+    createSiteTile as createCanonicalSiteTile,
+    createWorkspace,
+    findTile,
+    findWorkspace,
+    isSiteTile,
+    removeTile as removeCanonicalTile,
+    setWorkspaceTiles,
+    setTileSize,
+    touchRevision,
+    updateTile as updateCanonicalTile,
+} from '../../core/tiles/tileAccess.ts';
 
-type GroupInput = Partial<Omit<Group, 'id' | 'items'>> & {
+type GroupInput = Partial<Pick<Workspace, 'title' | 'icon' | 'iconColor' | 'iconBgColor' | 'sortKey' | 'workspaceLayout'>> & {
     title?: string;
     icon?: string;
-    items?: SiteItem[];
 };
 
-type SiteInput = Partial<SiteItem>;
+type SiteInput = Partial<Omit<SiteTile, 'tileType' | 'layouts' | 'revision'>> & {w?: number; h?: number};
 
-type SitePatch = Partial<SiteItem> & {
+type SitePatch = Partial<Omit<SiteTile, 'tileType' | 'layouts' | 'revision'>> & {
+    w?: number;
+    h?: number;
     tags?: unknown;
 };
 
 export const createSiteActions = (
-    config: Ref<Config>,
+    config: Ref<ConfigV6>,
     saveConfig: () => Promise<void>
 ) => {
+    const createUniqueTileId = () => {
+        const existing = new Set(config.value.layout.flatMap((group) => group.tiles.map((tile) => tile.id)));
+        let candidate = '';
+        do {
+            candidate = 'tile-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+        } while (existing.has(candidate));
+        return candidate;
+    };
+
     const addGroup = (group: GroupInput) => {
-        const nextGroup: Group = {
+        const nextGroup = createWorkspace({
+            ...group,
             id: Date.now().toString(),
             title: group.title || '新分组',
             icon: group.icon || 'SquaresFour',
-            items: [],
-            sortKey: group.sortKey,
-            iconColor: group.iconColor,
-            iconBgColor: group.iconBgColor,
-        };
+        });
         config.value.layout.push(nextGroup);
         void saveConfig();
     };
 
     const removeGroup = (groupId: string) => {
-        config.value.layout = config.value.layout.filter((group) => group.id !== groupId);
-        void saveConfig();
+        const index = config.value.layout.findIndex((group) => group.id === groupId);
+        if (index >= 0) {
+            config.value.layout.splice(index, 1);
+            void saveConfig();
+        }
     };
 
-    const updateGroup = (groupId: string, data: Partial<Group>) => {
+    const updateGroup = (groupId: string, data: Partial<Workspace>) => {
         const group = config.value.layout.find((item) => item.id === groupId);
         if (group) {
             Object.assign(group, data);
@@ -48,15 +74,12 @@ export const createSiteActions = (
     };
 
     const addSite = (groupId: string, site: SiteInput) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
+        const group = findWorkspace(config.value, groupId);
         if (!group) return;
 
         const now = Date.now();
-        const payload: SiteItem = {
+        const payload = createCanonicalSiteTile({
             id: now.toString(),
-            kind: 'site',
-            w: clampInt(site.w, 1, MAX_WIDGET_W, 1),
-            h: clampInt(site.h, 1, MAX_WIDGET_H, 1),
             title: site.title || '',
             url: site.url || '',
             bgColor: site.bgColor || '#3b82f6',
@@ -65,17 +88,23 @@ export const createSiteActions = (
             icon: site.icon || '',
             remark: typeof site.remark === 'string' ? site.remark : '',
             createdAt: typeof site.createdAt === 'number' ? site.createdAt : now,
-        };
+            layouts: {desktop: {
+                x: 0,
+                y: 0,
+                w: clampInt(site.w, 1, MAX_WIDGET_W, 1),
+                h: clampInt(site.h, 1, MAX_WIDGET_H, 1),
+            }},
+        });
 
-        group.items.push(payload);
+        group.tiles.push(payload);
         void saveConfig();
     };
 
     const updateSite = (groupId: string, siteId: string, data: SitePatch) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
+        const group = findWorkspace(config.value, groupId);
         if (!group) return;
 
-        const site = group.items.find((item) => item.id === siteId);
+        const site = findTile(group, siteId);
         if (!site) return;
 
         const patch: SitePatch = {...data};
@@ -100,40 +129,90 @@ export const createSiteActions = (
             }
         }
 
-        patch.kind = 'site';
-        patch.w = clampInt(patch.w ?? site.w, 1, MAX_WIDGET_W, 1);
-        patch.h = clampInt(patch.h ?? site.h, 1, MAX_WIDGET_H, 1);
-
-        Object.assign(site, patch);
+        if (!isSiteTile(site)) return;
+        const w = clampInt(patch.w ?? site.layouts.desktop.w, 1, MAX_WIDGET_W, 1);
+        const h = clampInt(patch.h ?? site.layouts.desktop.h, 1, MAX_WIDGET_H, 1);
+        delete patch.w;
+        delete patch.h;
+        updateCanonicalTile(site, patch);
+        setTileSize(site, w, h);
         void saveConfig();
     };
 
     const removeSite = (groupId: string, siteId: string) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
+        const group = findWorkspace(config.value, groupId);
         if (group) {
-            group.items = group.items.filter((item) => item.id !== siteId);
+            removeCanonicalTile(group, siteId);
             void saveConfig();
         }
     };
 
-    const reorderItems = (groupId: string, newItems: SiteItem[]) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
+    const reorderItems = (groupId: string, newItems: TileInstance[]) => {
+        const group = findWorkspace(config.value, groupId);
         if (group) {
-            group.items = newItems;
+            setWorkspaceTiles(group, newItems);
             void saveConfig();
         }
     };
 
     const moveSite = (fromGroupId: string, toGroupId: string, siteId: string) => {
-        const fromGroup = config.value.layout.find((group) => group.id === fromGroupId);
-        const toGroup = config.value.layout.find((group) => group.id === toGroupId);
+        const fromGroup = findWorkspace(config.value, fromGroupId);
+        const toGroup = findWorkspace(config.value, toGroupId);
         if (fromGroup && toGroup) {
-            const siteIndex = fromGroup.items.findIndex((site) => site.id === siteId);
-            if (siteIndex > -1) {
-                const [site] = fromGroup.items.splice(siteIndex, 1);
-                toGroup.items.push(site);
+            const site = removeCanonicalTile(fromGroup, siteId);
+            if (site) {
+                toGroup.tiles.push(site);
                 void saveConfig();
             }
+        }
+    };
+
+    const updateTileStyleOverride = (
+        groupId: string,
+        tileId: string,
+        styleOverride: TileStyleOverride,
+    ) => {
+        const group = findWorkspace(config.value, groupId);
+        const tile = findTile(group, tileId);
+        if (!tile) return false;
+
+        applyTileStyleOverride(tile, styleOverride, resolveTileDefinition(tile.tileType));
+        touchRevision(tile);
+        void saveConfig();
+        return true;
+    };
+
+    const resetTileStyleOverride = (groupId: string, tileId: string) => {
+        const group = findWorkspace(config.value, groupId);
+        const tile = findTile(group, tileId);
+        if (!tile) return false;
+
+        resetCanonicalTileStyleOverride(tile);
+        touchRevision(tile);
+        void saveConfig();
+        return true;
+    };
+
+    const exportTileInstanceForShare = (groupId: string, tileId: string) => {
+        const group = findWorkspace(config.value, groupId);
+        const tile = findTile(group, tileId);
+        return tile ? createTileInstanceExport(tile) : null;
+    };
+
+    const importTileInstanceToGroup = (groupId: string, raw: unknown) => {
+        const group = findWorkspace(config.value, groupId);
+        if (!group) return {success: false, message: '目标分组不存在'};
+
+        try {
+            const tile = importTileInstance(raw, {id: createUniqueTileId(), now: Date.now()});
+            group.tiles.push(tile);
+            void saveConfig();
+            return {success: true, tile};
+        } catch (error) {
+            return {
+                success: false,
+                message: error instanceof Error ? error.message : '导入卡片实例失败',
+            };
         }
     };
 
@@ -145,7 +224,6 @@ export const createSiteActions = (
 
             deduped.groups.forEach((group) => {
                 group.items.forEach((item: SiteItem) => {
-                    item.kind = 'site';
                     item.w = clampInt(item.w, 1, MAX_WIDGET_W, 1);
                     item.h = clampInt(item.h, 1, MAX_WIDGET_H, 1);
 
@@ -158,7 +236,28 @@ export const createSiteActions = (
             const duplicateCount = deduped.duplicateStats.skippedExisting + deduped.duplicateStats.skippedWithinFile;
 
             if (deduped.importedCount > 0) {
-                config.value.layout.push(...deduped.groups);
+                config.value.layout.push(...deduped.groups.map((group) => createWorkspace({
+                    id: group.id,
+                    title: group.title,
+                    icon: group.icon,
+                    sortKey: group.sortKey,
+                    iconColor: group.iconColor,
+                    iconBgColor: group.iconBgColor,
+                    workspaceLayout: group.workspaceLayout,
+                    tiles: group.items.map((item) => createCanonicalSiteTile({
+                        id: item.id,
+                        title: item.title || '',
+                        url: item.url || '',
+                        icon: item.icon || '',
+                        iconType: normalizeSiteIconType(item.iconType),
+                        iconValue: item.iconValue || '',
+                        bgColor: item.bgColor || '#3b82f6',
+                        remark: item.remark || '',
+                        tags: item.tags,
+                        createdAt: item.createdAt || now,
+                        layouts: {desktop: {x: 0, y: 0, w: item.w || 1, h: item.h || 1}},
+                    })),
+                })));
                 void saveConfig();
                 return {
                     success: true,
@@ -192,8 +291,8 @@ export const createSiteActions = (
 
     const setIconFallback = (itemId: string) => {
         for (const group of config.value.layout) {
-            const item = group.items.find((site) => site.id === itemId);
-            if (!item) continue;
+            const item = findTile(group, itemId);
+            if (!item || !isSiteTile(item)) continue;
 
             if (
                 item.iconType === 'text' &&
@@ -205,12 +304,15 @@ export const createSiteActions = (
                 return;
             }
 
-            item.iconType = 'text';
-            item.iconValue = createTextIconValue(item.title || '');
+            const patch: SitePatch = {
+                iconType: 'text',
+                iconValue: createTextIconValue(item.title || ''),
+            };
 
             if (!item.bgColor || item.bgColor === '#ffffff' || item.bgColor === '#3b82f6') {
-                item.bgColor = generateColor(item.title || '');
+                patch.bgColor = generateColor(item.title || '');
             }
+            updateCanonicalTile(item, patch);
             void saveConfig();
             break;
         }
@@ -233,8 +335,15 @@ export const createSiteActions = (
         removeSite,
         reorderItems,
         moveSite,
+        updateTileStyleOverride,
+        resetTileStyleOverride,
+        exportTileInstanceForShare,
+        importTileInstanceToGroup,
         importBookmarks,
         setIconFallback,
         updateGroupSort,
+        createSiteTile: addSite,
+        updateTile: updateSite,
+        removeTile: removeSite,
     };
 };

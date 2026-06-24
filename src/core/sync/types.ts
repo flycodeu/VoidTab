@@ -4,6 +4,17 @@ export type SyncProviderId = 'webdav' | 'none';
 
 export type SyncConflictState = 'none' | 'detected' | 'pending' | 'resolving';
 
+/**
+ * The file schema a profile is allowed to write. This is device-local state:
+ * it must never be copied into a remote configuration payload.
+ */
+export type SyncSchemaChannel = 'legacy-v5' | 'v6';
+
+/** Optional per-operation override used by the v6 sibling-file channel. */
+export interface SyncFileOptions {
+    filename?: string;
+}
+
 export interface ConflictSummary {
     localGroupCount: number;
     remoteGroupCount: number;
@@ -40,6 +51,15 @@ export interface SyncProfileBase {
     lastSyncedHash?: string;
     conflictState?: SyncConflictState;
     conflictSnapshot?: ConflictSnapshot;
+
+    /**
+     * Set by the explicit v5 -> v6 migration transaction. Auto-sync must not
+     * write until the user confirms every device has a v6-capable client.
+     */
+    syncSchemaUpgradePending?: boolean;
+
+    /** The confirmed write channel; v6 always writes to a sibling file. */
+    syncSchemaChannel?: SyncSchemaChannel;
 }
 
 export interface WebDavProfile extends SyncProfileBase {
@@ -87,7 +107,7 @@ export type SyncDownloadResult = SyncOpResult;
 export interface SyncProvider {
     test(profile: SyncProfile): Promise<SyncTestResult>;
 
-    upload(profile: SyncProfile, payload: any): Promise<SyncOpResult>;
+    upload(profile: SyncProfile, payload: any, options?: SyncFileOptions): Promise<SyncOpResult>;
 
-    download(profile: SyncProfile): Promise<SyncOpResult>;
+    download(profile: SyncProfile, options?: SyncFileOptions): Promise<SyncOpResult>;
 }

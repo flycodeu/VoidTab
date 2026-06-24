@@ -98,7 +98,7 @@ export function findFirstAvailablePlacement(
     for (let y = 0; y <= maxKnownRow + 1; y += 1) {
         for (let x = 0; x <= cols - size.w; x += 1) {
             const candidate = {x, y, w: size.w, h: size.h};
-            if (!collisionIds(placements, candidate, '')) return candidate;
+            if (!collisionIds(placements, candidate, '').length) return candidate;
         }
     }
     return undefined;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref} from 'vue';
+import {computed, ref} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 import {
   PhDownloadSimple,
@@ -15,8 +15,13 @@ import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 
 import {migrateConfig} from '../../../../core/config/migrate.ts';
 import {normalizeConfig} from '../../../../core/config/normalize.ts';
-import {mergeLocalSensitiveFields, stripSensitiveConfigForSync} from '../../../../core/config/sensitive.ts';
+import {mergeLocalSensitiveFields} from '../../../../core/config/sensitive.ts';
+import {isConfigVersionTooNew, preflightConfigForReader} from '../../../../core/config/preflight.ts';
 import {createImportValidationMessages, validateImportedConfig} from '../../../../core/config/validate.ts';
+import {createConfigV6SyncExport, restoreConfigV6FromSyncExport} from '../../../../core/sync/v6Channel.ts';
+import {migrateV5ToV6} from '../../../../core/config/migrateV5ToV6.ts';
+import {normalizeConfigV6} from '../../../../core/config/v6.ts';
+import {getStableConfigDeviceId} from '../../../../core/config/deviceId.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 
@@ -29,6 +34,8 @@ const bookmarkInput = ref<HTMLInputElement | null>(null);
 const showConfirm = ref(false);
 const pendingData = ref<any>(null);
 const pendingImportMessages = ref<string[]>([]);
+const showV6SyncConfirm = ref(false);
+const upgradeBusy = ref(false);
 
 // --- 操作结果提示状态 ---
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
@@ -42,14 +49,30 @@ const showFeedback = (success: boolean, msg: string) => {
   }, 3000);
 };
 
+const v6SyncConfirmationPending = computed(() => store.config.sync.provider === 'webdav'
+    && store.config.sync.enabled
+    && store.config.sync.syncSchemaChannel !== 'v6');
+
+const isV6WirePayload = (raw: unknown): raw is {version: 6} =>
+    !!raw && typeof raw === 'object' && (raw as {version?: unknown}).version === 6;
+
+const normalizeImportedConfig = (raw: unknown) => {
+  if (isV6WirePayload(raw)) return restoreConfigV6FromSyncExport(raw);
+  const migrated = migrateConfig(raw);
+  return normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
+    deviceId: getStableConfigDeviceId(),
+    migratedAt: Date.now(),
+  }).config);
+};
+
 // ===============================
 // 导出 JSON
 // ===============================
 const handleExport = () => {
-  const exportData = stripSensitiveConfigForSync(store.config);
+  const exportData = createConfigV6SyncExport(store.config);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], {type: 'application/json'}));
-  a.download = `voidtab-backup.json`;
+  a.download = 'voidtab-backup.v6.json';
   a.click();
   showFeedback(true, '已导出 JSON（不含 AI Key、WebDAV 密码和临时 Token）');
 };
@@ -97,14 +120,34 @@ const handleImport = (e: Event) => {
         return;
       }
 
-      const validation = validateImportedConfig(raw);
-      if (!validation.ok) {
-        showFeedback(false, `导入失败：${validation.errors[0] || '配置结构不符合要求'}`);
-        return;
+      try {
+        preflightConfigForReader(raw);
+      } catch (error) {
+        if (isConfigVersionTooNew(error)) {
+          showFeedback(false, `导入失败：备份需要 v${error.foundVersion} 客户端；当前数据未改动`);
+          return;
+        }
+        throw error;
+      }
+
+      if (isV6WirePayload(raw)) {
+        try {
+          restoreConfigV6FromSyncExport(raw);
+        } catch (error: any) {
+          showFeedback(false, `导入失败：${error?.message || 'v6 配置结构不符合要求'}`);
+          return;
+        }
+        pendingImportMessages.value = ['将导入 v6 Tile/Workspace 配置；本地组件安装记录和运行时缓存不会被覆盖。'];
+      } else {
+        const validation = validateImportedConfig(raw);
+        if (!validation.ok) {
+          showFeedback(false, `导入失败：${validation.errors[0] || '配置结构不符合要求'}`);
+          return;
+        }
+        pendingImportMessages.value = createImportValidationMessages(validation);
       }
 
       pendingData.value = raw;
-      pendingImportMessages.value = createImportValidationMessages(validation);
       showConfirm.value = true;
 
     } catch {
@@ -122,7 +165,8 @@ const executeImport = () => {
 
   try {
     const raw = pendingData.value;
-    const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(raw)), store.config);
+    preflightConfigForReader(raw);
+    const next = mergeLocalSensitiveFields(normalizeImportedConfig(raw), store.config);
 
     // 保留 webdav 字段逻辑（不改变你原本行为）
     const cur = {...(store.config.sync as any)};
@@ -140,8 +184,15 @@ const executeImport = () => {
       keepIfEmpty('filename');
     }
 
+    // Sync routing is device-local state. A portable v6 file must never
+    // silently authorize writes back to a legacy WebDAV filename.
+    if (ns?.provider === 'webdav') {
+      ns.syncSchemaUpgradePending = cur.syncSchemaUpgradePending;
+      ns.syncSchemaChannel = cur.syncSchemaChannel;
+    }
+
     next.sync = ns;
-    store.config = next as any;
+    store.config = next;
 
     showConfirm.value = false;
     pendingData.value = null;
@@ -149,8 +200,29 @@ const executeImport = () => {
 
     showFeedback(true, '配置导入成功');
 
-  } catch {
-    showFeedback(false, '导入时发生未知错误');
+  } catch (error) {
+    if (isConfigVersionTooNew(error)) {
+      showFeedback(false, `导入失败：备份需要 v${error.foundVersion} 客户端；当前数据未改动`);
+    } else {
+      showFeedback(false, '导入时发生未知错误');
+    }
+  }
+};
+
+const executeV6SyncConfirmation = async () => {
+  upgradeBusy.value = true;
+  try {
+    const result = await store.confirmV6SyncUpgrade();
+    if (result.success) {
+      showV6SyncConfirm.value = false;
+      showFeedback(true, result.message);
+    } else {
+      showFeedback(false, result.message);
+    }
+  } catch (error: any) {
+    showFeedback(false, error?.message || 'v6 同步通道确认失败');
+  } finally {
+    upgradeBusy.value = false;
   }
 };
 
@@ -283,6 +355,29 @@ const executeResetAll = async () => {
       </div>
     </div>
 
+    <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-3">
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <h3 class="font-bold text-sm">可自定义卡片数据结构</h3>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            当前数据使用 v6 Tile/Workspace 结构。导入旧备份时会先在内存完成安全迁移，再替换当前配置。
+          </p>
+        </div>
+      </div>
+
+      <div v-if="v6SyncConfirmationPending" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start justify-between gap-3">
+        <p class="text-[11px] leading-relaxed opacity-85">
+          WebDAV 自动同步已暂停。确认所有设备均支持 v6 后，才会写入独立的 <code>.v6.json</code> 文件；旧备份不会被覆盖。
+        </p>
+        <button
+            type="button"
+            class="shrink-0 px-3 py-2 rounded-lg border border-current/25 text-xs font-bold disabled:opacity-50"
+            :disabled="upgradeBusy"
+            @click="showV6SyncConfirm = true"
+        >确认设备已升级</button>
+      </div>
+    </div>
+
     <!-- 导入浏览器书签 -->
     <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
       <div class="flex items-center gap-3 mb-2">
@@ -404,6 +499,23 @@ const executeResetAll = async () => {
           <span>我已导出 JSON 备份，或确认不需要保留当前数据。</span>
         </label>
       </template>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+        :show="showV6SyncConfirm"
+        title="启用 v6 WebDAV 同步？"
+        :message="[
+          '确认后，后续同步只会读写同目录的 .v6.json 文件。',
+          '请确认所有会写入该新文件的设备都已升级；原 voidtab-backup.json 保持为只读恢复源。'
+        ]"
+        confirmText="确认启用 v6 通道"
+        cancelText="取消"
+        :danger="true"
+        :confirmDisabled="upgradeBusy"
+        @cancel="showV6SyncConfirm = false"
+        @confirm="executeV6SyncConfirmation"
+    >
+      <template #icon><PhWarning :size="32" weight="duotone"/></template>
     </ConfirmDialog>
   </div>
 </template>

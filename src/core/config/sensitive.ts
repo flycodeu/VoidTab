@@ -1,4 +1,4 @@
-import type {Config} from './types';
+import type {ConfigBase} from './types';
 import {decrypt, encrypt, generateRandomPassword, isCryptoSupported} from '../../shared/utils/crypto';
 
 export const ENCRYPTED_VALUE_PREFIX = 'enc:v1:';
@@ -77,7 +77,7 @@ export async function openSensitiveConfigFromStorage(raw: any): Promise<any> {
     return copy;
 }
 
-export async function sealSensitiveConfigForStorage(cfg: Config): Promise<Config> {
+export async function sealSensitiveConfigForStorage<T extends ConfigBase>(cfg: T): Promise<T> {
     const copy = cloneConfig(cfg);
     if (!isCryptoSupported()) return copy;
 
@@ -94,7 +94,7 @@ export async function sealSensitiveConfigForStorage(cfg: Config): Promise<Config
     return copy;
 }
 
-export function stripSensitiveConfigForSync(cfg: Config): Config {
+export function stripSensitiveConfigForSync<T extends ConfigBase>(cfg: T): T {
     const copy = cloneConfig(cfg);
 
     for (const path of SENSITIVE_PATHS) {
@@ -104,7 +104,7 @@ export function stripSensitiveConfigForSync(cfg: Config): Config {
     return copy;
 }
 
-export function mergeLocalSensitiveFields(remote: Config, local: Config): Config {
+export function mergeLocalSensitiveFields<T extends ConfigBase>(remote: T, local: T): T {
     const copy = cloneConfig(remote);
 
     for (const path of SENSITIVE_PATHS) {

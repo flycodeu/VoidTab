@@ -1,5 +1,8 @@
 // src/core/config/migrate.ts
-import {CURRENT_CONFIG_VERSION} from './types';
+import {LEGACY_CONFIG_VERSION, MAX_SUPPORTED_CONFIG_VERSION} from './types';
+import {ConfigVersionTooNew} from './versioning.ts';
+
+export {ConfigVersionTooNew} from './versioning.ts';
 
 /**
  * Keep migrations minimal and forward-only.
@@ -7,11 +10,18 @@ import {CURRENT_CONFIG_VERSION} from './types';
  */
 export function migrateConfig(raw: any): any {
     if (!raw || typeof raw !== 'object') {
-        return {version: CURRENT_CONFIG_VERSION};
+        return {version: LEGACY_CONFIG_VERSION};
     }
 
     const cfg: any = {...raw};
-    cfg.version = typeof cfg.version === 'number' ? cfg.version : 0;
+    const rawVersion = (typeof cfg.version === 'number' && Number.isFinite(cfg.version)) ? cfg.version : 0;
+    if (rawVersion > MAX_SUPPORTED_CONFIG_VERSION) {
+        throw new ConfigVersionTooNew(rawVersion, MAX_SUPPORTED_CONFIG_VERSION);
+    }
+    if (rawVersion === 6) {
+        return cfg;
+    }
+    cfg.version = rawVersion;
 
     if (cfg.version < 1) {
         cfg.version = 1;
@@ -86,6 +96,9 @@ export function migrateConfig(raw: any): any {
         cfg.version = 5;
     }
 
-    cfg.version = CURRENT_CONFIG_VERSION;
+    // This normalizer only completes the legacy shape. It must never label a
+    // Group.items payload as v6; structural conversion belongs exclusively to
+    // migrateV5ToV6() inside the transactional upgrade path.
+    cfg.version = LEGACY_CONFIG_VERSION;
     return cfg;
 }

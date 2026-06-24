@@ -1,5 +1,7 @@
 // src/core/config/keys.ts
 export const CONFIG_KEY = 'voidtab-core-config';
+/** Local-only encrypted rollback snapshots created before a v5 -> v6 commit. */
+export const CONFIG_V5_BACKUP_PREFIX = 'voidtab:config-backup:v5:';
 export const WALLPAPER_KEY = 'voidtab-wallpaper-blob';
 
 /**

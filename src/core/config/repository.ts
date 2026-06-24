@@ -1,15 +1,32 @@
 // src/core/config/repository.ts
-import type {Config} from './types';
+import type {Config, ConfigV5, ConfigV6} from './types';
 import {defaultConfig} from './default';
 import {migrateConfig} from './migrate';
 import {normalizeConfig} from './normalize';
-import {assertConfigValidForSave} from './validate';
+import {assertConfigValidForSave, ConfigSchemaValidationError} from './validate';
+import {isConfigV6, normalizeConfigV6, validateConfigForSaveV6} from './v6.ts';
 import {storage} from '../storage';
 import {CONFIG_KEY, WALLPAPER_KEY, LOCAL_WALLPAPER_MARKER} from './keys';
 import {applyLegacyLocalStorageIntoConfig} from "./legacyLocalStorage.ts";
 import {openSensitiveConfigFromStorage, sealSensitiveConfigForStorage} from './sensitive';
+import {commitConfigV5ToV6Migration} from './v6MigrationTransaction.ts';
+import {getStableConfigDeviceId} from './deviceId.ts';
 
 const isBase64Image = (s: string) => typeof s === 'string' && s.startsWith('data:image');
+
+function normalizeConfigForRuntime(raw: unknown): Config {
+    const migrated = migrateConfig(raw);
+    return isConfigV6(migrated) ? normalizeConfigV6(migrated) : normalizeConfig(migrated);
+}
+
+function assertConfigValidForRuntimeSave(raw: Config): void {
+    if (isConfigV6(raw)) {
+        const result = validateConfigForSaveV6(raw);
+        if (!result.ok) throw new ConfigSchemaValidationError(result);
+        return;
+    }
+    assertConfigValidForSave(raw);
+}
 
 export type ConfigBootDeferredWork = {
     wallpaper: boolean;
@@ -17,7 +34,7 @@ export type ConfigBootDeferredWork = {
 };
 
 export type ConfigBootLoadResult = {
-    config: Config;
+    config: ConfigV6;
     deferred: ConfigBootDeferredWork;
 };
 
@@ -36,33 +53,43 @@ async function loadConfigInternal(options: ConfigLoadOptions): Promise<ConfigBoo
     const sync = local ? null : await storage.get<any>(CONFIG_KEY, null, 'sync');
 
     const raw = await openSensitiveConfigFromStorage(local ?? sync ?? defaultConfig);
-    const next = normalizeConfig(migrateConfig(raw));
+    let next = normalizeConfigForRuntime(raw);
+    if (!isConfigV6(next)) {
+        // P3 runtime is v6-only. The transaction seals a local v5 recovery
+        // snapshot before committing and marks WebDAV migration as pending.
+        const migration = await commitConfigV5ToV6Migration(next as ConfigV5, {
+            deviceId: getStableConfigDeviceId(),
+            migratedAt: Date.now(),
+        });
+        next = migration.config;
+    }
+    const v6 = next as ConfigV6;
     const deferred: ConfigBootDeferredWork = {
         wallpaper: false,
         legacySave: false,
     };
 
     // wallpaper marker 还原可能读取大体积数据；首屏加载时允许延后。
-    if (next.theme.wallpaper === LOCAL_WALLPAPER_MARKER) {
+    if (v6.theme.wallpaper === LOCAL_WALLPAPER_MARKER) {
         if (options.restoreWallpaper) {
             const w = await storage.get<string>(WALLPAPER_KEY, '', 'local');
-            if (w) next.theme.wallpaper = w;
+            if (w) v6.theme.wallpaper = w;
         } else {
-            next.theme.wallpaper = '';
+            v6.theme.wallpaper = '';
             deferred.wallpaper = true;
         }
     }
 
-    const res = applyLegacyLocalStorageIntoConfig(next);
+    const res = applyLegacyLocalStorageIntoConfig(v6);
     if (res.changed) {
         if (options.saveLegacyMigration) {
-            await configRepository.save(next);
+            await configRepository.save(v6);
         } else {
             deferred.legacySave = true;
         }
     }
 
-    return {config: next, deferred};
+    return {config: v6, deferred};
 }
 
 export const configRepository = {
@@ -74,7 +101,7 @@ export const configRepository = {
      * 4) migrate + normalize
      * 5) wallpaper marker 还原
      */
-    async load(): Promise<Config> {
+    async load(): Promise<ConfigV6> {
         return (await loadConfigInternal(defaultLoadOptions)).config;
     },
 
@@ -85,7 +112,7 @@ export const configRepository = {
         });
     },
 
-    async completeBootLoad(cfg: Config, deferred: ConfigBootDeferredWork) {
+    async completeBootLoad(cfg: ConfigV6, deferred: ConfigBootDeferredWork) {
         const result = {
             wallpaperRestored: false,
             legacySaved: false,
@@ -113,8 +140,8 @@ export const configRepository = {
      * - config 本体写 local（你也可以未来改成：enabled 时写 sync）
      */
     async save(cfg: Config): Promise<void> {
-        const normalized = normalizeConfig(migrateConfig(cfg));
-        assertConfigValidForSave(normalized);
+        const normalized = normalizeConfigForRuntime(cfg);
+        assertConfigValidForRuntimeSave(normalized);
 
         const copy: any = await sealSensitiveConfigForStorage(normalized);
         const wp = copy?.theme?.wallpaper ?? '';

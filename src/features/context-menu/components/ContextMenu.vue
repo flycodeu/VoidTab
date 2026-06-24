@@ -4,6 +4,13 @@ import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useToast} from '../../../shared/composables/useToast.ts';
 import {cloneConfigSnapshot} from '../../../shared/utils/configSnapshot.ts';
+import {tileStylePresets} from '../../../core/tiles/style.ts';
+import {
+  cloneRuntimeTile,
+  getLegacyWidgetType,
+  getWorkspaceTiles,
+  removeTile,
+} from '../../../core/tiles/tileAccess.ts';
 
 // 组件
 import ContextMenuPanel from './ContextMenuPanel.vue';
@@ -17,6 +24,8 @@ const dialog = inject('dialog') as { openAddDialog: (gid: string) => void } | un
 
 // 菜单容器 Ref
 const menuRef = ref<HTMLElement | null>(null);
+const tileImportInput = ref<HTMLInputElement | null>(null);
+const importTargetGroupId = ref('');
 
 // ✅ 新增 emits：openSettings / openDevTools
 const emit = defineEmits<{
@@ -62,15 +71,24 @@ const restoreDeleted = (snapshot: DeleteSnapshot) => {
     ui.announce('原分组不存在，无法撤销这次移除');
     return;
   }
-  if (group.items.some((item: any) => item.id === snapshot.item.id)) {
+  const tiles = getWorkspaceTiles(group);
+  if (tiles.some((item: any) => item.id === snapshot.item.id)) {
     toast.info(`「${snapshot.title}」已经在分组中。`);
     return;
   }
-  const index = Math.max(0, Math.min(snapshot.index, group.items.length));
-  group.items.splice(index, 0, cloneConfigSnapshot(snapshot.item));
+  const index = Math.max(0, Math.min(snapshot.index, tiles.length));
+  tiles.splice(index, 0, cloneRuntimeTile(cloneConfigSnapshot(snapshot.item)));
   void store.saveConfig();
   toast.success(`已恢复「${snapshot.title}」。`);
   ui.announce(`已恢复${snapshot.type === 'widget' ? '组件' : '网站'}${snapshot.title}`);
+};
+
+const getRuntimeItemTitle = (item: any, type: 'site' | 'widget') => {
+  if (item?.title) return item.title;
+  if (type === 'widget' && item) {
+    return getLegacyWidgetType(item) || '未命名组件';
+  }
+  return '未命名';
 };
 
 const openDeleteModal = () => {
@@ -90,7 +108,7 @@ const openDeleteModal = () => {
       type,
       groupId,
       siteId: item?.id,
-      title: item?.title || (type === 'widget' ? item?.widgetType : '未命名'),
+      title: getRuntimeItemTitle(item, type),
     };
     showDeleteModal.value = true;
   } else if (type === 'group') {
@@ -116,17 +134,19 @@ const confirmDelete = () => {
 
   if (target.type === 'site' || target.type === 'widget') {
     const group = store.config.layout.find((item: any) => item.id === target.groupId);
-    const index = group?.items.findIndex((item: any) => item.id === target.siteId) ?? -1;
-    const item = index >= 0 ? group?.items[index] : null;
+    const tiles = group ? getWorkspaceTiles(group) : [];
+    const index = tiles.findIndex((item: any) => item.id === target.siteId);
+    const item = index >= 0 ? tiles[index] : null;
     if (group && item) {
       snapshot = {
         type: target.type,
         groupId: target.groupId,
         index,
-        item: cloneConfigSnapshot(item),
-        title: item.title || (target.type === 'widget' ? item.widgetType || '未命名组件' : '未命名'),
+        item: cloneRuntimeTile(cloneConfigSnapshot(item)),
+        title: getRuntimeItemTitle(item, target.type),
       };
-      store.removeSite(target.groupId, target.siteId);
+      removeTile(group, target.siteId);
+      void store.saveConfig();
     }
   } else if (target.type === 'group') {
     const index = store.config.layout.findIndex((group: any) => group.id === target.groupId);
@@ -256,7 +276,7 @@ const currentGroupName = computed(() => {
 // --- 事件处理 ---
 const moveTo = (targetGroupId: string) => {
   if (targetGroupId === ui.contextMenu.groupId) return;
-  if (ui.contextMenu.type === 'site' && ui.contextMenu.item) {
+  if ((ui.contextMenu.type === 'site' || ui.contextMenu.type === 'widget') && ui.contextMenu.item) {
     store.moveSite(ui.contextMenu.groupId, targetGroupId, ui.contextMenu.item.id);
   }
   ui.closeContextMenu();
@@ -269,6 +289,98 @@ const handleAddSite = () => {
 
 const handleAddWidgetRequest = () => {
   emit('openWidgets', ui.contextMenu.groupId);
+  ui.closeContextMenu();
+};
+
+const safeFilename = (value: string) =>
+    String(value || 'tile')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+        .replace(/\s+/g, '-')
+        .slice(0, 80) || 'tile';
+
+const handleExportTile = () => {
+  const {groupId, item} = ui.contextMenu;
+  if (!groupId || !item?.id) {
+    toast.warning('当前项目缺少必要信息，无法导出。');
+    ui.closeContextMenu();
+    return;
+  }
+
+  const payload = store.exportTileInstanceForShare(groupId, item.id);
+  if (!payload) {
+    toast.warning('这个卡片已经不在当前分组中。');
+    ui.closeContextMenu();
+    return;
+  }
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${safeFilename(item.title || item.id)}.voidtab-tile.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+
+  const removedCount = payload.sanitized.sensitiveFieldsRemoved.length;
+  toast.success(removedCount > 0 ? `已导出卡片实例，并移除 ${removedCount} 个敏感字段。` : '已导出卡片实例。');
+  ui.closeContextMenu();
+};
+
+const handleImportTileRequest = () => {
+  if (!ui.contextMenu.groupId) {
+    toast.warning('请先选择要导入到的分组。');
+    ui.closeContextMenu();
+    return;
+  }
+  importTargetGroupId.value = ui.contextMenu.groupId;
+  tileImportInput.value && (tileImportInput.value.value = '');
+  tileImportInput.value?.click();
+  ui.closeContextMenu();
+};
+
+const handleTileImportFile = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  try {
+    const raw = JSON.parse(await file.text());
+    const result = store.importTileInstanceToGroup(importTargetGroupId.value, raw);
+    if (result.success) {
+      toast.success('已导入卡片实例。');
+      return;
+    }
+    toast.error(result.message || '导入卡片实例失败。');
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '导入卡片实例失败。');
+  } finally {
+    if (input) input.value = '';
+  }
+};
+
+const handleStylePreset = (preset: 'clean' | 'soft' | 'vivid') => {
+  const {groupId, item} = ui.contextMenu;
+  if (!groupId || !item?.id) {
+    toast.warning('当前项目缺少必要信息，无法设置外观。');
+    ui.closeContextMenu();
+    return;
+  }
+  const success = store.updateTileStyleOverride(groupId, item.id, {...tileStylePresets[preset]});
+  toast[success ? 'success' : 'warning'](success ? '已更新这个卡片的实例外观。' : '这个卡片已经不在当前分组中。');
+  ui.closeContextMenu();
+};
+
+const handleResetStyle = () => {
+  const {groupId, item} = ui.contextMenu;
+  if (!groupId || !item?.id) {
+    toast.warning('当前项目缺少必要信息，无法重置外观。');
+    ui.closeContextMenu();
+    return;
+  }
+  const success = store.resetTileStyleOverride(groupId, item.id);
+  toast[success ? 'success' : 'warning'](success ? '已重置这个卡片的实例外观。' : '这个卡片已经不在当前分组中。');
   ui.closeContextMenu();
 };
 
@@ -357,12 +469,23 @@ onUnmounted(() => {
         @resize="handleResizeItem"
         @addSite="handleAddSite"
         @addWidget="handleAddWidgetRequest"
+        @importTile="handleImportTileRequest"
+        @exportTile="handleExportTile"
+        @stylePreset="handleStylePreset"
+        @resetStyle="handleResetStyle"
         @configWidget="handleConfigWidget"
         @openSettings="handleOpenSettings"
         @openDevTools="handleOpenDevTools"
         @edit="() => { emit('edit'); ui.closeContextMenu(); }"
     />
   </div>
+  <input
+      ref="tileImportInput"
+      class="hidden"
+      type="file"
+      accept=".json,.voidtab-tile.json,application/json"
+      @change="handleTileImportFile"
+  />
   <ConfirmDialog
       :show="showDeleteModal"
       :title="deleteTitle"

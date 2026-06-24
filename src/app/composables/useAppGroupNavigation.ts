@@ -1,5 +1,5 @@
 import {ref, watch} from 'vue';
-import type {Group} from '../../core/config/types';
+import type {Workspace} from '../../core/tiles/contracts.ts';
 import {useBoundaryGroupWheel} from '../../shared/composables/useBoundaryGroupWheel';
 
 type GroupSelectMeta = {
@@ -9,7 +9,7 @@ type GroupSelectMeta = {
 type MainScrollPosition = 'top' | 'bottom';
 
 type AppGroupNavigationOptions = {
-    getGroups: () => Group[];
+    getGroups: () => Workspace[];
     getGroupTitle: (id: string) => string;
     shouldUseContinuousScroll: () => boolean;
     isWheelDisabled: () => boolean;

@@ -16,6 +16,13 @@ import {
 import {useConfigStore} from '../../../stores/useConfigStore';
 import {useToast} from '../../../shared/composables/useToast';
 import ConfirmDialog from '../../../shared/ui/dialogs/ConfirmDialog.vue';
+import {
+  getRuntimeWorkspaces,
+  getTileTitle,
+  getTileUrl,
+  getWorkspaceTiles,
+  isSiteTile,
+} from '../../../core/tiles/tileAccess.ts';
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
@@ -42,9 +49,8 @@ const addQuery = ref('');
 const actionBusyId = ref('');
 const pendingDelete = ref<{ type: 'site' | 'group'; id: string; title: string } | null>(null);
 
-const payload = computed(() => store.privacyPayload || {version: 1, groups: [], sites: []});
-const hiddenSiteEntries = computed(() => payload.value.sites || []);
-const hiddenGroupEntries = computed(() => payload.value.groups || []);
+const hiddenSiteEntries = computed(() => store.privacyPayload?.tiles || []);
+const hiddenGroupEntries = computed(() => store.privacyPayload?.workspaces || []);
 const hasVault = computed(() => store.hasPrivacyVault);
 const isUnlocked = computed(() => store.privacyUnlocked);
 const createDisabled = computed(() => createPassword.value.length < 6 || createPassword.value !== createConfirm.value || store.privacyBusy);
@@ -55,7 +61,7 @@ const entryDisabled = computed(() => {
   const next = entryPhrase.value.trim();
   return !next || next === store.config.privacy.entry.phrase || store.privacyBusy;
 });
-const normalGroups = computed(() => store.config.layout || []);
+const normalGroups = computed(() => getRuntimeWorkspaces(store.config));
 
 const candidateGroups = computed(() => {
   const query = addQuery.value.trim().toLowerCase();
@@ -65,11 +71,13 @@ const candidateGroups = computed(() => {
 const candidateSites = computed(() => {
   const query = addQuery.value.trim().toLowerCase();
   const list: Array<{ groupId: string; groupTitle: string; site: any }> = [];
-  normalGroups.value.forEach((group: any) => {
-    (group.items || []).forEach((site: any) => {
-      if (site.kind === 'widget') return;
-      const haystack = `${site.title || ''} ${site.url || ''} ${group.title || ''}`.toLowerCase();
-      if (!query || haystack.includes(query)) list.push({groupId: group.id, groupTitle: group.title, site});
+  normalGroups.value.forEach((group) => {
+    getWorkspaceTiles(group).forEach((tile) => {
+      if (!isSiteTile(tile)) return;
+      const title = getTileTitle(tile);
+      const url = getTileUrl(tile);
+      const haystack = `${title} ${url} ${group.title || ''}`.toLowerCase();
+      if (!query || haystack.includes(query)) list.push({groupId: group.id, groupTitle: group.title, site: tile});
     });
   });
   return list;
@@ -329,31 +337,31 @@ const lockVault = () => {
 
               <div v-if="activeView === 'sites'" class="vault-list">
                 <div v-if="hiddenSiteEntries.length === 0" class="empty-row">没有内容</div>
-                <article v-for="entry in hiddenSiteEntries" :key="entry.site.id" class="vault-row">
-                  <div class="site-badge">{{ siteInitial(entry.site.title) }}</div>
+                <article v-for="entry in hiddenSiteEntries" :key="entry.tile.id" class="vault-row">
+                  <div class="site-badge">{{ siteInitial(getTileTitle(entry.tile)) }}</div>
                   <div class="min-w-0 flex-1">
-                    <h4 class="row-title">{{ entry.site.title || '未命名' }}</h4>
-                    <p class="row-subtitle">{{ entry.site.url || '无链接' }}</p>
+                    <h4 class="row-title">{{ getTileTitle(entry.tile) || '未命名' }}</h4>
+                    <p class="row-subtitle">{{ getTileUrl(entry.tile) || '无链接' }}</p>
                   </div>
                   <div class="row-actions">
-                    <button type="button" title="打开" aria-label="打开网站" @click="openSite(entry.site.url)"><PhArrowSquareOut size="17" weight="bold"/></button>
-                    <button type="button" title="恢复" aria-label="恢复" @click="restoreSite(entry.site.id)"><PhArrowCounterClockwise size="17" weight="bold"/></button>
-                    <button type="button" title="删除" aria-label="永久删除" class="danger" @click="confirmDelete('site', entry.site.id, entry.site.title || '未命名')"><PhTrash size="17" weight="bold"/></button>
+                    <button type="button" title="打开" aria-label="打开网站" @click="openSite(getTileUrl(entry.tile))"><PhArrowSquareOut size="17" weight="bold"/></button>
+                    <button type="button" title="恢复" aria-label="恢复" @click="restoreSite(entry.tile.id)"><PhArrowCounterClockwise size="17" weight="bold"/></button>
+                    <button type="button" title="删除" aria-label="永久删除" class="danger" @click="confirmDelete('site', entry.tile.id, getTileTitle(entry.tile) || '未命名')"><PhTrash size="17" weight="bold"/></button>
                   </div>
                 </article>
               </div>
 
               <div v-else-if="activeView === 'groups'" class="vault-list">
                 <div v-if="hiddenGroupEntries.length === 0" class="empty-row">没有内容</div>
-                <article v-for="entry in hiddenGroupEntries" :key="entry.group.id" class="vault-row">
+                <article v-for="entry in hiddenGroupEntries" :key="entry.workspace.id" class="vault-row">
                   <div class="folder-badge"><PhFolder size="20" weight="fill"/></div>
                   <div class="min-w-0 flex-1">
-                    <h4 class="row-title">{{ entry.group.title || '未命名分组' }}</h4>
-                    <p class="row-subtitle">{{ entry.group.items.length }} 个项目</p>
+                    <h4 class="row-title">{{ entry.workspace.title || '未命名分组' }}</h4>
+                    <p class="row-subtitle">{{ entry.workspace.tiles.length }} 个项目</p>
                   </div>
                   <div class="row-actions">
-                    <button type="button" title="恢复" aria-label="恢复" @click="restoreGroup(entry.group.id)"><PhArrowCounterClockwise size="17" weight="bold"/></button>
-                    <button type="button" title="删除" aria-label="永久删除" class="danger" @click="confirmDelete('group', entry.group.id, entry.group.title || '未命名分组')"><PhTrash size="17" weight="bold"/></button>
+                    <button type="button" title="恢复" aria-label="恢复" @click="restoreGroup(entry.workspace.id)"><PhArrowCounterClockwise size="17" weight="bold"/></button>
+                    <button type="button" title="删除" aria-label="永久删除" class="danger" @click="confirmDelete('group', entry.workspace.id, entry.workspace.title || '未命名分组')"><PhTrash size="17" weight="bold"/></button>
                   </div>
                 </article>
               </div>
@@ -390,7 +398,7 @@ const lockVault = () => {
                     <div class="folder-badge"><PhFolder size="20" weight="fill"/></div>
                     <div class="min-w-0 flex-1">
                       <h4 class="row-title">{{ group.title || '未命名分组' }}</h4>
-                      <p class="row-subtitle">{{ group.items.length }} 个项目</p>
+                      <p class="row-subtitle">{{ getWorkspaceTiles(group).length }} 个项目</p>
                     </div>
                     <div class="row-actions">
                       <button type="button" title="添加" aria-label="添加" :disabled="actionBusyId === `group:${group.id}`" @click="hideGroup(group.id)"><PhPlus size="17" weight="bold"/></button>

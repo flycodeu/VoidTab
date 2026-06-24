@@ -1,7 +1,11 @@
 import type {SyncProfile} from '../sync/types';
-import type {TileLayouts, WorkspaceLayout} from '../tiles/contracts';
+import type {TileInstallRecord, TileInstance, TileLayouts, Workspace, WorkspaceLayout} from '../tiles/contracts';
 
-export const CURRENT_CONFIG_VERSION = 5 as const;
+/** The canonical persisted/runtime configuration schema. */
+export const CURRENT_CONFIG_VERSION = 6 as const;
+/** Only used by the v5 reader and the one-way v5 -> v6 migration boundary. */
+export const LEGACY_CONFIG_VERSION = 5 as const;
+export const MAX_SUPPORTED_CONFIG_VERSION = 6 as const;
 export type BookmarkDensity = 'compact' | 'normal' | 'comfortable';
 export type SidebarPosition = 'left' | 'right' | 'top' | 'bottom';
 export type GroupSortKey = 'custom' | 'name' | 'lastVisited';
@@ -93,11 +97,35 @@ export interface PrivacyVaultSiteEntry {
     movedAt: number;
 }
 
-export interface PrivacyVaultPayload {
+/** Legacy encrypted payload. It is read only to support lazy migration at unlock. */
+export interface PrivacyVaultPayloadV1 {
     version: 1;
     groups: PrivacyVaultGroupEntry[];
     sites: PrivacyVaultSiteEntry[];
 }
+
+export interface PrivacyVaultWorkspaceEntryV2 {
+    workspace: Workspace;
+    originalIndex: number;
+    movedAt: number;
+}
+
+export interface PrivacyVaultTileEntryV2 {
+    tile: TileInstance;
+    originalWorkspaceId: string;
+    originalWorkspaceTitle?: string;
+    originalIndex: number;
+    movedAt: number;
+}
+
+/** Canonical encrypted payload introduced by P3.5. */
+export interface PrivacyVaultPayloadV2 {
+    version: 2;
+    workspaces: PrivacyVaultWorkspaceEntryV2[];
+    tiles: PrivacyVaultTileEntryV2[];
+}
+
+export type PrivacyVaultPayload = PrivacyVaultPayloadV1 | PrivacyVaultPayloadV2;
 
 export interface WidgetItem {
     id: string;
@@ -215,11 +243,10 @@ export interface AudioConfig {
 }
 
 
-export interface Config {
-    version: number;
+/** Fields that remain unchanged while P3 replaces the layout payload. */
+export interface ConfigBase {
     sync: SyncProfile;
 
-    layout: Group[];
     theme: ThemeConfig;
 
     searchEngines: SearchEngine[];
@@ -234,6 +261,22 @@ export interface Config {
     runtime: RuntimeConfig;
 
 }
+
+/** Current persisted shape. P3.3 is the only phase allowed to replace it. */
+export interface ConfigV5 extends ConfigBase {
+    version: typeof LEGACY_CONFIG_VERSION;
+    layout: Group[];
+}
+
+/** P3.2 target shape; declared now but not persisted until the P3.3 transaction. */
+export interface ConfigV6 extends ConfigBase {
+    version: 6;
+    layout: Workspace[];
+    tileInstalls: Record<string, TileInstallRecord>;
+}
+
+/** Live runtime accepts restored v5 until the explicit P3 transaction commits v6. */
+export type Config = ConfigV5 | ConfigV6;
 
 
 export type SiteStateMap = Record<string, { lastVisited: number; count: number }>;

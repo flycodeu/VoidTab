@@ -1,6 +1,6 @@
-import type {BookmarkDensity, Config} from '../config/types';
+import type {BookmarkDensity, ConfigV6} from '../config/types';
 
-type Theme = Config['theme'];
+type Theme = ConfigV6['theme'];
 
 export type IconDensityPreset = Pick<
     Theme,

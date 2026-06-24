@@ -1,11 +1,12 @@
 import type {Ref} from 'vue';
-import type {Config} from '../../core/config/types';
+import type {ConfigV6} from '../../core/config/types';
+import {getWorkspaceTiles, isSiteTile} from '../../core/tiles/tileAccess.ts';
 import {extractSiteDomain, isExtensionContext} from '../../shared/utils/icon';
 import {ensureSiteIconRuntime, resolveAndCacheSiteIcon} from '../../shared/utils/siteIconCache';
 import {measurePerformanceAsync} from '../../shared/utils/performance';
 
 export const createIconActions = (
-    config: Ref<Config>,
+    config: Ref<ConfigV6>,
     isLoaded: Ref<boolean>
 ) => {
     const refreshAutoSiteIconsBatch = async (options?: { force?: boolean; maxDomains?: number }) => {
@@ -23,8 +24,8 @@ export const createIconActions = (
             const seenDomains = new Set<string>();
 
             for (const group of config.value.layout) {
-                for (const item of (group.items || [])) {
-                    if (!item || item.kind === 'widget') continue;
+                for (const item of getWorkspaceTiles(group)) {
+                    if (!item || !isSiteTile(item)) continue;
                     const iconType = item.iconType || 'auto';
                     if (iconType !== 'auto') continue;
                     if (!item.url) continue;

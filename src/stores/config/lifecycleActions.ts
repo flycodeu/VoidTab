@@ -1,8 +1,11 @@
 import type {Ref} from 'vue';
-import type {Config} from '../../core/config/types';
+import type {ConfigV6} from '../../core/config/types';
 import {defaultConfig} from '../../core/config/default';
 import {migrateConfig} from '../../core/config/migrate';
 import {normalizeConfig} from '../../core/config/normalize';
+import {isConfigV6, normalizeConfigV6} from '../../core/config/v6.ts';
+import {migrateV5ToV6} from '../../core/config/migrateV5ToV6.ts';
+import {getStableConfigDeviceId} from '../../core/config/deviceId.ts';
 import {configRepository} from '../../core/config/repository';
 import {ensureSiteIconRuntime} from '../../shared/utils/siteIconCache';
 import {markPerformance, measurePerformanceAsync} from '../../shared/utils/performance';
@@ -11,7 +14,7 @@ import {deepClone} from './helpers';
 const BOOT_SOFT_TIMEOUT_MS = 1500;
 
 type LifecycleDeps = {
-    config: Ref<Config>;
+    config: Ref<ConfigV6>;
     isLoaded: Ref<boolean>;
     applyingExternal: Ref<boolean>;
     localRevision: Ref<number>;
@@ -36,7 +39,7 @@ export const createLifecycleActions = ({
     let loadRunId = 0;
     let loadConfigPromise: Promise<void> | null = null;
 
-    const setConfigForBoot = (next: Config) => {
+    const setConfigForBoot = (next: ConfigV6) => {
         applyingExternal.value = true;
         config.value = next;
         normalizeLayoutItems();
@@ -46,7 +49,12 @@ export const createLifecycleActions = ({
     };
 
     const createFallbackConfig = () => {
-        return normalizeConfig(migrateConfig(deepClone(defaultConfig)));
+        const migrated = migrateConfig(deepClone(defaultConfig));
+        if (isConfigV6(migrated)) return normalizeConfigV6(migrated);
+        return normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
+            deviceId: getStableConfigDeviceId(),
+            migratedAt: Date.now(),
+        }).config);
     };
 
     const waitForBootTimeout = () =>
@@ -153,7 +161,13 @@ export const createLifecycleActions = ({
 
     const resetToDefault = async () => {
         await measurePerformanceAsync('config.reset', async () => {
-            const next = normalizeConfig(migrateConfig(deepClone(defaultConfig)));
+            const migrated = migrateConfig(deepClone(defaultConfig));
+            const next = isConfigV6(migrated)
+                ? normalizeConfigV6(migrated)
+                : normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
+                    deviceId: getStableConfigDeviceId(),
+                    migratedAt: Date.now(),
+                }).config);
 
             applyingExternal.value = true;
             config.value = next;

@@ -1,5 +1,5 @@
 import type {
-    Config,
+    ConfigV5,
     Group,
     SiteItem,
     WidgetType,
@@ -17,7 +17,7 @@ import type {
 } from './types';
 import type {SyncProfile} from '../sync/types';
 import {defaultConfig} from './default';
-import {CURRENT_CONFIG_VERSION} from './types';
+import {LEGACY_CONFIG_VERSION} from './types';
 import {createLegacyBufferNote, normalizeMemoCategories, normalizeMemoNotes} from './memoNotes';
 import {cloneDefaultAiPromptTemplates} from './aiPromptTemplates';
 import {MAX_TILE_SPAN, normalizeWorkspaceLayout} from '../tiles/gridMetrics';
@@ -638,13 +638,13 @@ function normalizeRuntime(input: any): RuntimeConfig {
     };
 }
 
-export function normalizeConfig(raw: any): Config {
+export function normalizeConfig(raw: any): ConfigV5 {
     const base = deepClone(defaultConfig);
 
     const input = (raw && typeof raw === 'object') ? raw : {};
     const out: any = base;
 
-    out.version = CURRENT_CONFIG_VERSION;
+    out.version = LEGACY_CONFIG_VERSION;
 
     out.sync = normalizeSync(input.sync, base.sync);
 
@@ -708,5 +708,5 @@ export function normalizeConfig(raw: any): Config {
 
     out.runtime = normalizeRuntime(input.runtime);
 
-    return out as Config;
+    return out as ConfigV5;
 }

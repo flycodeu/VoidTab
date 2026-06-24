@@ -1,11 +1,12 @@
 // src/core/sync/index.ts
-import type {SyncProfile, SyncOpResult, SyncTestResult, SyncDownloadResult} from './types';
+import type {SyncFileOptions, SyncProfile, SyncOpResult, SyncTestResult, SyncDownloadResult} from './types';
 import {providerRegistry} from './registry';
 
 // src/core/sync/index.ts
 export * from './types';
 export * from './service';
 export * from './scheduler';
+export * from './v6Channel';
 
 
 function getProvider(profile: SyncProfile) {
@@ -21,13 +22,13 @@ export const syncService = {
         return getProvider(profile).test(profile as any);
     },
 
-    async upload(profile: SyncProfile, payload: any): Promise<SyncOpResult> {
+    async upload(profile: SyncProfile, payload: any, options?: SyncFileOptions): Promise<SyncOpResult> {
         if (profile.provider === 'none') return {ok: false, message: '未启用同步'};
-        return getProvider(profile).upload(profile as any, payload);
+        return getProvider(profile).upload(profile as any, payload, options);
     },
 
-    async download(profile: SyncProfile): Promise<SyncDownloadResult> {
+    async download(profile: SyncProfile, options?: SyncFileOptions): Promise<SyncDownloadResult> {
         if (profile.provider === 'none') return {ok: false, message: '未启用同步'};
-        return getProvider(profile).download(profile as any);
+        return getProvider(profile).download(profile as any, options);
     }
 };

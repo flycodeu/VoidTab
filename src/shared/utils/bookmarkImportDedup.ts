@@ -1,4 +1,5 @@
 import type {Group, SiteItem} from '../../core/config/types';
+import type {Workspace} from '../../core/tiles/contracts.ts';
 
 export interface BookmarkDuplicateStats {
     skippedExisting: number;
@@ -39,7 +40,7 @@ const describeBookmark = (item: SiteItem) => {
 
 export function dedupeImportedBookmarkGroups(
     incomingGroups: Group[],
-    existingGroups: Group[]
+    existingGroups: Workspace[]
 ): BookmarkDedupeResult {
     const existingKeys = new Set<string>();
     const seen = new Set<string>();
@@ -51,8 +52,9 @@ export function dedupeImportedBookmarkGroups(
     };
 
     for (const group of existingGroups) {
-        for (const item of group.items || []) {
-            const key = createBookmarkUrlKey(item.url);
+        for (const tile of group.tiles) {
+            if (tile.tileType !== 'site') continue;
+            const key = createBookmarkUrlKey(tile.url);
             if (key) {
                 existingKeys.add(key);
                 seen.add(key);

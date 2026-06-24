@@ -1,6 +1,12 @@
-import type {PrivacyVaultEnvelope, PrivacyVaultPayload, PrivacyVaultKdf} from '../config/types';
+import type {
+    PrivacyVaultEnvelope,
+    PrivacyVaultKdf,
+    PrivacyVaultPayload,
+    PrivacyVaultPayloadV2,
+} from '../config/types';
 
-const VAULT_VERSION = 1 as const;
+const VAULT_PAYLOAD_VERSION = 2 as const;
+const VAULT_ENVELOPE_VERSION = 1 as const;
 const VAULT_ALGORITHM = 'AES-256-GCM' as const;
 const AES_GCM = 'AES-GCM';
 const PBKDF2 = 'PBKDF2';
@@ -10,10 +16,10 @@ const IV_LENGTH = 12;
 const PBKDF2_ITERATIONS = 600000;
 const VERIFIER_TEXT = 'voidtab-privacy-vault:v1';
 
-export const emptyPrivacyVaultPayload = (): PrivacyVaultPayload => ({
-    version: VAULT_VERSION,
-    groups: [],
-    sites: [],
+export const emptyPrivacyVaultPayload = (): PrivacyVaultPayloadV2 => ({
+    version: VAULT_PAYLOAD_VERSION,
+    workspaces: [],
+    tiles: [],
 });
 
 const assertCrypto = () => {
@@ -117,9 +123,22 @@ const decryptString = async (cipherText: string, key: CryptoKey) => {
 
 const normalizePayload = (raw: unknown): PrivacyVaultPayload => {
     if (!raw || typeof raw !== 'object') return emptyPrivacyVaultPayload();
-    const payload = raw as Partial<PrivacyVaultPayload>;
+    const payload = raw as {
+        version?: unknown;
+        groups?: unknown;
+        sites?: unknown;
+        workspaces?: unknown;
+        tiles?: unknown;
+    };
+    if (payload.version === 2) {
+        return {
+            version: 2,
+            workspaces: Array.isArray(payload.workspaces) ? payload.workspaces : [],
+            tiles: Array.isArray(payload.tiles) ? payload.tiles : [],
+        };
+    }
     return {
-        version: VAULT_VERSION,
+        version: 1,
         groups: Array.isArray(payload.groups) ? payload.groups : [],
         sites: Array.isArray(payload.sites) ? payload.sites : [],
     };
@@ -137,7 +156,7 @@ export const createPrivacyVaultEnvelope = async (
     const key = await deriveKey(password, kdf);
 
     return {
-        version: VAULT_VERSION,
+        version: VAULT_ENVELOPE_VERSION,
         alg: VAULT_ALGORITHM,
         kdf,
         verifier: await encryptString(VERIFIER_TEXT, key),
@@ -181,4 +200,3 @@ export const resealPrivacyVaultEnvelope = async (
         updatedAt: Date.now(),
     };
 };
-

@@ -11,6 +11,7 @@ import {createSearchActions} from './config/searchActions';
 import {createSiteActions} from './config/siteActions';
 import {createConfigState} from './config/state';
 import {createSyncActions} from './config/syncActions';
+import {createUpgradeActions} from './config/upgradeActions';
 
 export const useConfigStore = defineStore('config', () => {
     initPerformanceMonitor({maxEntries: 160, exposeGlobal: true});
@@ -51,6 +52,11 @@ export const useConfigStore = defineStore('config', () => {
         normalizeLayoutItems: layoutActions.normalizeLayoutItems,
         saveConfig: persistence.saveConfig,
     });
+    const upgradeActions = createUpgradeActions({
+        config,
+        localRevision,
+        saveConfig: persistence.saveConfig,
+    });
     const lifecycleActions = createLifecycleActions({
         config,
         isLoaded,
@@ -86,6 +92,7 @@ export const useConfigStore = defineStore('config', () => {
         testSyncConnection: syncActions.testSyncConnection,
         uploadBackup: syncActions.uploadBackup,
         downloadBackup: syncActions.downloadBackup,
+        confirmV6SyncUpgrade: upgradeActions.confirmV6SyncUpgrade,
         destroy,
 
         // Conflict resolution

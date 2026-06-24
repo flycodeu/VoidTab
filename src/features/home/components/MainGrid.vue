@@ -9,8 +9,7 @@ import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import {useStateStore} from "../../../stores/useStateStore.ts";
 
 // Components
-import GlassCard from "./GlassCard.vue";
-import WidgetCard from "../../widgets/components/WidgetCard.vue";
+import TileHost from "./TileHost.vue";
 import AddCard from "./AddCard.vue";
 import GroupHeaderBar from "../../widgets/components/widget-panel/GroupHeaderBar.vue";
 import ConfirmDialog from "../../../shared/ui/dialogs/ConfirmDialog.vue";
@@ -25,14 +24,31 @@ import {isExtensionContext} from "../../../shared/utils/icon.ts";
 import {cloneConfigSnapshot} from "../../../shared/utils/configSnapshot.ts";
 
 // Types
-import type {Group, GroupSortKey, SiteItem} from "../../../core/config/types.ts";
-import {getWidgetLabel} from "../../../core/registry/widgets.ts";
+import type {GroupSortKey} from "../../../core/config/types.ts";
 import type {GridPlacement, LayoutProfileId, TileLayouts, WorkspaceLayoutProfile} from "../../../core/tiles/contracts.ts";
 import {cloneDefaultWorkspaceLayout, getGridMetrics, MAX_TILE_SPAN, resolveLayoutProfileId, type GridMetrics} from "../../../core/tiles/gridMetrics.ts";
 import {findFirstAvailablePlacement, solveCanvasLayout} from "../../../core/tiles/layoutSolver.ts";
+import {
+  cloneRuntimeTile,
+  findTile,
+  getTileDesktopSize,
+  getTileFallbackTitle,
+  getTileLayouts,
+  getTileTitle,
+  getTileUrl,
+  getWorkspaceTileCount,
+  getWorkspaceTiles,
+  isComponentTile,
+  isSiteTile,
+  setTileLayouts,
+  setTileSize,
+  setWorkspaceTiles,
+  type RuntimeTile,
+  type RuntimeWorkspace,
+} from "../../../core/tiles/tileAccess.ts";
 
-type LayoutItem = SiteItem;
-type LayoutGroup = Group;
+type LayoutItem = RuntimeTile;
+type LayoutGroup = RuntimeWorkspace;
 
 const props = defineProps<{
   activeGroupId: string;
@@ -85,6 +101,7 @@ const gridHostEl = ref<HTMLElement | null>(null);
 const availableGridWidth = ref(1280);
 let ro: ResizeObserver | null = null;
 let onWindowResize: (() => void) | null = null;
+let pendingGridMeasureFrame: number | null = null;
 
 const activeLayoutProfile = computed<LayoutProfileId>(() =>
     resolveLayoutProfileId(availableGridWidth.value, isMobile.value)
@@ -107,21 +124,17 @@ const getGroupMetrics = (group: LayoutGroup): GridMetrics => getGridMetrics(
     group.workspaceLayout ? undefined : legacyProfileOverride.value,
 );
 
-const getWidgetTitle = (item: any) => {
-  const raw = (item.title || "").trim();
-  if (raw) return raw;
-  return getWidgetLabel(item.widgetType);
-};
+const getWidgetTitle = (item: LayoutItem) => getTileFallbackTitle(item, '未命名组件');
 
 const getItemTitle = (item: any) => {
   if (!item) return "未命名项目";
-  if (item.kind === "widget") return getWidgetTitle(item);
-  return (item.title || "").trim() || "未命名网站";
+  if (isComponentTile(item)) return getWidgetTitle(item);
+  return getTileTitle(item).trim() || "未命名网站";
 };
 
-const getItemKindLabel = (item: any) => item?.kind === "widget" ? "组件" : "网站";
+const getItemKindLabel = (item: any) => isComponentTile(item) ? "组件" : "网站";
 
-const isGroupEmpty = (group: LayoutGroup) => !Array.isArray(group.items) || group.items.length === 0;
+const isGroupEmpty = (group: LayoutGroup) => getWorkspaceTileCount(group) === 0;
 
 const handleEmptyGroupAction = (groupId: string) => {
   openAddDialog(groupId);
@@ -145,6 +158,19 @@ function recalcGrid() {
 
 const recalcGridDebounced = useDebounceFn(() => recalcGrid(), 150, {maxWait: 300});
 
+/**
+ * Container width changes caused by focus/sidebar transitions must update in the
+ * next frame, not after the normal resize debounce. Otherwise a fixed grid is
+ * briefly centered with stale column metrics and appears to jump.
+ */
+const scheduleImmediateGridMeasure = () => {
+  if (pendingGridMeasureFrame !== null) return;
+  pendingGridMeasureFrame = window.requestAnimationFrame(() => {
+    pendingGridMeasureFrame = null;
+    recalcGrid();
+  });
+};
+
 const onMqChange = () => {
   isMobile.value = !!mq?.matches;
   recalcGrid();
@@ -154,13 +180,13 @@ onMounted(() => {
   mq = window.matchMedia("(max-width: 767px)");
   onWindowResize = () => {
     viewportW.value = window.innerWidth;
-    recalcGridDebounced();
+    scheduleImmediateGridMeasure();
   };
   window.addEventListener("resize", onWindowResize, {passive: true});
   onMqChange();
   mq.addEventListener?.("change", onMqChange);
 
-  ro = new ResizeObserver(() => recalcGridDebounced());
+  ro = new ResizeObserver(() => scheduleImmediateGridMeasure());
   if (gridHostEl.value) ro.observe(gridHostEl.value);
 });
 
@@ -174,10 +200,12 @@ onBeforeUnmount(() => {
   mq?.removeEventListener?.("change", onMqChange);
   ro?.disconnect();
   if (onWindowResize) window.removeEventListener("resize", onWindowResize);
+  if (pendingGridMeasureFrame !== null) window.cancelAnimationFrame(pendingGridMeasureFrame);
   resetLongPressState();
   suppressNextSiteClick = null;
   ro = null;
   onWindowResize = null;
+  pendingGridMeasureFrame = null;
   stopCanvasGesture(false);
 });
 
@@ -226,7 +254,7 @@ const gridNow = () => globalThis.performance?.now ? globalThis.performance.now()
 const isStartupPreloadWindow = () => gridNow() - mainGridCreatedAt < PRELOAD_STARTUP_WINDOW_MS;
 
 const isAutoIconSiteItem = (item: LayoutItem) => {
-  if (!item || item.kind === "widget") return false;
+  if (!item || !isSiteTile(item)) return false;
   const iconType = item.iconType || "auto";
   return iconType === "auto" && typeof item.url === "string" && item.url.trim().length > 0;
 };
@@ -236,9 +264,9 @@ const collectAutoIconUrls = (groups: LayoutGroup[], limit: number) => {
   const seen = new Set<string>();
 
   for (const group of groups) {
-    for (const item of group.items || []) {
+    for (const item of getWorkspaceTiles(group)) {
       if (!isAutoIconSiteItem(item)) continue;
-      const url = String(item.url || "").trim();
+      const url = getTileUrl(item).trim();
       if (!url || seen.has(url)) continue;
       seen.add(url);
       urls.push(url);
@@ -323,7 +351,7 @@ const iconPreloadSignature = computed(() => {
     store.config.runtime?.siteIcons?.version || 0,
     groups.map((group) => {
       const sample = collectAutoIconUrls([group], 12).join(",");
-      return `${group.id}:${group.items?.length || 0}:${sample}`;
+      return `${group.id}:${getWorkspaceTileCount(group)}:${sample}`;
     }).join("|"),
   ].join("::");
 });
@@ -346,31 +374,33 @@ const clampCoordinate = (value: unknown, fallback = 0) => {
 const isCanvasLayout = (group: LayoutGroup) => group.workspaceLayout?.mode === 'canvas';
 
 const getFlowItemSize = (item: LayoutItem, metrics: GridMetrics) => {
-  if (item.kind !== 'widget') {
+  if (!isComponentTile(item)) {
     if ((store.config.theme.siteLayoutMode || 'icon') !== 'card') return {w: 1, h: 1};
     return {
       w: clampSpan(props.siteCardW || store.config.theme.siteCard?.w || 3, 1, metrics.cols),
       h: clampSpan(props.siteCardH || store.config.theme.siteCard?.h || 1, 1),
     };
   }
+  const size = getTileDesktopSize(item);
   return {
-    w: clampSpan(item.w, 2, metrics.cols),
-    h: clampSpan(item.h, 2),
+    w: clampSpan(size.w, 2, metrics.cols),
+    h: clampSpan(size.h, 2),
   };
 };
 
 const getCanvasItemSize = (item: LayoutItem, metrics: GridMetrics) => {
-  const hasStoredLayout = !!item.layouts?.desktop;
-  const legacySiteCard = item.kind !== 'widget'
+  const desktopSize = getTileDesktopSize(item);
+  const hasStoredLayout = !!getTileLayouts(item)?.desktop;
+  const legacySiteCard = !isComponentTile(item)
       && !hasStoredLayout
       && (store.config.theme.siteLayoutMode || 'icon') === 'card';
   return {
     w: legacySiteCard
         ? clampSpan(props.siteCardW || store.config.theme.siteCard?.w || 3, 1, metrics.cols)
-        : clampSpan(item.w, item.kind === 'widget' ? 2 : 1, metrics.cols),
+        : clampSpan(desktopSize.w, isComponentTile(item) ? 2 : 1, metrics.cols),
     h: legacySiteCard
         ? clampSpan(props.siteCardH || store.config.theme.siteCard?.h || 1, 1)
-        : clampSpan(item.h, item.kind === 'widget' ? 2 : 1),
+        : clampSpan(desktopSize.h, isComponentTile(item) ? 2 : 1),
   };
 };
 
@@ -382,11 +412,11 @@ const isPlacementWithinMetrics = (placement: GridPlacement, metrics: GridMetrics
     && placement.x + placement.w <= metrics.cols;
 
 const getStoredPlacement = (item: LayoutItem, profile: LayoutProfileId) =>
-    item.layouts?.[profile] || item.layouts?.desktop;
+    getTileLayouts(item)?.[profile] || getTileLayouts(item)?.desktop;
 
 const collectCanvasPlacements = (group: LayoutGroup, metrics = getGroupMetrics(group)) => {
   const placements: Record<string, GridPlacement> = {};
-  for (const item of group.items) {
+  for (const item of getWorkspaceTiles(group)) {
     const stored = getStoredPlacement(item, metrics.profile);
     const size = getCanvasItemSize(item, metrics);
     const candidate = stored
@@ -443,19 +473,18 @@ const applyCanvasPlacements = (
     profile: LayoutProfileId,
     placements: Record<string, GridPlacement>,
 ) => {
-  for (const item of group.items) {
+  for (const item of getWorkspaceTiles(group)) {
     const placement = placements[item.id];
     if (!placement) continue;
-    const existing = item.layouts;
+    const existing = getTileLayouts(item);
     const layouts: TileLayouts = {
       desktop: existing?.desktop || {...placement},
       ...(existing?.tablet ? {tablet: existing.tablet} : {}),
       ...(existing?.mobile ? {mobile: existing.mobile} : {}),
       [profile]: {...placement},
     };
-    item.layouts = layouts;
-    item.w = placement.w;
-    item.h = placement.h;
+    setTileLayouts(item, layouts);
+    setTileSize(item, placement.w, placement.h);
   }
 };
 
@@ -678,26 +707,18 @@ const startCanvasGesture = (
 };
 
 const canvasLayoutPresence = computed(() => (store.config.layout as LayoutGroup[])
-    .map((group) => `${group.id}:${group.workspaceLayout?.mode || 'flow'}:${group.items.map((item) => `${item.id}:${item.layouts?.desktop ? '1' : '0'}`).join(',')}`)
+    .map((group) => `${group.id}:${group.workspaceLayout?.mode || 'flow'}:${getWorkspaceTiles(group).map((item) => `${item.id}:${getTileLayouts(item)?.desktop ? '1' : '0'}`).join(',')}`)
     .join('|'));
 
 watch(canvasLayoutPresence, () => {
   let changed = false;
   for (const group of store.config.layout as LayoutGroup[]) {
-    if (!isCanvasLayout(group) || group.items.every((item) => item.layouts?.desktop)) continue;
+    if (!isCanvasLayout(group) || getWorkspaceTiles(group).every((item) => getTileLayouts(item)?.desktop)) continue;
     initializeCanvasLayout(group);
     changed = true;
   }
   if (changed) void store.saveConfig();
 }, {flush: 'post'});
-
-const widgetNameMode = (item: any) => {
-  if (!store.config.theme.showWidgetName) return "none";
-  if (item.kind !== "widget") return "none";
-  const h = Math.max(1, Number(item.h || 1));
-  if (h === 1) return "overlay";
-  return "below";
-};
 
 /** ----------------------------------------------------------------
  * 排序与拖拽
@@ -705,20 +726,21 @@ const widgetNameMode = (item: any) => {
 const getSortKey = (group: LayoutGroup): GroupSortKey => (group.sortKey || "custom") as GroupSortKey;
 
 const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
-  if (isCanvasLayout(group)) return group.items;
+  const tiles = getWorkspaceTiles(group);
+  if (isCanvasLayout(group)) return tiles;
   const key = getSortKey(group);
-  if (key === "custom") return group.items;
+  if (key === "custom") return tiles;
 
-  const items = [...group.items];
+  const items = [...tiles];
   if (key === "name") {
-    return items.sort((a, b) => (a.title || "").localeCompare(b.title || "", "zh-CN"));
+    return items.sort((a, b) => getTileTitle(a).localeCompare(getTileTitle(b), "zh-CN"));
   }
   if (key === "lastVisited") {
     return items.sort((a, b) => {
       const timeA = statsStore.getLastVisited(a.id);
       const timeB = statsStore.getLastVisited(b.id);
       if (timeB !== timeA) return timeB - timeA;
-      return (a.title || "").localeCompare(b.title || "", "zh-CN");
+      return getTileTitle(a).localeCompare(getTileTitle(b), "zh-CN");
     });
   }
   return items;
@@ -726,17 +748,17 @@ const getDisplayItems = (group: LayoutGroup): LayoutItem[] => {
 
 const canFreeReorder = (group: LayoutGroup) => !isCanvasLayout(group) && !props.isEditMode && getSortKey(group) === "custom";
 
-const modelValueOf = (group: LayoutGroup) => (props.isEditMode ? group.items : getDisplayItems(group));
+const modelValueOf = (group: LayoutGroup) => (props.isEditMode ? getWorkspaceTiles(group) : getDisplayItems(group));
 
 const updateModelValue = (group: LayoutGroup, val: LayoutItem[]) => {
   if (isCanvasLayout(group)) return;
   if (props.isEditMode) {
-    group.items = val;
+    setWorkspaceTiles(group, val);
     store.saveConfig();
     return;
   }
   if (getSortKey(group) === "custom") {
-    group.items = val;
+    setWorkspaceTiles(group, val);
     store.saveConfig();
   }
 };
@@ -783,7 +805,7 @@ const shouldEnableLongPress = (e: PointerEvent) => {
 };
 
 const handleSitePointerDown = (e: PointerEvent, item: any, groupId: string) => {
-  if (!item || item.kind === "widget") return;
+  if (!item || isComponentTile(item)) return;
   if (!shouldEnableLongPress(e)) return;
 
   resetLongPressState();
@@ -842,7 +864,7 @@ const handleBlankContextMenu = (e: MouseEvent, groupId: string) => {
 };
 const handleItemContextMenu = (e: MouseEvent, item: any, groupId: string) => {
   if (Date.now() < suppressNativeContextMenuUntil) return;
-  const type = item.kind === "widget" ? "widget" : "site";
+  const type = isComponentTile(item) ? "widget" : "site";
   ui.openContextMenu(e, item, type, groupId);
 };
 
@@ -862,7 +884,7 @@ const findGroupById = (groupId: string) => {
   return (store.config.layout as LayoutGroup[]).find((group) => group.id === groupId);
 };
 
-const cloneLayoutItem = (item: LayoutItem) => cloneConfigSnapshot(item);
+const cloneLayoutItem = (item: LayoutItem) => cloneRuntimeTile(cloneConfigSnapshot(item));
 
 const cancelDelete = () => {
   deleteDialogOpen.value = false;
@@ -871,7 +893,7 @@ const cancelDelete = () => {
 
 const askDelete = (groupId: string, itemId: string) => {
   const group = findGroupById(groupId);
-  const item = group?.items.find((entry) => entry.id === itemId);
+  const item = findTile(group, itemId);
   if (!item) {
     toast.warning("这个项目已经不在当前分组中。");
     ui.announce("这个项目已经不在当前分组中");
@@ -890,14 +912,15 @@ const restoreDeletedItem = (snapshot: DeletedItemSnapshot) => {
     return;
   }
 
-  if (group.items.some((item) => item.id === snapshot.item.id)) {
+  if (getWorkspaceTiles(group).some((item) => item.id === snapshot.item.id)) {
     toast.info(`「${snapshot.title}」已经在分组中。`);
     ui.announce(`${snapshot.title}已经在分组中`);
     return;
   }
 
-  const index = Math.max(0, Math.min(snapshot.index, group.items.length));
-  group.items.splice(index, 0, cloneLayoutItem(snapshot.item));
+  const tiles = getWorkspaceTiles(group);
+  const index = Math.max(0, Math.min(snapshot.index, tiles.length));
+  tiles.splice(index, 0, cloneLayoutItem(snapshot.item));
   void store.saveConfig();
 
   toast.success(`已恢复「${snapshot.title}」。`);
@@ -909,8 +932,9 @@ const confirmDelete = () => {
 
   const {groupId, itemId} = deleteTarget.value;
   const group = findGroupById(groupId);
-  const index = group?.items.findIndex((item) => item.id === itemId) ?? -1;
-  const item = index >= 0 ? group?.items[index] : null;
+  const tiles = group ? getWorkspaceTiles(group) : [];
+  const index = tiles.findIndex((item) => item.id === itemId);
+  const item = index >= 0 ? tiles[index] : null;
 
   if (!group || !item) {
     cancelDelete();
@@ -976,7 +1000,7 @@ const confirmDelete = () => {
           <GroupHeaderBar
               v-if="!isEditMode"
               :group-name="group.title"
-              :count="group.items?.length || 0"
+              :count="getWorkspaceTileCount(group)"
               :sort-key="isCanvasLayout(group) ? 'custom' : getSortKey(group)"
               @update:sortKey="(key) => store.updateGroupSort(group.id, key)"
               :key="`header-${group.id}`"
@@ -1073,44 +1097,22 @@ const confirmDelete = () => {
                   class="site-wrap relative w-full h-full min-w-0 min-h-0"
                   :class="isEditMode ? 'overflow-visible' : 'overflow-visible rounded-[18px]'"
               >
-                <div v-if="item.kind === 'widget'" class="w-full h-full overflow-hidden rounded-[18px]">
-                  <WidgetCard
-                      :item="item"
-                      :isEditMode="isEditMode"
-                      @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
-                  />
-
-                  <!-- overlay 名称：用主题变量，不再写死黑底白字 -->
-                  <div
-                      v-if="widgetNameMode(item) === 'overlay'"
-                      class="absolute left-2 right-2 bottom-2 flex justify-center pointer-events-none z-10"
-                  >
-                    <div class="widget-name-pill max-w-full truncate">
-                      {{ getWidgetTitle(item) }}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                    v-else
-                    class="w-full h-full flex flex-col items-center justify-start"
-                    @pointerdown="(e:any) => handleSitePointerDown(e, item, group.id)"
-                    @pointermove="(e:any) => handleSitePointerMove(e)"
-                    @pointerup="(e:any) => handleSitePointerEnd(e)"
-                    @pointercancel="(e:any) => handleSitePointerEnd(e)"
-                    @pointerleave="(e:any) => handleSitePointerEnd(e)"
-                    @click.capture="(e:any) => handleSiteClickCapture(e, item)"
-                >
-                   <GlassCard
-                       :item="item"
-                       :isEditMode="isEditMode"
-                       :density="store.config.theme.density"
-                       :cardSpanW="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).w : Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
-                       :cardSpanH="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).h : Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
-                      :priority="group.id === activeGroupId ? 'high' : 'low'"
-                      @contextmenu.prevent.stop="(e:any) => handleItemContextMenu(e, item, group.id)"
-                  />
-                </div>
+                <TileHost
+                    :tile="item"
+                    :isEditMode="isEditMode"
+                    :density="store.config.theme.density"
+                    :cardSpanW="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).w : Number(props.siteCardW || store.config.theme.siteCard?.w || 3)"
+                    :cardSpanH="isCanvasLayout(group) ? getCanvasItemSize(item, getGroupMetrics(group)).h : Number(props.siteCardH || store.config.theme.siteCard?.h || 1)"
+                    :priority="group.id === activeGroupId ? 'high' : 'low'"
+                    :showWidgetName="!!store.config.theme.showWidgetName"
+                    @contextmenu="(e:any) => handleItemContextMenu(e, item, group.id)"
+                    @site-pointerdown="(e:any) => handleSitePointerDown(e, item, group.id)"
+                    @site-pointermove="(e:any) => handleSitePointerMove(e)"
+                    @site-pointerup="(e:any) => handleSitePointerEnd(e)"
+                    @site-pointercancel="(e:any) => handleSitePointerEnd(e)"
+                    @site-pointerleave="(e:any) => handleSitePointerEnd(e)"
+                    @site-click-capture="(e:any) => handleSiteClickCapture(e, item)"
+                />
 
                 <!-- 删除按钮：主题适配 + neon/hover -->
                 <button

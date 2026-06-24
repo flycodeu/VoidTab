@@ -1,10 +1,10 @@
 // src/core/config/watch.ts
-import type {Config} from './types';
+import type {ConfigV6} from './types';
 import {storage} from '../storage';
 import {CONFIG_KEY, WALLPAPER_KEY} from './keys';
 import {configRepository} from './repository';
 
-export type ConfigChangeHandler = (next: Config) => void;
+export type ConfigChangeHandler = (next: ConfigV6) => void;
 
 const isConfigRelated = (key: string) => {
     return key === CONFIG_KEY || key === WALLPAPER_KEY;

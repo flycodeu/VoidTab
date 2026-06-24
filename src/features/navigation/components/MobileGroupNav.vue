@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {PhGear} from '@phosphor-icons/vue';
+import {getWorkspaceTileCount, type RuntimeWorkspace} from '../../../core/tiles/tileAccess.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
 
 const props = defineProps<{
   show: boolean;
-  groups: Array<{ id: string; title: string; icon: string; items?: any[] }>;
+  groups: RuntimeWorkspace[];
   activeGroupId: string;
 }>();
 
@@ -188,7 +189,7 @@ onUnmounted(() => {
               ? 'bg-white/10 text-[var(--accent-color)] shadow-sm border-white/5'
               : 'text-[var(--text-secondary)] opacity-60 active:opacity-100'
           ]"
-            :aria-label="`切换到分组：${group.title}，${group.items?.length || 0} 个项目`"
+            :aria-label="`切换到分组：${group.title}，${getWorkspaceTileCount(group)} 个项目`"
             :aria-current="activeGroupId === group.id ? 'page' : undefined"
         >
           <component
@@ -203,7 +204,7 @@ onUnmounted(() => {
           </span>
 
           <span
-              v-if="group.items?.length"
+              v-if="getWorkspaceTileCount(group)"
               class="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full bg-current opacity-40"
               aria-hidden="true"
           />

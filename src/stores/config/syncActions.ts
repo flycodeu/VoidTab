@@ -1,11 +1,22 @@
 import {ref} from 'vue';
 import type {Ref} from 'vue';
-import type {Config} from '../../core/config/types';
+import type {ConfigV6} from '../../core/config/types';
 import {migrateConfig} from '../../core/config/migrate';
 import {normalizeConfig} from '../../core/config/normalize';
-import {mergeLocalSensitiveFields, stripSensitiveConfigForSync} from '../../core/config/sensitive';
+import {isConfigV6, normalizeConfigV6} from '../../core/config/v6.ts';
+import {migrateV5ToV6} from '../../core/config/migrateV5ToV6.ts';
+import {getStableConfigDeviceId} from '../../core/config/deviceId.ts';
+import {mergeLocalSensitiveFields} from '../../core/config/sensitive';
+import {isConfigVersionTooNew, preflightConfigForReader} from '../../core/config/preflight';
+import {isV6SyncWriteAuthorized} from '../../core/config/syncSchemaUpgrade.ts';
 import {validateImportedConfig} from '../../core/config/validate';
 import {SyncScheduler, syncService} from '../../core/sync';
+import {
+    buildConfigV6SyncPayload,
+    getV6SiblingFileOptions,
+    restoreConfigV6FromSyncExport,
+    uploadConfigV6ToSibling,
+} from '../../core/sync/v6Channel.ts';
 import type {ConflictSnapshot, SyncConflictState} from '../../core/sync/types';
 import {hashConfig} from '../../core/sync/hash';
 import {buildConflictSummary} from '../../core/sync/conflictSummary';
@@ -13,46 +24,41 @@ import {useToast} from '../../shared/composables/useToast';
 import {measurePerformanceAsync} from '../../shared/utils/performance';
 
 type SyncActionDeps = {
-    config: Ref<Config>;
+    config: Ref<ConfigV6>;
     applyingExternal: Ref<boolean>;
     localRevision: Ref<number>;
     normalizeLayoutItems: () => void;
     saveConfig: () => Promise<void>;
 };
 
-type SyncPayload = Omit<Config, 'runtime'> & {
-    theme: Config['theme'] & {
-        wallpaperType?: string;
-    };
+const normalizeRuntimeConfig = (raw: unknown): ConfigV6 => {
+    const migrated = migrateConfig(raw);
+    if (isConfigV6(migrated)) return normalizeConfigV6(migrated);
+    return normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
+        deviceId: getStableConfigDeviceId(),
+        migratedAt: Date.now(),
+    }).config);
 };
 
-export const buildSyncPayload = (cfg: Config) => {
-    const sealed = stripSensitiveConfigForSync(cfg);
-    const copy: SyncPayload = {
-        version: sealed.version,
-        sync: sealed.sync,
-        layout: sealed.layout,
-        theme: {...sealed.theme},
-        searchEngines: sealed.searchEngines,
-        currentEngineId: sealed.currentEngineId,
-        ai: sealed.ai,
-        focusMode: sealed.focusMode,
-        privacy: sealed.privacy,
-        audio: sealed.audio,
-    };
+const isV6WirePayload = (raw: unknown): raw is {version: 6} =>
+    !!raw && typeof raw === 'object' && (raw as {version?: unknown}).version === 6;
 
-    // Strip conflict fields from sync payload — they are device-local bookkeeping.
-    delete (copy.sync as any).lastSyncedHash;
-    delete (copy.sync as any).conflictState;
-    delete (copy.sync as any).conflictSnapshot;
+/**
+ * v6 exports deliberately omit tileInstalls, so their wire payload is not a
+ * full ConfigV6 until the local-only registry has been rebuilt. Keep that
+ * distinction at the import boundary instead of feeding it to v5 normalize.
+ */
+const normalizeRemoteConfig = (raw: unknown): ConfigV6 => {
+    preflightConfigForReader(raw);
+    if (isV6WirePayload(raw)) return restoreConfigV6FromSyncExport(raw);
 
-    const wp = (copy?.theme?.wallpaper || '').trim?.() ? copy.theme.wallpaper.trim() : '';
-    if (wp.startsWith('idb:')) {
-        copy.theme.wallpaper = '';
-        copy.theme.wallpaperType = '';
-    }
+    const validation = validateImportedConfig(raw);
+    if (!validation.ok) throw new Error(validation.errors[0] || 'invalid sync payload');
+    return normalizeRuntimeConfig(raw);
+};
 
-    return JSON.stringify(copy);
+export const buildSyncPayload = (cfg: ConfigV6) => {
+    return buildConfigV6SyncPayload(cfg);
 };
 
 export const createSyncActions = ({
@@ -81,12 +87,12 @@ export const createSyncActions = ({
 
     const applyRemoteRaw = (remoteText: string) => {
         const raw = JSON.parse(remoteText);
-        const validation = validateImportedConfig(raw);
-        if (!validation.ok) throw new Error(validation.errors[0] || 'invalid sync payload');
-        const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(raw)), config.value);
+        const next = mergeLocalSensitiveFields(normalizeRemoteConfig(raw), config.value);
         next.runtime = config.value.runtime;
         // Preserve device-local conflict/hash fields — do not overwrite with remote values.
         next.sync.lastSyncedHash = config.value.sync.lastSyncedHash;
+        next.sync.syncSchemaUpgradePending = config.value.sync.syncSchemaUpgradePending;
+        next.sync.syncSchemaChannel = config.value.sync.syncSchemaChannel;
         next.sync.conflictState = undefined;
         next.sync.conflictSnapshot = undefined;
         applyingExternal.value = true;
@@ -113,7 +119,16 @@ export const createSyncActions = ({
         if (scheduler) return;
 
         scheduler = new SyncScheduler({
-            getProfile: () => config.value.sync,
+            // A just-migrated v6 profile must not auto-read or write the v5
+            // file. Manual restore remains available until confirmation.
+            getProfile: () => {
+                const profile = config.value.sync;
+                if (!isV6SyncWriteAuthorized(profile)) {
+                    return {...profile, enabled: false};
+                }
+                return profile;
+            },
+            getFileOptions: () => getV6SiblingFileOptions(config.value.sync),
             getUploadPayload: () => buildSyncPayload(config.value),
             getLocalRevision: () => localRevision.value,
             getCurrentHash: () => hashConfig(config.value),
@@ -126,8 +141,10 @@ export const createSyncActions = ({
                     recordSyncedHash();
                     if (meta?.etag) config.value.sync.lastRemoteEtag = meta.etag;
                     if (meta?.mtime) config.value.sync.lastRemoteMtime = meta.mtime;
-                } catch {
-                    notifySyncWarning('远端同步数据格式异常，已忽略本次更新');
+                } catch (error) {
+                    notifySyncWarning(isConfigVersionTooNew(error)
+                        ? `云端备份需要 v${error.foundVersion} 客户端；本地数据未改动`
+                        : '远端同步数据格式异常，已忽略本次更新');
                 }
             },
 
@@ -218,7 +235,7 @@ export const createSyncActions = ({
 
     // ── Standard backup actions ───────────────────────────────────────────────
 
-    const testSyncConnection = async (profile?: Config['sync']) => {
+    const testSyncConnection = async (profile?: ConfigV6['sync']) => {
         return await measurePerformanceAsync('config.sync.test', async () =>
             await syncService.test(profile ?? config.value.sync)
         );
@@ -226,12 +243,14 @@ export const createSyncActions = ({
 
     const uploadBackup = async () => {
         return await measurePerformanceAsync('config.sync.upload', async () => {
+            if (config.value.sync.syncSchemaUpgradePending) {
+                return {
+                    success: false,
+                    msg: '配置架构已升级；请确认所有设备支持 v6 后再启用 v6 同步',
+                };
+            }
             const now = Date.now();
-            const backupData = stripSensitiveConfigForSync(config.value);
-            backupData.sync.lastSyncTime = now;
-
-            const res = await syncService.upload(config.value.sync, backupData);
-
+            const res = await uploadConfigV6ToSibling(syncService, config.value.sync, config.value);
             if (res.ok) {
                 config.value.sync.lastSyncTime = now;
                 if (res.remoteEtag) config.value.sync.lastRemoteEtag = res.remoteEtag;
@@ -248,14 +267,17 @@ export const createSyncActions = ({
             const currentSync = {...config.value.sync};
             const currentRuntime = config.value.runtime;
 
-            const res = await syncService.download(config.value.sync);
+            const v6Options = getV6SiblingFileOptions(config.value.sync);
+            if (!v6Options) {
+                return {success: false, msg: '当前同步提供方不支持 v6 sibling 文件'};
+            }
+
+            const res = await syncService.download(config.value.sync, v6Options);
             if (!res.ok || !res.data) return {success: false, msg: res.message};
 
             try {
                 const parsed = JSON.parse(res.data);
-                const validation = validateImportedConfig(parsed);
-                if (!validation.ok) return {success: false, msg: `云端数据结构异常：${validation.errors[0]}`};
-                const next = mergeLocalSensitiveFields(normalizeConfig(migrateConfig(parsed)), config.value);
+                const next = mergeLocalSensitiveFields(normalizeRemoteConfig(parsed), config.value);
                 next.runtime = currentRuntime;
                 config.value = next;
                 normalizeLayoutItems();
@@ -269,7 +291,13 @@ export const createSyncActions = ({
                 clearConflict();
                 void saveConfig();
                 return {success: true, msg: '数据恢复成功'};
-            } catch {
+            } catch (error) {
+                if (isConfigVersionTooNew(error)) {
+                    return {
+                        success: false,
+                        msg: `云端备份需要 v${error.foundVersion} 客户端；本地数据未改动`,
+                    };
+                }
                 return {success: false, msg: '云端数据不是有效 JSON'};
             }
         });

@@ -1,8 +1,8 @@
 import type {Ref} from 'vue';
-import type {Config, SearchEngine} from '../../core/config/types';
+import type {ConfigV6, SearchEngine} from '../../core/config/types';
 import {validateSearchTemplate} from '../../core/search/searchUtils';
 
-export const createSearchActions = (config: Ref<Config>) => {
+export const createSearchActions = (config: Ref<ConfigV6>) => {
     const createEngineId = (name: string) => {
         const base = name
             .trim()

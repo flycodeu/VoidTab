@@ -12,9 +12,15 @@ export interface ConflictSummary {
     remoteLastModified: number;
 }
 
-function countSites(layout: Array<{ items?: unknown[] }> | unknown): number {
+function countTiles(layout: Array<{items?: unknown[]; tiles?: unknown[]}> | unknown): number {
     if (!Array.isArray(layout)) return 0;
-    return layout.reduce((sum: number, g: any) => sum + (Array.isArray(g.items) ? g.items.length : 0), 0);
+    return layout.reduce((sum: number, group) => {
+        if (!group || typeof group !== 'object') return sum;
+        const workspace = group as {items?: unknown[]; tiles?: unknown[]};
+        return sum + (Array.isArray(workspace.tiles)
+            ? workspace.tiles.length
+            : (Array.isArray(workspace.items) ? workspace.items.length : 0));
+    }, 0);
 }
 
 function themeLabel(theme: Record<string, unknown> | unknown): string {
@@ -37,8 +43,8 @@ export function buildConflictSummary(
     return {
         localGroupCount: Array.isArray(localConfig.layout) ? localConfig.layout.length : 0,
         remoteGroupCount: Array.isArray(remoteRaw.layout) ? remoteRaw.layout.length : 0,
-        localSiteCount: countSites(localConfig.layout),
-        remoteSiteCount: countSites(remoteRaw.layout),
+        localSiteCount: countTiles(localConfig.layout),
+        remoteSiteCount: countTiles(remoteRaw.layout),
         localThemeLabel: themeLabel(localConfig.theme),
         remoteThemeLabel: themeLabel(remoteRaw.theme),
         localLastModified: localConfig.sync?.lastSyncTime ?? 0,

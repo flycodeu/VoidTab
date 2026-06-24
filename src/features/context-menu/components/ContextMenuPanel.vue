@@ -8,7 +8,11 @@ import {
   PhPlus,
   PhAppWindow,
   PhGear,
-  PhCode
+  PhCode,
+  PhPalette,
+  PhArrowClockwise,
+  PhDownloadSimple,
+  PhUploadSimple
 } from '@phosphor-icons/vue';
 
 defineProps<{
@@ -27,6 +31,10 @@ const emit = defineEmits<{
   (e: 'resize', w: number, h: number): void;
   (e: 'addSite'): void;
   (e: 'addWidget'): void;
+  (e: 'importTile'): void;
+  (e: 'exportTile'): void;
+  (e: 'stylePreset', preset: 'clean' | 'soft' | 'vivid'): void;
+  (e: 'resetStyle'): void;
   (e: 'configWidget'): void;
   (e: 'edit'): void;
 
@@ -55,6 +63,11 @@ const emit = defineEmits<{
         <button @click="emit('addWidget')" class="menu-btn" type="button">
           <PhAppWindow size="16" class="opacity-70"/>
           添加组件
+        </button>
+
+        <button @click="emit('importTile')" class="menu-btn" type="button">
+          <PhUploadSimple size="16" class="opacity-70"/>
+          导入卡片实例
         </button>
 
         <div class="divider"></div>
@@ -86,6 +99,30 @@ const emit = defineEmits<{
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
         </button>
+
+        <div class="divider"></div>
+
+        <div class="style-panel">
+          <div class="style-title">
+            <PhPalette size="13" aria-hidden="true"/>
+            实例外观
+          </div>
+          <div class="grid grid-cols-3 gap-1">
+            <button @click="emit('stylePreset', 'clean')" class="style-chip" type="button">清爽</button>
+            <button @click="emit('stylePreset', 'soft')" class="style-chip" type="button">柔和</button>
+            <button @click="emit('stylePreset', 'vivid')" class="style-chip" type="button">醒目</button>
+          </div>
+          <button @click="emit('resetStyle')" class="menu-btn compact" type="button">
+            <PhArrowClockwise size="14" class="opacity-70"/>
+            重置外观
+          </button>
+        </div>
+
+        <button @click="emit('exportTile')" class="menu-btn" type="button">
+          <PhDownloadSimple size="16" class="opacity-70"/>
+          导出卡片实例
+        </button>
+
         <div class="divider"></div>
 
         <div
@@ -151,6 +188,29 @@ const emit = defineEmits<{
         <button @click="emit('toggleGlobalEdit')" class="menu-btn" type="button">
           <PhPencilSimple size="16" class="opacity-70"/>
           整理桌面
+        </button>
+
+        <div class="divider"></div>
+
+        <div class="style-panel">
+          <div class="style-title">
+            <PhPalette size="13" aria-hidden="true"/>
+            实例外观
+          </div>
+          <div class="grid grid-cols-3 gap-1">
+            <button @click="emit('stylePreset', 'clean')" class="style-chip" type="button">清爽</button>
+            <button @click="emit('stylePreset', 'soft')" class="style-chip" type="button">柔和</button>
+            <button @click="emit('stylePreset', 'vivid')" class="style-chip" type="button">醒目</button>
+          </div>
+          <button @click="emit('resetStyle')" class="menu-btn compact" type="button">
+            <PhArrowClockwise size="14" class="opacity-70"/>
+            重置外观
+          </button>
+        </div>
+
+        <button @click="emit('exportTile')" class="menu-btn" type="button">
+          <PhDownloadSimple size="16" class="opacity-70"/>
+          导出卡片实例
         </button>
 
         <div class="border-t border-black/5 dark:border-white/10 mt-1 pt-2 px-2 pb-1">
@@ -272,6 +332,10 @@ const emit = defineEmits<{
   hover:bg-black/5 dark:hover:bg-white/10 text-left w-full;
 }
 
+.menu-btn.compact {
+  @apply py-2 text-xs;
+}
+
 /* ✅ 不要在 @apply 里写 group */
 .danger-btn {
   @apply flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all
@@ -285,5 +349,18 @@ const emit = defineEmits<{
 .size-btn {
   @apply bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20
   rounded h-6 flex items-center justify-center text-current opacity-70 hover:opacity-100 transition-all;
+}
+
+.style-panel {
+  @apply px-2 py-1.5 rounded-lg bg-black/5 dark:bg-white/5 flex flex-col gap-1.5;
+}
+
+.style-title {
+  @apply flex items-center gap-1.5 text-[10px] opacity-50 font-bold tracking-wider;
+}
+
+.style-chip {
+  @apply h-7 rounded-md text-[11px] font-bold bg-black/5 dark:bg-white/10
+  hover:bg-[var(--accent-color)] hover:text-white transition-colors;
 }
 </style>

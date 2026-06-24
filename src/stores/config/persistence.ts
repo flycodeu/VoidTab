@@ -1,10 +1,10 @@
 import {watch, type Ref} from 'vue';
-import type {Config} from '../../core/config/types';
+import type {ConfigV6} from '../../core/config/types';
 import {configRepository} from '../../core/config/repository';
 import {measurePerformanceAsync} from '../../shared/utils/performance';
 
 type ConfigPersistenceDeps = {
-    config: Ref<Config>;
+    config: Ref<ConfigV6>;
     isLoaded: Ref<boolean>;
     applyingExternal: Ref<boolean>;
     localRevision: Ref<number>;

@@ -24,7 +24,7 @@ const widgetResetKey = computed(() => [
 ].join(':'));
 </script>
 <template>
-  <div class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 rounded-[18px] select-none bg-[#121212]">
+  <div class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 select-none bg-[#121212]">
     <!--   唯一的玻璃层：默认不 blur，hover/edit 才 blur -->
     <div
         class="absolute inset-0 bg-white/5 border border-white/10 z-0 transition-opacity transition-[backdrop-filter]"
@@ -63,7 +63,7 @@ const widgetResetKey = computed(() => [
 
     <div
         v-if="isEditMode"
-        class="absolute inset-0 z-20 pointer-events-none border-2 border-[var(--accent-color)]/30 rounded-[18px]"
+        class="absolute inset-0 z-20 pointer-events-none border-2 widget-edit-ring"
     />
   </div>
 </template>
@@ -71,5 +71,16 @@ const widgetResetKey = computed(() => [
 <style scoped>
 .widget-card {
   container-type: size;
+  border-radius: var(--tile-radius, 18px);
+  transform: scale(var(--tile-icon-scale, 1));
+  transform-origin: center;
+  box-shadow:
+      0 calc(var(--tile-elevation, 1) * 8px) calc(var(--tile-elevation, 1) * 18px) rgba(15, 23, 42, 0.14);
+}
+
+.widget-edit-ring {
+  border-radius: var(--tile-radius, 18px);
+  border-color: var(--tile-accent-color, var(--accent-color));
+  opacity: 0.36;
 }
 </style>

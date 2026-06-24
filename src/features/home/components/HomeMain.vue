@@ -196,7 +196,7 @@ watch(
         @contextmenu.stop="handleGlobalContextMenu"
     >
       <MainGrid
-          v-if="!isFocusMode"
+          v-show="!isFocusMode"
           :activeGroupId="activeGroupId"
           :isEditMode="isEditMode"
           :siteCardW="effectiveCardW"

@@ -205,6 +205,7 @@ test('config storage encrypts sensitive local fields and strips sync payload', a
   const sensitive = await read('src/core/config/sensitive.ts');
   const repository = await read('src/core/config/repository.ts');
   const syncActions = await read('src/stores/config/syncActions.ts');
+  const v6Channel = await read('src/core/sync/v6Channel.ts');
   const validate = await read('src/core/config/validate.ts');
 
   assert.match(sensitive, /sync\.password/);
@@ -218,7 +219,7 @@ test('config storage encrypts sensitive local fields and strips sync payload', a
   assert.match(repository, /completeBootLoad/);
   assert.match(repository, /restoreWallpaper:\s*false/);
   assert.match(repository, /saveLegacyMigration:\s*false/);
-  assert.match(syncActions, /stripSensitiveConfigForSync/);
+  assert.match(v6Channel, /stripSensitiveConfigForSync/);
   assert.match(syncActions, /mergeLocalSensitiveFields/);
   assert.match(syncActions, /buildSyncPayload/);
   assert.match(validate, /validateConfigForSave/);
@@ -292,11 +293,946 @@ test('interval widgets pause while document is hidden', async () => {
   assert.match(cron, /useVisibilityInterval\(calculateNextRun,\s*1000/);
 });
 
-test('MainGrid debounces resize and ResizeObserver recalculation', async () => {
+test('MainGrid measures focus/sidebar container changes on the next frame', async () => {
   const grid = await read('src/features/home/components/MainGrid.vue');
+  const home = await read('src/features/home/components/HomeMain.vue');
   assert.match(grid, /useDebounceFn/);
   assert.match(grid, /recalcGridDebounced/);
-  assert.match(grid, /new ResizeObserver\(\(\) => recalcGridDebounced\(\)\)/);
+  assert.match(grid, /scheduleImmediateGridMeasure/);
+  assert.match(grid, /new ResizeObserver\(\(\) => scheduleImmediateGridMeasure\(\)\)/);
+  assert.match(home, /<MainGrid\s+v-show="!isFocusMode"/);
+});
+
+test('TileHost routes canonical tiles through one legacy-prop adapter', async () => {
+  const grid = await read('src/features/home/components/MainGrid.vue');
+  const host = await read('src/features/home/components/TileHost.vue');
+  const registry = await read('src/core/tiles/registry.ts');
+
+  assert.match(grid, /import TileHost/);
+  assert.match(grid, /<TileHost/);
+  assert.doesNotMatch(grid, /v-if="item\.kind === 'widget'"/);
+  assert.match(host, /resolveTileDefinition/);
+  assert.match(host, /tile: TileInstance/);
+  assert.match(host, /toLegacyTileHostItem/);
+  assert.match(host, /<WidgetCard/);
+  assert.match(host, /<GlassCard/);
+  assert.match(registry, /registerBuiltinTileType/);
+  assert.doesNotMatch(registry, /SiteItem/);
+
+  assert.match(registry, /id: SITE_TILE_TYPE/);
+  assert.match(registry, /id: toBuiltinTileType\(widget\.type\)/);
+  assert.match(registry, /renderer: \{kind: 'site'\}/);
+  assert.match(registry, /createUnsupportedExternalTileDefinition/);
+  assert.match(registry, /builtinTileTypes\.get\(tileType\) \|\| createUnsupportedExternalTileDefinition\(tileType\)/);
+  assert.match(registry, /renderer: \{kind: 'widget', widgetType/);
+});
+
+test('P3.1 keeps v5 data at one pure canonical tile boundary', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const adapter = await read('src/core/tiles/legacyV5Adapter.ts');
+  const tileTypes = await read('src/core/tiles/tileType.ts');
+
+  assert.match(contracts, /interface SiteTile extends TileBase/);
+  assert.match(contracts, /interface ComponentTile extends TileBase/);
+  assert.match(contracts, /type TileInstance = SiteTile \| ComponentTile/);
+  assert.match(contracts, /type BuiltinTileType = `builtin:\$\{string\}`/);
+  assert.match(contracts, /type ExternalTileType = `external:\$\{string\}`/);
+  assert.match(adapter, /export function adaptLegacySiteItem/);
+  assert.doesNotMatch(adapter, /from ['"]vue['"]/);
+  assert.match(tileTypes, /export const SITE_TILE_TYPE = 'site'/);
+
+  await runBundledTypeScript('p3-1-legacy-tile-adapter', `
+    import assert from 'node:assert/strict';
+    import {
+      adaptLegacySiteItem,
+      cloneLegacyWidgetSettings,
+      getLegacySiteItemTileType,
+    } from '../../../src/core/tiles/legacyV5Adapter.ts';
+    import {
+      getLegacyBuiltinWidgetType,
+      isTileType,
+      toBuiltinTileType,
+      toExternalTileType,
+    } from '../../../src/core/tiles/tileType.ts';
+
+    const context = {
+      placement: {x: 3, y: 4, w: 2, h: 1},
+      revision: {updatedAt: 100, deviceId: 'migration-device', sequence: 1},
+      fallbackCreatedAt: 90,
+    };
+
+    const settings = {timezone: 'Asia/Shanghai', nested: {showSeconds: true}, ignored: Infinity};
+    settings.self = settings;
+    const legacyWidget = {
+      id: 'clock-1',
+      kind: 'widget',
+      title: '时钟',
+      widgetType: 'clock',
+      widgetConfig: settings,
+      createdAt: 12,
+      layouts: {desktop: {x: 1, y: 2, w: 2, h: 2}},
+    };
+    const settingsBefore = JSON.stringify({timezone: settings.timezone, nested: settings.nested});
+    const widget = adaptLegacySiteItem(legacyWidget, context);
+    assert.equal(widget.tileType, 'builtin:clock');
+    assert.equal(getLegacySiteItemTileType(legacyWidget), 'builtin:clock');
+    assert.equal(widget.title, '时钟');
+    assert.deepEqual(widget.layouts.desktop, {x: 1, y: 2, w: 2, h: 2});
+    assert.equal(widget.createdAt, 12);
+    assert.equal(widget.revision.deviceId, 'migration-device');
+    assert.ok('settings' in widget);
+    assert.deepEqual(widget.settings, {timezone: 'Asia/Shanghai', nested: {showSeconds: true}});
+    widget.settings.nested.showSeconds = false;
+    assert.equal(settings.nested.showSeconds, true);
+    assert.equal(JSON.stringify({timezone: settings.timezone, nested: settings.nested}), settingsBefore);
+
+    const legacySite = {
+      id: 'site-1',
+      title: '示例站点',
+      url: 'https://example.com',
+      iconType: 'auto',
+      tags: ['work', 123],
+    };
+    const site = adaptLegacySiteItem(legacySite, context);
+    assert.equal(site.tileType, 'site');
+    assert.equal(getLegacySiteItemTileType(legacySite), 'site');
+    assert.equal(site.url, 'https://example.com');
+    assert.deepEqual(site.layouts.desktop, context.placement);
+    assert.deepEqual(site.tags, ['work']);
+    assert.equal('settings' in site, false);
+
+    assert.deepEqual(cloneLegacyWidgetSettings(['not-an-object']), {});
+    assert.equal(toBuiltinTileType('builtin:clock'), 'builtin:clock');
+    assert.equal(toBuiltinTileType(''), 'builtin:missing');
+    assert.equal(toExternalTileType('vendor/tile'), 'external:vendor/tile');
+    assert.equal(getLegacyBuiltinWidgetType('builtin:clock'), 'clock');
+    assert.equal(getLegacyBuiltinWidgetType('site'), undefined);
+    assert.equal(isTileType('external:vendor/tile'), true);
+    assert.equal(isTileType('clock'), false);
+  `);
+});
+
+test('P3.2 exposes a v6 config model and renders canonical tiles without package execution', async () => {
+  const configTypes = await read('src/core/config/types.ts');
+  const configV6 = await read('src/core/config/v6.ts');
+  const host = await read('src/features/home/components/TileHost.vue');
+  const registry = await read('src/core/tiles/registry.ts');
+  const adapter = await read('src/core/tiles/tileHostAdapter.ts');
+  const externalDefinition = await read('src/core/tiles/externalDefinition.ts');
+
+  assert.match(configTypes, /interface ConfigV6 extends ConfigBase/);
+  assert.match(configTypes, /layout: Workspace\[\]/);
+  assert.match(configTypes, /tileInstalls: Record<string, TileInstallRecord>/);
+  assert.match(configV6, /export function isConfigV6/);
+  assert.match(host, /tile: TileInstance/);
+  assert.match(host, /toLegacyTileHostItem/);
+  assert.match(host, /isUnsupported/);
+  assert.match(registry, /resolveTileDefinition/);
+  assert.match(externalDefinition, /external-runtime-disabled/);
+  assert.match(adapter, /widgetConfig: tile\.settings/);
+
+  await runBundledTypeScript('p3-2-canonical-tile-host-boundary', `
+    import assert from 'node:assert/strict';
+    import {isConfigV6} from '../../../src/core/config/v6.ts';
+    import {createUnsupportedExternalTileDefinition} from '../../../src/core/tiles/externalDefinition.ts';
+    import {toLegacyTileHostItem} from '../../../src/core/tiles/tileHostAdapter.ts';
+
+    const revision = {updatedAt: 1, deviceId: 'device-a', sequence: 1};
+    const layouts = {desktop: {x: 2, y: 3, w: 2, h: 1}};
+    const site = {
+      id: 'site-1', tileType: 'site', title: 'Example', url: 'https://example.com',
+      tags: ['work'], layouts, createdAt: 1, revision,
+    };
+    const siteView = toLegacyTileHostItem(site);
+    assert.equal(siteView.kind, 'site');
+    assert.equal(siteView.url, 'https://example.com');
+    assert.equal(siteView.w, 2);
+
+    const settings = {timezone: 'Asia/Shanghai'};
+    const clock = {
+      id: 'clock-1', tileType: 'builtin:clock', title: 'Clock', settings,
+      layouts, createdAt: 1, revision,
+    };
+    const clockView = toLegacyTileHostItem(clock);
+    assert.equal(clockView.kind, 'widget');
+    assert.equal(clockView.widgetType, 'clock');
+    assert.equal(clockView.widgetConfig, settings);
+    clockView.widgetConfig.timezone = 'UTC';
+    assert.equal(settings.timezone, 'UTC');
+
+    const external = createUnsupportedExternalTileDefinition('external:acme/weather');
+    assert.equal(external.renderer.kind, 'unsupported');
+    assert.equal(external.id, 'external:acme/weather');
+
+    assert.equal(isConfigV6({version: 6, layout: [], tileInstalls: {}}), true);
+    assert.equal(isConfigV6({version: 5, layout: [], tileInstalls: {}}), false);
+    assert.equal(isConfigV6({version: 6, layout: []}), false);
+  `);
+});
+
+test('P3.3 migrates v5 layout data deterministically without writing configuration state', async () => {
+  const migration = await read('src/core/config/migrateV5ToV6.ts');
+  const legacyMigration = await read('src/core/config/migrate.ts');
+  const versioning = await read('src/core/config/versioning.ts');
+
+  assert.match(migration, /export function migrateV5ToV6/);
+  assert.match(migration, /FLOW_MIGRATION_COLUMNS = 14/);
+  assert.match(migration, /solveCanvasLayout/);
+  assert.doesNotMatch(migration, /from ['"]vue['"]/);
+  assert.doesNotMatch(migration, /localStorage|indexedDB|fetch\(/);
+  assert.match(legacyMigration, /new ConfigVersionTooNew/);
+  assert.match(versioning, /class ConfigVersionTooNew/);
+
+  await runBundledTypeScript('p3-3-v5-to-v6-migration', `
+    import assert from 'node:assert/strict';
+    import {migrateConfig} from '../../../src/core/config/migrate.ts';
+    import {
+      ConfigV5MigrationPreflightError,
+      migrateV5ToV6,
+    } from '../../../src/core/config/migrateV5ToV6.ts';
+    import {ConfigVersionTooNew} from '../../../src/core/config/versioning.ts';
+
+    const source = {
+      version: 5,
+      focusMode: true,
+      layout: [
+        {
+          id: 'canvas', title: '画布', icon: 'Folder',
+          workspaceLayout: {mode: 'canvas', profiles: {desktop: {unit: 96, gap: 16, minCols: 4, maxCols: 4}}},
+          items: [
+            {id: 'site-a', kind: 'site', title: 'A', url: 'https://a.example', layouts: {desktop: {x: 0, y: 0, w: 2, h: 1}}},
+            {id: 'clock-a', kind: 'widget', title: 'Clock', widgetType: 'clock', widgetConfig: {timezone: 'Asia/Shanghai'}, layouts: {desktop: {x: 0, y: 0, w: 2, h: 1}}},
+            null,
+          ],
+        },
+        {
+          id: 'flow', title: '流式', icon: 'Folder',
+          items: [
+            {id: 'legacy-widget', kind: 'widget', widgetType: 'legacy/widget', widgetConfig: {value: 1}, w: 2, h: 1},
+            {id: 'duplicate', kind: 'site', title: 'First', url: 'https://one.example'},
+            {id: 'duplicate', kind: 'site', title: 'Second', url: 'https://two.example'},
+          ],
+        },
+      ],
+    };
+    const before = JSON.parse(JSON.stringify(source));
+    const options = {deviceId: 'device-migration', migratedAt: 123456};
+    const first = migrateV5ToV6(source, options);
+    const second = migrateV5ToV6(source, options);
+
+    assert.deepEqual(source, before);
+    assert.equal(first.migrated, true);
+    assert.deepEqual(first, second);
+    assert.equal(first.config.version, 6);
+    assert.deepEqual(first.config.tileInstalls, {});
+    assert.equal(first.config.focusMode, true);
+    assert.equal(first.config.layout[0].tiles[0].tileType, 'site');
+    assert.equal(first.config.layout[0].tiles[1].tileType, 'builtin:clock');
+    assert.equal(first.config.layout[0].tiles[1].settings.timezone, 'Asia/Shanghai');
+    assert.equal(first.config.layout[0].tiles[2].tileType, 'builtin:missing');
+    assert.deepEqual(first.config.layout[0].tiles[2].settings.legacy, {raw: null});
+    assert.ok(first.warnings.some((warning) => warning.code === 'canvas-placement-repaired'));
+
+    const [canvasSite, canvasClock] = first.config.layout[0].tiles;
+    const overlaps = canvasSite.layouts.desktop.x < canvasClock.layouts.desktop.x + canvasClock.layouts.desktop.w
+      && canvasSite.layouts.desktop.x + canvasSite.layouts.desktop.w > canvasClock.layouts.desktop.x
+      && canvasSite.layouts.desktop.y < canvasClock.layouts.desktop.y + canvasClock.layouts.desktop.h
+      && canvasSite.layouts.desktop.y + canvasSite.layouts.desktop.h > canvasClock.layouts.desktop.y;
+    assert.equal(overlaps, false);
+
+    const flowTiles = first.config.layout[1].tiles;
+    assert.equal(flowTiles[0].tileType, 'builtin:legacy/widget');
+    assert.deepEqual(flowTiles[0].layouts.desktop, {x: 0, y: 0, w: 2, h: 1});
+    assert.deepEqual(flowTiles[1].layouts.desktop, {x: 2, y: 0, w: 1, h: 1});
+    assert.equal(flowTiles[2].id, 'duplicate~2');
+    assert.ok(first.warnings.some((warning) => warning.code === 'duplicate-tile-id'));
+
+    const idempotent = migrateV5ToV6(first.config, options);
+    assert.equal(idempotent.migrated, false);
+    assert.deepEqual(idempotent.config, first.config);
+    assert.notEqual(idempotent.config, first.config);
+
+    assert.throws(() => migrateV5ToV6({version: 5, layout: null}, options), ConfigV5MigrationPreflightError);
+    assert.throws(() => migrateV5ToV6({version: 7, layout: []}, options), ConfigVersionTooNew);
+    assert.equal(migrateConfig({version: 6, layout: [], tileInstalls: {}}).version, 6);
+    assert.throws(() => migrateConfig({version: 7}), ConfigVersionTooNew);
+  `);
+});
+
+test('P3.4 commits v6 only after an encrypted v5 backup and validation succeed', async () => {
+  const transaction = await read('src/core/config/v6MigrationTransaction.ts');
+  const v6 = await read('src/core/config/v6.ts');
+  const keys = await read('src/core/config/keys.ts');
+  const repository = await read('src/core/config/repository.ts');
+
+  assert.match(transaction, /commitConfigV5ToV6Migration/);
+  assert.match(transaction, /await deps\.storage\.set\(backupKey, backup, 'local'\)/);
+  assert.match(transaction, /await deps\.storage\.set\(CONFIG_KEY, sealedV6, 'local'\)/);
+  assert.match(transaction, /restoreConfigV5Backup/);
+  assert.match(v6, /export function normalizeConfigV6/);
+  assert.match(v6, /export function validateConfigForSaveV6/);
+  assert.match(keys, /CONFIG_V5_BACKUP_PREFIX/);
+  assert.match(repository, /commitConfigV5ToV6Migration/);
+
+  await runBundledTypeScript('p3-4-v6-migration-transaction', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {CONFIG_KEY} from '../../../src/core/config/keys.ts';
+    import {
+      ConfigV6MigrationTransactionError,
+      commitConfigV5ToV6Migration,
+      restoreConfigV5Backup,
+    } from '../../../src/core/config/v6MigrationTransaction.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const source = clone(defaultConfig);
+    source.sync.password = 'webdav-secret';
+    source.ai.apiKey = 'api-secret';
+    const values = new Map([[CONFIG_KEY, clone(source)]]);
+    const writes = [];
+    const fakeStorage = {
+      async get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+      async set(key, value) { writes.push({key, value: clone(value)}); values.set(key, clone(value)); },
+    };
+    const seal = async (config) => {
+      const copy = clone(config);
+      copy.sync.password = copy.sync.password ? 'sealed:' + copy.sync.password : '';
+      copy.ai.apiKey = copy.ai.apiKey ? 'sealed:' + copy.ai.apiKey : '';
+      return copy;
+    };
+    const options = {deviceId: 'transaction-device', migratedAt: 222222};
+    const committed = await commitConfigV5ToV6Migration(source, options, {storage: fakeStorage, seal});
+    assert.equal(committed.config.version, 6);
+    assert.equal(values.get(CONFIG_KEY).version, 6);
+    const backup = values.get(committed.backupKey);
+    assert.equal(backup.format, 1);
+    assert.equal(backup.config.version, 5);
+    assert.equal(backup.config.sync.password, 'sealed:webdav-secret');
+    assert.ok(writes.findIndex((write) => write.key === committed.backupKey) < writes.findIndex((write) => write.key === CONFIG_KEY));
+
+    await restoreConfigV5Backup(committed.backupKey, {storage: fakeStorage});
+    assert.equal(values.get(CONFIG_KEY).version, 5);
+    assert.equal(values.get(CONFIG_KEY).sync.password, 'sealed:webdav-secret');
+
+    const failureValues = new Map([[CONFIG_KEY, clone(source)]]);
+    const failureStorage = {
+      async get(key, fallback) { return failureValues.has(key) ? failureValues.get(key) : fallback; },
+      async set(key, value) { failureValues.set(key, clone(value)); },
+    };
+    await assert.rejects(
+      () => commitConfigV5ToV6Migration(source, options, {
+        storage: failureStorage,
+        seal,
+        validate: () => ({ok: false, errors: ['fixture validation failure'], warnings: []}),
+      }),
+      (error) => error instanceof ConfigV6MigrationTransactionError && error.phase === 'migrate',
+    );
+    assert.equal(failureValues.get(CONFIG_KEY).version, 5);
+    assert.ok([...failureValues.keys()].some((key) => key.includes('config-backup:v5:')));
+
+    const commitFailureValues = new Map([[CONFIG_KEY, clone(source)]])
+    const commitFailureStorage = {
+      async get(key, fallback) { return commitFailureValues.has(key) ? commitFailureValues.get(key) : fallback; },
+      async set(key, value) {
+        if (key === CONFIG_KEY && value.version === 6) throw new Error('simulated main write failure');
+        commitFailureValues.set(key, clone(value));
+      },
+    };
+    await assert.rejects(
+      () => commitConfigV5ToV6Migration(source, options, {storage: commitFailureStorage, seal}),
+      (error) => error instanceof ConfigV6MigrationTransactionError && error.phase === 'commit',
+    );
+    assert.equal(commitFailureValues.get(CONFIG_KEY).version, 5);
+    assert.equal(commitFailureValues.get(CONFIG_KEY).sync.password, 'sealed:webdav-secret');
+  `);
+});
+
+test('P3.5 migrates privacy payloads only after unlock and renders the canonical v2 payload', async () => {
+  const types = await read('src/core/config/types.ts');
+  const payloadMigration = await read('src/core/privacy/payloadMigration.ts');
+  const crypto = await read('src/core/privacy/vaultCrypto.ts');
+  const actions = await read('src/stores/config/privacyActions.ts');
+  const modal = await read('src/features/privacy/components/PrivacyVaultModal.vue');
+  const normalize = await read('src/core/config/normalize.ts');
+
+  assert.match(types, /interface PrivacyVaultPayloadV1/);
+  assert.match(types, /interface PrivacyVaultPayloadV2/);
+  assert.match(types, /type PrivacyVaultPayload = PrivacyVaultPayloadV1 \| PrivacyVaultPayloadV2/);
+  assert.match(payloadMigration, /export function migratePrivacyVaultPayloadV1ToV2/);
+  assert.match(payloadMigration, /projectPrivacyVaultPayloadV2ToV1/);
+  assert.match(crypto, /payload\.version === 2/);
+  assert.match(actions, /if \(opened\.version === 1\)/);
+  assert.match(actions, /await saveConfig\(\)/);
+  assert.doesNotMatch(actions, /privacyLegacyView/);
+  assert.match(modal, /store\.privacyPayload/);
+  assert.match(modal, /entry\.workspace\.tiles\.length/);
+  assert.doesNotMatch(modal, /store\.privacyLegacyView/);
+  assert.doesNotMatch(normalize, /openPrivacyVaultEnvelope/);
+
+  await runBundledTypeScript('p3-5-privacy-payload-migration', `
+    import assert from 'node:assert/strict';
+    import {
+      migratePrivacyVaultPayloadV1ToV2,
+      projectPrivacyVaultPayloadV2ToV1,
+    } from '../../../src/core/privacy/payloadMigration.ts';
+
+    const source = {
+      version: 1,
+      groups: [{
+        group: {
+          id: 'private-group', title: '私密分组', icon: 'Folder',
+          workspaceLayout: {mode: 'canvas', profiles: {desktop: {unit: 96, gap: 16, minCols: 4, maxCols: 6}}},
+          items: [
+            {id: 'private-site', kind: 'site', title: 'Secret', url: 'https://secret.example', tags: ['private']},
+            {id: 'private-clock', kind: 'widget', widgetType: 'clock', widgetConfig: {timezone: 'Asia/Shanghai'}},
+          ],
+        },
+        originalIndex: 2,
+        movedAt: 100,
+      }],
+      sites: [{
+        site: {id: 'standalone-site', kind: 'site', title: 'Standalone', url: 'https://one.example'},
+        originalGroupId: 'restored-group',
+        originalGroupTitle: '恢复位置',
+        originalIndex: 1,
+        movedAt: 101,
+      }],
+    };
+    const before = JSON.parse(JSON.stringify(source));
+    const options = {deviceId: 'privacy-device', migratedAt: 333333};
+    const first = migratePrivacyVaultPayloadV1ToV2(source, options);
+    const second = migratePrivacyVaultPayloadV1ToV2(source, options);
+
+    assert.deepEqual(source, before);
+    assert.deepEqual(first, second);
+    assert.equal(first.payload.version, 2);
+    assert.equal(first.payload.workspaces.length, 1);
+    assert.equal(first.payload.workspaces[0].workspace.tiles[0].tileType, 'site');
+    assert.equal(first.payload.workspaces[0].workspace.tiles[1].tileType, 'builtin:clock');
+    assert.equal(first.payload.tiles[0].tile.tileType, 'site');
+
+    const legacyView = projectPrivacyVaultPayloadV2ToV1(first.payload);
+    assert.equal(legacyView.version, 1);
+    assert.equal(legacyView.groups[0].group.items[1].widgetType, 'clock');
+    assert.equal(legacyView.sites[0].site.url, 'https://one.example');
+    legacyView.groups[0].group.items[1].widgetConfig.timezone = 'UTC';
+    assert.equal(first.payload.workspaces[0].workspace.tiles[1].settings.timezone, 'Asia/Shanghai');
+  `);
+});
+
+test('P3.6 isolates v6 sync files and rejects future configuration before normalization', async () => {
+  const preflight = await read('src/core/config/preflight.ts');
+  const upgrade = await read('src/core/config/syncSchemaUpgrade.ts');
+  const channel = await read('src/core/sync/v6Channel.ts');
+  const syncTypes = await read('src/core/sync/types.ts');
+  const webdav = await read('src/core/sync/providers/webdav.ts');
+  const syncActions = await read('src/stores/config/syncActions.ts');
+  const dataTab = await read('src/features/settings/components/tabs/DataTab.vue');
+  const transaction = await read('src/core/config/v6MigrationTransaction.ts');
+
+  assert.match(preflight, /export function preflightConfigForReader/);
+  assert.match(preflight, /ConfigVersionTooNew/);
+  assert.match(upgrade, /markConfigV6SyncSchemaUpgradePending/);
+  assert.match(upgrade, /confirmV6SyncSchemaUpgrade/);
+  assert.match(channel, /getV6SiblingFilename/);
+  assert.match(channel, /minReaderVersion: V6_MIN_READER_VERSION/);
+  assert.match(channel, /tileInstalls: \{\}/);
+  assert.match(syncTypes, /syncSchemaUpgradePending/);
+  assert.match(syncTypes, /SyncFileOptions/);
+  assert.match(webdav, /options\?\.filename \|\| p\.filename/);
+  assert.match(syncActions, /preflightConfigForReader\(raw\)/);
+  assert.match(syncActions, /syncSchemaUpgradePending/);
+  assert.match(channel, /omitDeviceLocalSyncMetadata/);
+  assert.match(channel, /stripSensitiveConfigForSync/);
+  assert.match(syncActions, /uploadConfigV6ToSibling/);
+  assert.match(syncActions, /getV6SiblingFileOptions/);
+  assert.match(syncActions, /restoreConfigV6FromSyncExport/);
+  assert.match(syncActions, /isV6SyncWriteAuthorized/);
+  assert.match(dataTab, /preflightConfigForReader\(raw\)/);
+  assert.match(dataTab, /createConfigV6SyncExport/);
+  assert.match(dataTab, /restoreConfigV6FromSyncExport/);
+  assert.match(transaction, /markConfigV6SyncSchemaUpgradePending/);
+
+  await runBundledTypeScript('p3-6-v6-sync-isolation', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {ConfigVersionTooNew} from '../../../src/core/config/versioning.ts';
+    import {preflightConfigForReader} from '../../../src/core/config/preflight.ts';
+    import {
+      confirmV6SyncSchemaUpgrade,
+      isV6SyncWriteAuthorized,
+      markSyncSchemaUpgradePending,
+    } from '../../../src/core/config/syncSchemaUpgrade.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {
+      buildConfigV6SyncPayload,
+      createConfigV6SyncExport,
+      getV6SiblingFilename,
+      restoreConfigV6FromSyncExport,
+      uploadConfigV6ToSibling,
+    } from '../../../src/core/sync/v6Channel.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const legacy = clone(defaultConfig);
+    legacy.sync.enabled = true;
+    legacy.sync.autoSync = true;
+    legacy.sync.password = 'webdav-secret';
+    legacy.ai.apiKey = 'api-secret';
+    legacy.runtime.auth.jwtToken = 'runtime-secret';
+    const config = normalizeConfigV6(migrateV5ToV6(legacy, {
+      deviceId: 'p3-6-device',
+      migratedAt: 444444,
+    }).config);
+
+    const portable = createConfigV6SyncExport(config);
+    assert.equal(portable.version, 6);
+    assert.equal(portable.minReaderVersion, 6);
+    assert.equal(portable.sync.password, '');
+    assert.equal(portable.ai.apiKey, '');
+    assert.equal('runtime' in portable, false);
+    assert.equal('tileInstalls' in portable, false);
+    assert.equal('syncSchemaUpgradePending' in portable.sync, false);
+    assert.equal('syncSchemaChannel' in portable.sync, false);
+    assert.equal(JSON.parse(buildConfigV6SyncPayload(config)).version, 6);
+
+    const restored = restoreConfigV6FromSyncExport(portable);
+    assert.equal(restored.version, 6);
+    assert.deepEqual(restored.tileInstalls, {});
+    assert.equal(restored.layout[0].tiles.length, config.layout[0].tiles.length);
+
+    assert.equal(getV6SiblingFilename('voidtab-backup.json'), 'voidtab-backup.v6.json');
+    assert.equal(getV6SiblingFilename('custom'), 'custom.v6.json');
+    assert.equal(getV6SiblingFilename('already.v6.json'), 'already.v6.json');
+
+    assert.throws(() => preflightConfigForReader({version: 7}), ConfigVersionTooNew);
+    assert.doesNotThrow(() => preflightConfigForReader({version: 6}));
+    assert.throws(() => preflightConfigForReader({version: 6, minReaderVersion: 7}, 6), ConfigVersionTooNew);
+
+    const pending = markSyncSchemaUpgradePending(config.sync);
+    assert.equal(pending.syncSchemaUpgradePending, true);
+    assert.equal(pending.syncSchemaChannel, 'legacy-v5');
+    assert.equal(isV6SyncWriteAuthorized(pending), false);
+    const confirmed = confirmV6SyncSchemaUpgrade(pending);
+    assert.equal(isV6SyncWriteAuthorized(confirmed), true);
+
+    const calls = [];
+    const fakeService = {
+      async upload(profile, payload, options) {
+        calls.push({profile, payload, options});
+        return {ok: true, message: 'uploaded'};
+      },
+    };
+    const blocked = await uploadConfigV6ToSibling(fakeService, pending, config);
+    assert.equal(blocked.ok, false);
+    const uploaded = await uploadConfigV6ToSibling(fakeService, confirmed, config);
+    assert.equal(uploaded.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.filename, 'voidtab-backup.v6.json');
+    assert.equal(JSON.parse(calls[0].payload).minReaderVersion, 6);
+  `);
+});
+
+test('P3.7 runs runtime consumers on canonical Workspace.tiles only', async () => {
+  const types = await read('src/core/config/types.ts');
+  const repository = await read('src/core/config/repository.ts');
+  const tileAccess = await read('src/core/tiles/tileAccess.ts');
+  const siteActions = await read('src/stores/config/siteActions.ts');
+  const layoutActions = await read('src/stores/config/layoutActions.ts');
+  const iconActions = await read('src/stores/config/iconActions.ts');
+  const mainGrid = await read('src/features/home/components/MainGrid.vue');
+  const mobileNav = await read('src/features/navigation/components/MobileGroupNav.vue');
+  const sidebarButton = await read('src/features/navigation/components/sidebar/SidebarGroupButton.vue');
+  const privacyActions = await read('src/stores/config/privacyActions.ts');
+  const terminal = await read('src/features/terminal/components/TerminalPanel.vue');
+  const searchUtils = await read('src/core/search/searchUtils.ts');
+  const searchBar = await read('src/features/widgets/builtins/search/SearchBar.vue');
+  const bookmarkExport = await read('src/core/bookmarks/export.ts');
+  const contextMenu = await read('src/features/context-menu/components/ContextMenu.vue');
+
+  assert.match(types, /export type Config = ConfigV5 \| ConfigV6/);
+  assert.match(repository, /normalizeConfigForRuntime/);
+  assert.match(repository, /validateConfigForSaveV6/);
+  assert.match(tileAccess, /export function getWorkspaceTiles/);
+  assert.match(tileAccess, /export function createSiteTile/);
+  assert.match(tileAccess, /export function createComponentTile/);
+  assert.match(tileAccess, /export function updateTile/);
+  assert.match(tileAccess, /export function removeTile/);
+  assert.match(siteActions, /createSiteTile: addSite/);
+  assert.match(siteActions, /removeTile: removeSite/);
+  assert.match(layoutActions, /createComponentTile: addWidget/);
+  assert.match(iconActions, /getWorkspaceTiles/);
+  assert.match(mainGrid, /getWorkspaceTiles/);
+  assert.match(mainGrid, /:tile="item"/);
+  assert.match(mobileNav, /getWorkspaceTileCount/);
+  assert.match(sidebarButton, /getWorkspaceTileCount/);
+  assert.match(privacyActions, /privacyTileToRuntimeTile/);
+  assert.match(terminal, /getRuntimeWorkspaces/);
+  assert.match(terminal, /getWorkspaceTiles/);
+  assert.doesNotMatch(terminal, /getLegacyLayoutGroups/);
+  assert.match(searchUtils, /group\.tiles/);
+  assert.match(searchBar, /findLocalResults/);
+  assert.match(bookmarkExport, /g\.tiles/);
+  assert.match(contextMenu, /getLegacyWidgetType/);
+  assert.doesNotMatch(contextMenu, /item\?\.widgetType/);
+
+  await runBundledTypeScript('p3-7-runtime-consumer-tile-access', `
+    import assert from 'node:assert/strict';
+    import {exportBookmarksToHtml} from '../../../src/core/bookmarks/export.ts';
+    import {migrateConfig} from '../../../src/core/config/migrate.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {normalizeConfigV6, validateConfigForSaveV6} from '../../../src/core/config/v6.ts';
+    import {findLocalResults} from '../../../src/core/search/searchUtils.ts';
+    import {
+      createComponentTile,
+      createSiteTile,
+      createWorkspace,
+      findTile,
+      findWorkspace,
+      getWorkspaceTileCount,
+      getWorkspaceTiles,
+      removeTile,
+      setWorkspaceTiles,
+      updateTile,
+    } from '../../../src/core/tiles/tileAccess.ts';
+
+    const legacy = {
+      version: 5,
+      sync: {provider: 'webdav', enabled: false, autoSync: false},
+      layout: [{
+        id: 'work',
+        title: 'Work',
+        icon: 'Folder',
+        items: [
+          {id: 'site-1', kind: 'site', title: 'One', url: 'https://one.example', tags: ['a']},
+          {id: 'clock-1', kind: 'widget', widgetType: 'clock', widgetConfig: {timezone: 'Asia/Shanghai'}, w: 2, h: 2},
+        ],
+      }],
+    };
+    const migrated = normalizeConfigV6(migrateV5ToV6(legacy, {
+      deviceId: 'p3-7-device',
+      migratedAt: 555555,
+    }).config);
+
+    assert.equal(migrateConfig(migrated).version, 6);
+    assert.equal(validateConfigForSaveV6(migrated).ok, true);
+    const workspace = findWorkspace(migrated, 'work');
+    assert.ok(workspace);
+    assert.equal(getWorkspaceTileCount(workspace), 2);
+    assert.equal(getWorkspaceTiles(workspace)[0].tileType, 'site');
+
+    const site = createSiteTile({
+      id: 'site-2', title: 'Two', url: 'https://two.example',
+      layouts: {desktop: {x: 2, y: 0, w: 3, h: 1}},
+    });
+    getWorkspaceTiles(workspace).push(site);
+    assert.equal(findTile(workspace, 'site-2').tileType, 'site');
+    updateTile(site, {title: 'Two Updated', tags: ['x', 1]});
+    assert.equal(site.title, 'Two Updated');
+    assert.deepEqual(site.tags, ['x']);
+
+    const widget = createComponentTile('weather', {
+      id: 'weather-1', settings: {city: 'Shanghai'},
+      layouts: {desktop: {x: 5, y: 0, w: 2, h: 2}},
+    });
+    getWorkspaceTiles(workspace).push(widget);
+    assert.equal(widget.tileType, 'builtin:weather');
+    assert.equal(widget.settings.city, 'Shanghai');
+
+    const removed = removeTile(workspace, 'clock-1');
+    assert.equal(removed.tileType, 'builtin:clock');
+    setWorkspaceTiles(workspace, [widget, site, getWorkspaceTiles(workspace)[0]]);
+    assert.deepEqual(getWorkspaceTiles(workspace).map((tile) => tile.id), ['weather-1', 'site-2', 'site-1']);
+
+    const localResults = findLocalResults(migrated.layout, 'two', 10);
+    assert.equal(localResults.length, 1);
+    assert.equal(localResults[0].id, 'site-2');
+
+    const html = exportBookmarksToHtml(migrated);
+    assert.match(html, /https:\\/\\/two\\.example/);
+    assert.doesNotMatch(html, /weather-1/);
+
+    const restoredWorkspace = createWorkspace({
+      id: 'restored', title: 'Restored', icon: 'Folder',
+      tiles: getWorkspaceTiles(workspace),
+    });
+    assert.equal(restoredWorkspace.tiles.length, 3);
+  `);
+});
+
+test('P3.8 migration fixtures preserve recoverable data and isolate v6 writes', async () => {
+  const fixtureSource = await read('scripts/fixtures/p3MigrationFixtures.ts');
+  const migration = await read('src/core/config/migrateV5ToV6.ts');
+  const privacyActions = await read('src/stores/config/privacyActions.ts');
+  const syncActions = await read('src/stores/config/syncActions.ts');
+  const registry = await read('src/core/tiles/registry.ts');
+
+  assert.match(fixtureSource, /LEGACY_BUILTIN_WIDGET_TYPES/);
+  assert.match(fixtureSource, /createPureBookmarkFlowFixture/);
+  assert.match(fixtureSource, /createCanvasPlacementFixture/);
+  assert.match(fixtureSource, /createMalformedItemFixture/);
+  assert.match(migration, /hasMalformedWidgetSettings/);
+  assert.match(privacyActions, /resealPrivacyVaultEnvelope/);
+  assert.match(syncActions, /isV6SyncWriteAuthorized/);
+  assert.match(registry, /createUnsupportedExternalTileDefinition/);
+
+  await runBundledTypeScript('p3-8-migration-fixtures', `
+    import assert from 'node:assert/strict';
+    import {ref} from 'vue';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {ConfigVersionTooNew} from '../../../src/core/config/versioning.ts';
+    import {commitConfigV5ToV6Migration} from '../../../src/core/config/v6MigrationTransaction.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {createPrivacyVaultEnvelope, openPrivacyVaultEnvelope} from '../../../src/core/privacy/vaultCrypto.ts';
+    import {createPrivacyActions} from '../../../src/stores/config/privacyActions.ts';
+    import {getLegacyBuiltinWidgetType} from '../../../src/core/tiles/tileType.ts';
+    import {confirmV6SyncSchemaUpgrade, markSyncSchemaUpgradePending} from '../../../src/core/config/syncSchemaUpgrade.ts';
+    import {uploadConfigV6ToSibling} from '../../../src/core/sync/v6Channel.ts';
+    import {
+      LEGACY_BUILTIN_WIDGET_TYPES,
+      P3_FIXTURE_MIGRATION_OPTIONS,
+      createBuiltinWidgetFixture,
+      createCanvasPlacementFixture,
+      createMalformedItemFixture,
+      createPrivacyVaultV1Fixture,
+      createPureBookmarkFlowFixture,
+      createUnregisteredWidgetFixture,
+    } from '../../../scripts/fixtures/p3MigrationFixtures.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const migrate = (source) => migrateV5ToV6(source, P3_FIXTURE_MIGRATION_OPTIONS);
+    const overlaps = (left, right) => left.x < right.x + right.w
+      && left.x + left.w > right.x
+      && left.y < right.y + right.h
+      && left.y + left.h > right.y;
+
+    // v5 flow: order and all bookmark fields survive the canonical conversion.
+    const pureSource = createPureBookmarkFlowFixture();
+    const pureBefore = clone(pureSource);
+    const pure = migrate(pureSource);
+    assert.deepEqual(pureSource, pureBefore);
+    const pureTiles = pure.config.layout[0].tiles;
+    assert.deepEqual(pureTiles.map((tile) => tile.id), ['alpha', 'beta', 'gamma']);
+    assert.deepEqual(pureTiles.map((tile) => tile.tileType), ['site', 'site', 'site']);
+    assert.equal(pureTiles[0].url, pureSource.layout[0].items[0].url);
+    assert.equal(pureTiles[0].icon, pureSource.layout[0].items[0].icon);
+    assert.deepEqual(pureTiles[0].tags, pureSource.layout[0].items[0].tags);
+    assert.equal(pureTiles[1].iconType, 'text');
+    assert.equal(pureTiles[2].iconType, 'icon');
+
+    // Every legacy built-in name maps to a namespaced tile and retains JSON settings.
+    const builtinsSource = createBuiltinWidgetFixture();
+    const builtinResult = migrate(builtinsSource);
+    const builtinTiles = builtinResult.config.layout[0].tiles;
+    assert.equal(LEGACY_BUILTIN_WIDGET_TYPES.length, 26);
+    assert.equal(builtinTiles.length, LEGACY_BUILTIN_WIDGET_TYPES.length);
+    for (const [index, widgetType] of LEGACY_BUILTIN_WIDGET_TYPES.entries()) {
+      const tile = builtinTiles[index];
+      const source = builtinsSource.layout[0].items[index];
+      assert.equal(tile.tileType, \`builtin:\${widgetType}\`);
+      assert.deepEqual(tile.settings, source.widgetConfig);
+      assert.equal(tile.layouts.desktop.w, source.w);
+      assert.equal(tile.layouts.desktop.h, source.h);
+    }
+
+    // Explicit P1 profile placements are copied without a hidden projection write.
+    const canvasSource = createCanvasPlacementFixture();
+    const canvasResult = migrate(canvasSource);
+    const canvasTiles = canvasResult.config.layout[0].tiles;
+    for (const [index, tile] of canvasTiles.entries()) {
+      const expected = canvasSource.layout[0].items[index].layouts;
+      assert.deepEqual(tile.layouts, expected);
+    }
+    for (const profile of ['desktop', 'tablet', 'mobile']) {
+      assert.equal(overlaps(canvasTiles[0].layouts[profile], canvasTiles[1].layouts[profile]), false);
+    }
+
+    // An uninstalled legacy widget remains a namespaced recoverable record.
+    const unregisteredSource = createUnregisteredWidgetFixture();
+    const unregistered = migrate(unregisteredSource).config.layout[0].tiles[0];
+    assert.equal(unregistered.tileType, 'builtin:retired/acme-weather');
+    assert.deepEqual(unregistered.settings, unregisteredSource.layout[0].items[0].widgetConfig);
+    assert.deepEqual(unregistered.layouts, unregisteredSource.layout[0].items[0].layouts);
+    assert.equal(getLegacyBuiltinWidgetType(unregistered.tileType), 'retired/acme-weather');
+
+    // Bad settings and malformed items degrade independently; healthy siblings stay intact.
+    const malformedSource = createMalformedItemFixture();
+    const malformed = migrate(malformedSource);
+    const malformedTiles = malformed.config.layout[0].tiles;
+    assert.equal(malformedTiles[0].tileType, 'site');
+    assert.equal(malformedTiles[0].url, 'https://healthy.example');
+    assert.deepEqual(malformedTiles.slice(1).map((tile) => tile.tileType), [
+      'builtin:missing', 'builtin:missing', 'builtin:missing',
+    ]);
+    assert.deepEqual(malformedTiles[1].settings.legacy, {
+      raw: malformedSource.layout[0].items[1],
+    });
+    assert.equal(malformed.warnings.filter((warning) => warning.code === 'invalid-item').length, 3);
+
+    // A v1 envelope is re-sealed as v2 after unlock, then restores at originalIndex.
+    const privacyLegacyConfig = clone(defaultConfig);
+    privacyLegacyConfig.layout = [{
+      id: 'restore-target', title: 'Restore target', icon: 'Folder',
+      items: [{id: 'existing', kind: 'site', title: 'Existing', url: 'https://existing.example'}],
+    }];
+    const privacyConfig = normalizeConfigV6(migrateV5ToV6(privacyLegacyConfig, P3_FIXTURE_MIGRATION_OPTIONS).config);
+    privacyConfig.privacy.enabled = true;
+    privacyConfig.privacy.vault = await createPrivacyVaultEnvelope('fixture-password', createPrivacyVaultV1Fixture());
+    const privacyConfigRef = ref(privacyConfig);
+    const ciphertextBeforeUnlock = privacyConfigRef.value.privacy.vault.ciphertext;
+    let saveCount = 0;
+    const privacy = createPrivacyActions(privacyConfigRef, async () => { saveCount += 1; });
+    const unlocked = await privacy.unlockPrivacyVault('fixture-password');
+    assert.equal(unlocked.version, 2);
+    assert.ok(saveCount >= 1);
+    assert.notEqual(privacyConfigRef.value.privacy.vault.ciphertext, ciphertextBeforeUnlock);
+    const resealed = await openPrivacyVaultEnvelope(privacyConfigRef.value.privacy.vault, 'fixture-password');
+    assert.equal(resealed.version, 2);
+    const restored = await privacy.restorePrivacySite('restore-at-one');
+    assert.equal(restored.success, true);
+    assert.deepEqual(privacyConfigRef.value.layout[0].tiles.map((tile) => tile.id), ['existing', 'restore-at-one']);
+    privacy.lockPrivacyVault();
+
+    // Pending v6 profiles cannot overwrite v5; confirmation writes only the sibling.
+    const syncSource = createPureBookmarkFlowFixture();
+    syncSource.sync = {
+      provider: 'webdav', enabled: true, autoSync: true,
+      url: 'https://dav.example', username: 'fixture', password: 'secret',
+      folder: 'voidtab', filename: 'voidtab-backup.json', lastSyncTime: 0,
+    };
+    const syncConfig = migrate(syncSource).config;
+    const pendingProfile = markSyncSchemaUpgradePending(syncConfig.sync);
+    const writes = [];
+    const service = {
+      async upload(profile, payload, options) {
+        writes.push({profile, payload, options});
+        return {ok: true, message: 'uploaded'};
+      },
+    };
+    const blocked = await uploadConfigV6ToSibling(service, pendingProfile, syncConfig);
+    assert.equal(blocked.ok, false);
+    assert.equal(writes.length, 0);
+    const confirmed = await uploadConfigV6ToSibling(service, confirmV6SyncSchemaUpgrade(pendingProfile), syncConfig);
+    assert.equal(confirmed.ok, true);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].options.filename, 'voidtab-backup.v6.json');
+
+    // Future data is rejected before the transaction can write either backup or main config.
+    const storageWrites = [];
+    const storage = {
+      async get(_key, fallback) { return fallback; },
+      async set(key, value) { storageWrites.push({key, value}); },
+    };
+    const future = {version: 7, layout: []};
+    await assert.rejects(
+      () => commitConfigV5ToV6Migration(future, P3_FIXTURE_MIGRATION_OPTIONS, {storage}),
+      (error) => error instanceof ConfigVersionTooNew || /只接受已解密/.test(String(error?.message)),
+    );
+    assert.equal(storageWrites.length, 0);
+  `);
+});
+
+test('P3.8 canonical consumers do not directly read legacy tile discriminators', async () => {
+  const files = [
+    'src/features/home/components/MainGrid.vue',
+    'src/features/privacy/components/PrivacyVaultModal.vue',
+    'src/features/terminal/components/TerminalPanel.vue',
+    'src/features/context-menu/components/ContextMenu.vue',
+    'src/core/search/searchUtils.ts',
+    'src/core/bookmarks/export.ts',
+  ];
+  const directLegacyRead = /\b(?:item|site|tile)\.(?:kind|widgetType|widgetConfig)\b/;
+  for (const file of files) {
+    const source = await read(file);
+    assert.doesNotMatch(source, directLegacyRead, file);
+  }
+});
+
+test('P4 controls tile appearance and shares sanitized instances', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const style = await read('src/core/tiles/style.ts');
+  const sharing = await read('src/core/tiles/instanceSharing.ts');
+  const host = await read('src/features/home/components/TileHost.vue');
+  const menu = await read('src/features/context-menu/components/ContextMenu.vue');
+  const panel = await read('src/features/context-menu/components/ContextMenuPanel.vue');
+  const registry = await read('src/core/tiles/registry.ts');
+  const external = await read('src/core/tiles/externalDefinition.ts');
+
+  assert.match(contracts, /styleOverride\?: TileStyleOverride/);
+  assert.match(contracts, /export type TileStyleableToken = keyof TileStyleOverride/);
+  assert.match(style, /normalizeTileStyleOverride/);
+  assert.match(style, /tileStyleOverrideToCssVars/);
+  assert.match(sharing, /exportTileInstance/);
+  assert.match(sharing, /SENSITIVE_KEY_RE/);
+  assert.match(host, /tileStyleOverrideToCssVars/);
+  assert.match(host, /:style="tileStyleVars"/);
+  assert.match(menu, /exportTileInstanceForShare/);
+  assert.match(menu, /importTileInstanceToGroup/);
+  assert.match(panel, /导出卡片实例/);
+  assert.match(panel, /导入卡片实例/);
+  assert.match(panel, /重置外观/);
+  assert.match(registry, /styleable: DEFAULT_TILE_STYLEABLE/);
+  assert.match(external, /missing-builtin/);
+
+  await runBundledTypeScript('p4-tile-style-and-sharing', `
+    import assert from 'node:assert/strict';
+    import {normalizeTileStyleOverride, tileStyleOverrideToCssVars} from '../../../src/core/tiles/style.ts';
+    import {exportTileInstance, importTileInstance} from '../../../src/core/tiles/instanceSharing.ts';
+    import {createUnsupportedExternalTileDefinition} from '../../../src/core/tiles/externalDefinition.ts';
+
+    const normalized = normalizeTileStyleOverride({
+      radius: 999,
+      accent: 'javascript:alert(1)',
+      surface: '#112233',
+      iconScale: 9,
+      density: 'huge',
+      elevation: 7,
+      position: 'fixed',
+    });
+    assert.deepEqual(normalized, {radius: 36, surface: '#112233', iconScale: 1.45, elevation: 3});
+    const vars = tileStyleOverrideToCssVars(normalized);
+    assert.equal(vars['--tile-radius'], '36px');
+    assert.equal(vars['--tile-surface'], '#112233');
+    assert.equal(vars['--tile-icon-scale'], '1.45');
+    assert.equal(vars.position, undefined);
+
+    const tile = {
+      id: 'jwt-1',
+      tileType: 'builtin:jwt_sentry',
+      title: 'JWT',
+      settings: {
+        apiKey: 'sk-live',
+        nested: {refreshToken: 'secret', safe: 'keep'},
+        url: 'https://user:pass@example.com/a?token=abc&ok=1',
+      },
+      layouts: {desktop: {x: 0, y: 0, w: 2, h: 2}},
+      styleOverride: {radius: 22, accent: '#ff6600', unknown: true},
+      createdAt: 1,
+      revision: {updatedAt: 1, deviceId: 'dev', sequence: 1},
+    };
+    const exported = exportTileInstance(tile, 123);
+    assert.equal(exported.kind, 'voidtab.tile-instance');
+    assert.equal(exported.tile.id, 'jwt-1');
+    assert.equal(exported.tile.settings.apiKey, undefined);
+    assert.equal(exported.tile.settings.nested.refreshToken, undefined);
+    assert.equal(exported.tile.settings.nested.safe, 'keep');
+    assert.equal(exported.tile.settings.url, 'https://example.com/a?ok=1');
+    assert.ok(exported.sanitized.sensitiveFieldsRemoved.includes('tile.settings.apiKey'));
+    assert.ok(!JSON.stringify(exported).includes('sk-live'));
+    assert.ok(!JSON.stringify(exported).includes('secret'));
+
+    const imported = importTileInstance(exported, {id: 'imported-1', now: 456, deviceId: 'import-test'});
+    assert.equal(imported.id, 'imported-1');
+    assert.equal(imported.tileType, 'builtin:jwt_sentry');
+    assert.equal(imported.createdAt, 456);
+    assert.equal(imported.revision.deviceId, 'import-test');
+    assert.equal(imported.styleOverride.radius, 22);
+
+    const missing = createUnsupportedExternalTileDefinition('builtin:not_installed');
+    assert.equal(missing.renderer.kind, 'unsupported');
+    assert.equal(missing.renderer.reason, 'missing-builtin');
+  `);
 });
 
 test('delete snapshots clone serializable config data without structuredClone', async () => {
@@ -477,7 +1413,7 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
   await runBundledTypeScript('normalize-config', `
     import assert from 'node:assert/strict';
     import {normalizeConfig} from '../../../src/core/config/normalize.ts';
-    import {CURRENT_CONFIG_VERSION} from '../../../src/core/config/types.ts';
+    import {LEGACY_CONFIG_VERSION} from '../../../src/core/config/types.ts';
 
     const normalized = normalizeConfig({
       version: 0,
@@ -503,7 +1439,7 @@ test('normalizeConfig preserves and repairs core config shape', async () => {
       }
     });
 
-    assert.equal(normalized.version, CURRENT_CONFIG_VERSION);
+    assert.equal(normalized.version, LEGACY_CONFIG_VERSION);
     assert.equal(normalized.sync.provider, 'webdav');
     assert.equal(normalized.sync.password, 'secret');
     assert.equal(normalized.ai.apiKey, 'api-secret');
@@ -664,7 +1600,7 @@ test('bookmark HTML import dedupe skips existing and in-file duplicate URLs', as
       id: 'existing-group',
       title: 'Existing',
       icon: 'Folder',
-      items: [{ id: 'existing-site', title: 'Example', url: 'https://example.com/path' }]
+      tiles: [{ id: 'existing-site', tileType: 'site', title: 'Example', url: 'https://example.com/path' }]
     }];
 
     const incoming = [{
@@ -1036,7 +1972,7 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
 
   await runBundledTypeScript('p0-tile-contracts', `
     import assert from 'node:assert/strict';
-    import {solveCanvasLayout} from '../../../src/core/tiles/layoutSolver.ts';
+    import {findFirstAvailablePlacement, solveCanvasLayout} from '../../../src/core/tiles/layoutSolver.ts';
     import {compareVersions, evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
     import type {HostCapabilities, TileCompatibility} from '../../../src/core/tiles/contracts.ts';
 
@@ -1077,6 +2013,13 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
     }, {type: 'compact', profile: 'desktop'});
     assert.deepEqual(compacted.placements.alpha, {x: 0, y: 0, w: 2, h: 1});
     assert.deepEqual(compacted.placements.beta, {x: 2, y: 0, w: 2, h: 1});
+
+    const firstFit = findFirstAvailablePlacement(
+      {alpha: {x: 0, y: 0, w: 2, h: 1}},
+      4,
+      {w: 1, h: 1},
+    );
+    assert.deepEqual(firstFit, {x: 2, y: 0, w: 1, h: 1});
 
     const host: HostCapabilities = {
       target: 'web',

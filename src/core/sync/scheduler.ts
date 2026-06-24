@@ -1,9 +1,11 @@
 // src/core/sync/scheduler.ts
-import type { SyncOpResult, SyncProfile, ConflictSnapshot } from './types';
+import type {SyncFileOptions, SyncOpResult, SyncProfile, ConflictSnapshot} from './types';
 import { syncService } from './service';
 
 export interface SyncSchedulerOptions {
     getProfile: () => SyncProfile;
+    /** Selects a schema-specific file without mutating the user's legacy profile. */
+    getFileOptions?: () => SyncFileOptions | undefined;
     getUploadPayload: () => string;
     getLocalRevision: () => number;
 
@@ -50,6 +52,7 @@ export class SyncScheduler {
         if (!this.running) return;
 
         const profile = this.opt.getProfile();
+        const fileOptions = this.opt.getFileOptions?.();
         if (!profile.enabled || profile.provider === 'none') return;
         if (!profile.autoSync) return;
 
@@ -59,7 +62,7 @@ export class SyncScheduler {
         const intervalMin = profile.intervalMinutes ?? 10;
 
         try {
-            const dl: SyncOpResult = await syncService.download(profile);
+            const dl: SyncOpResult = await syncService.download(profile, fileOptions);
             if (!dl.ok) {
                 this.scheduleNext(intervalMin);
                 return;
@@ -111,7 +114,7 @@ export class SyncScheduler {
             const localRev = this.opt.getLocalRevision();
             if (localRev > this.lastUploadedRevision) {
                 const payload = this.opt.getUploadPayload();
-                const up: SyncOpResult = await syncService.upload(profile, payload);
+                const up: SyncOpResult = await syncService.upload(profile, payload, fileOptions);
                 if (up.ok) {
                     this.lastUploadedRevision = localRev;
                     this.opt.onSyncMeta?.({ lastSyncTime: Date.now(), etag: up.remoteEtag, mtime: up.remoteMtime });

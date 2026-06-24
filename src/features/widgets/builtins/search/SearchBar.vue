@@ -12,6 +12,7 @@ import AiChatPanel from "../../../ai/components/AiChatPanel.vue";
 import HistoryModal from './HistoryModal.vue';
 import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 import HomeIcon from '../../../../shared/icons/HomeIcon.vue';
+import {findLocalResults} from '../../../../core/search/searchUtils.ts';
 
 const store = useConfigStore();
 const historyStore = useHistoryStore();
@@ -113,18 +114,7 @@ const smartAction = computed(() => {
 // --- 3. 本地搜索 ---
 const localResults = computed(() => {
   if (!searchText.value) return [];
-  const query = searchText.value.toLowerCase();
-  const list: any[] = [];
-
-  store.config.layout.forEach((group: any) => {
-    group.items.forEach((item: any) => {
-      // 过滤掉 widget，只保留 site
-      if (item.kind !== 'widget' && (item.title?.toLowerCase().includes(query) || item.url?.toLowerCase().includes(query))) {
-        list.push({...item, groupName: group.title});
-      }
-    });
-  });
-  return list.slice(0, 6); // 最多显示6条
+  return findLocalResults(store.config.layout, searchText.value, 6);
 });
 
 watch(searchText, (val) => {

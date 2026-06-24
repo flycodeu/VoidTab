@@ -1,19 +1,11 @@
 <script setup lang="ts">
 import {computed} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
+import {getWorkspaceTileCount, type RuntimeWorkspace} from '../../../../core/tiles/tileAccess.ts';
 import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 
-interface GroupProps {
-  id: string;
-  title: string;
-  icon: string;
-  items?: any[];
-  iconColor?: string;
-  iconBgColor?: string;
-}
-
 const props = defineProps<{
-  group: GroupProps;
+  group: RuntimeWorkspace;
   active: boolean;
   isDragging: boolean;
   showDropHint: boolean;
@@ -33,7 +25,7 @@ const IconComp = computed(() => {
   return resolvePhosphorIcon(props.group?.icon, 'SquaresFour');
 });
 
-const count = computed(() => props.group.items?.length || 0);
+const count = computed(() => getWorkspaceTileCount(props.group));
 const dropHintId = computed(() => `group-${props.group.id}-drop-hint`);
 const groupButtonLabel = computed(() => {
   return `${props.active ? '当前分组' : '打开分组'}：${props.group.title}，${count.value} 个项目`;

@@ -1,86 +1,100 @@
 import type {Ref} from 'vue';
-import type {Config, SiteItem, WidgetType} from '../../core/config/types';
+import type {ConfigV6} from '../../core/config/types';
 import {getWidgetLabel, getWidgetMeta} from '../../core/registry/widgets';
 import {clampInt, MAX_WIDGET_H, MAX_WIDGET_W} from './helpers';
+import {
+    createComponentTile,
+    findTile,
+    findWorkspace,
+    getLegacyWidgetType,
+    getTileDesktopSize,
+    getTileTitle,
+    getWorkspaceTiles,
+    isComponentTile,
+    setTileTitle,
+    setTileSize,
+} from '../../core/tiles/tileAccess.ts';
 
 export const createLayoutActions = (
-    config: Ref<Config>,
+    config: Ref<ConfigV6>,
     saveConfig: () => Promise<void>
 ) => {
     const normalizeLayoutItems = () => {
         if (!config.value.layout) return;
 
         config.value.layout.forEach((group) => {
-            if (!group.items) group.items = [];
+            getWorkspaceTiles(group).forEach((tile) => {
 
-            group.items.forEach((item) => {
-                if (item.widgetType && item.kind !== 'widget') item.kind = 'widget';
-                if (!item.kind) item.kind = 'site';
-
-                if (item.kind === 'site') {
-                    item.w = clampInt(item.w, 1, MAX_WIDGET_W, 1);
-                    item.h = clampInt(item.h, 1, MAX_WIDGET_H, 1);
+                if (!isComponentTile(tile)) {
+                    const size = getTileDesktopSize(tile);
+                    setTileSize(
+                        tile,
+                        clampInt(size.w, 1, MAX_WIDGET_W, 1),
+                        clampInt(size.h, 1, MAX_WIDGET_H, 1),
+                    );
                     return;
                 }
 
-                if (item.kind === 'widget') {
-                    const meta = getWidgetMeta(item.widgetType);
-                    const defW = meta?.defaultW ?? 2;
-                    const defH = meta?.defaultH ?? 2;
+                const widgetType = getLegacyWidgetType(tile);
+                const meta = getWidgetMeta(widgetType);
+                const defW = meta?.defaultW ?? 2;
+                const defH = meta?.defaultH ?? 2;
+                const size = getTileDesktopSize(tile);
 
-                    item.w = clampInt(item.w, 1, MAX_WIDGET_W, defW);
-                    item.h = clampInt(item.h, 1, MAX_WIDGET_H, defH);
+                setTileSize(
+                    tile,
+                    clampInt(size.w, 1, MAX_WIDGET_W, defW),
+                    clampInt(size.h, 1, MAX_WIDGET_H, defH),
+                );
 
-                    const title = (item.title || '').trim();
-                    const type = String(item.widgetType || '').trim();
-                    if (!title || (type && title.toLowerCase() === type.toLowerCase())) {
-                        item.title = getWidgetLabel(item.widgetType);
-                    }
+                const title = getTileTitle(tile).trim();
+                const type = String(widgetType || '').trim();
+                if (!title || (type && title.toLowerCase() === type.toLowerCase())) {
+                    setTileTitle(tile, getWidgetLabel(widgetType));
                 }
             });
         });
     };
 
     const updateItemSize = (groupId: string, itemId: string, w: number, h: number) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
-        const item = group?.items.find((entry) => entry.id === itemId);
+        const group = findWorkspace(config.value, groupId);
+        const item = findTile(group, itemId);
         if (!item) return;
 
-        if (item.kind === 'site') {
-            item.w = clampInt(w, 1, MAX_WIDGET_W, 1);
-            item.h = clampInt(h, 1, MAX_WIDGET_H, 1);
+        if (!isComponentTile(item)) {
+            setTileSize(item, clampInt(w, 1, MAX_WIDGET_W, 1), clampInt(h, 1, MAX_WIDGET_H, 1));
         } else {
-            const meta = getWidgetMeta(item.widgetType);
+            const meta = getWidgetMeta(getLegacyWidgetType(item));
             const defW = meta?.defaultW ?? 2;
             const defH = meta?.defaultH ?? 2;
 
-            item.w = clampInt(w, 1, MAX_WIDGET_W, defW);
-            item.h = clampInt(h, 1, MAX_WIDGET_H, defH);
+            setTileSize(item, clampInt(w, 1, MAX_WIDGET_W, defW), clampInt(h, 1, MAX_WIDGET_H, defH));
         }
 
         void saveConfig();
     };
 
     const addWidget = (groupId: string, widgetType: string) => {
-        const group = config.value.layout.find((item) => item.id === groupId);
+        const group = findWorkspace(config.value, groupId);
         if (!group) return;
 
         const meta = getWidgetMeta(widgetType);
         const defW = meta?.defaultW ?? 2;
         const defH = meta?.defaultH ?? 2;
 
-        const newWidget: SiteItem = {
+        const newWidget = createComponentTile(widgetType, {
             id: `widget-${Date.now()}`,
-            kind: 'widget',
-            widgetType: widgetType as WidgetType,
             title: getWidgetLabel(widgetType),
-            w: clampInt(defW, 1, MAX_WIDGET_W, 2),
-            h: clampInt(defH, 1, MAX_WIDGET_H, 2),
-            url: '',
-            icon: '',
-        };
+            settings: {},
+            layouts: {desktop: {
+                x: 0,
+                y: 0,
+                w: clampInt(defW, 1, MAX_WIDGET_W, 2),
+                h: clampInt(defH, 1, MAX_WIDGET_H, 2),
+            }},
+        });
 
-        group.items.push(newWidget);
+        getWorkspaceTiles(group).push(newWidget);
         void saveConfig();
     };
 
@@ -88,5 +102,6 @@ export const createLayoutActions = (
         normalizeLayoutItems,
         updateItemSize,
         addWidget,
+        createComponentTile: addWidget,
     };
 };

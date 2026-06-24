@@ -292,6 +292,8 @@ const labelH = computed(() => {
 const iconContainerStyle = computed(() => ({
   width: `${iconSize.value}px`,
   height: `${iconSize.value}px`,
+  transform: 'scale(var(--tile-icon-scale, 1))',
+  transformOrigin: 'center top',
 }));
 
 type DensityMode = "wide" | "compact" | "tiny";
@@ -445,7 +447,7 @@ const showDomainRow = computed(() => {
       :data-density="densityMode"
       :data-layout="cardLayoutMode"
   >
-    <div class="card-shell w-full h-full min-w-0 min-h-0" :style="{ borderRadius: cardRadius + 'px' }">
+    <div class="card-shell w-full h-full min-w-0 min-h-0" :style="{ borderRadius: `var(--tile-radius, ${cardRadius}px)` }">
       <div class="card-inner w-full h-full min-w-0 min-h-0">
         <div class="card-left">
           <SiteIcon
@@ -558,9 +560,10 @@ const showDomainRow = computed(() => {
 
   border: 1px solid rgba(var(--overlay-rgb), 0.28);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset,
-  0 10px 22px rgba(15, 23, 42, 0.12);
+  0 calc(var(--tile-elevation, 1) * 8px + 2px) calc(var(--tile-elevation, 1) * 18px + 4px) rgba(15, 23, 42, 0.12);
 
   background:
+      linear-gradient(135deg, color-mix(in srgb, var(--tile-surface) 24%, transparent), transparent),
       linear-gradient(180deg, rgba(var(--overlay-rgb), 0.22), rgba(var(--overlay-rgb), 0.12)),
       rgba(var(--overlay-rgb), 0.10);
 
@@ -579,18 +582,19 @@ const showDomainRow = computed(() => {
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(var(--accent-color-rgb), 0.16), transparent 38%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 18%, transparent), transparent 38%);
   opacity: 0.42;
 }
 
 .site-card:hover .card-shell {
   transform: translateY(-2px);
-  border-color: rgba(var(--accent-color-rgb), 0.42);
+  border-color: color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 42%, transparent);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.20) inset,
-  0 0 0 1px rgba(var(--accent-color-rgb), 0.14),
+  0 0 0 1px color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 14%, transparent),
   0 16px 34px rgba(15, 23, 42, 0.16),
-  0 8px 22px rgba(var(--accent-color-rgb), 0.12);
+  0 8px 22px color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 12%, transparent);
   background:
+      linear-gradient(135deg, color-mix(in srgb, var(--tile-surface) 30%, transparent), transparent),
       linear-gradient(180deg, rgba(var(--overlay-rgb), 0.26), rgba(var(--overlay-rgb), 0.16)),
       rgba(var(--overlay-rgb), 0.12);
 }
@@ -684,9 +688,9 @@ const showDomainRow = computed(() => {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: rgba(var(--accent-color-rgb), 0.72);
-  border: 1px solid rgba(var(--accent-color-rgb), 0.24);
-  box-shadow: 0 0 0 3px rgba(var(--accent-color-rgb), 0.10);
+  background: color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 24%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 10%, transparent);
 }
 
 .row2 {

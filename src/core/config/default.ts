@@ -1,13 +1,12 @@
-import type {Config} from './types';
-import {CURRENT_CONFIG_VERSION} from './types';
+import type {ConfigV5} from './types';
 import {buildTemplateLayout} from '../templates/presets';
 import {cloneDefaultMemoCategories, cloneDefaultMemoNotes} from './memoNotes';
 import {cloneDefaultAiPromptTemplates} from './aiPromptTemplates';
 
 export const LOCAL_WALLPAPER_MARKER = '_USE_LOCAL_STORAGE_' as const;
 
-export const defaultConfig: Config = {
-    version: CURRENT_CONFIG_VERSION,
+export const defaultConfig: ConfigV5 = {
+    version: 5,
     sync: {
         provider: 'webdav',
         enabled: false,
