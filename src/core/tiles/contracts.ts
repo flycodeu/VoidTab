@@ -305,16 +305,67 @@ export type DeclarativeViewNode =
     children: DeclarativeViewNode[];
 })
     | (DeclarativeNodeBase & {
+    type: 'row' | 'column';
+    gap?: number;
+    align?: 'start' | 'center' | 'end' | 'stretch';
+    children: DeclarativeViewNode[];
+})
+    | (DeclarativeNodeBase & {
+    type: 'spacer';
+    size?: number;
+})
+    | (DeclarativeNodeBase & {
+    type: 'divider';
+    orientation?: 'horizontal' | 'vertical';
+})
+    | (DeclarativeNodeBase & {
+    type: 'number';
+    value: DeclarativeValue;
+    variant?: 'title' | 'body' | 'caption' | 'metric';
+    align?: 'left' | 'center' | 'right';
+    numberStyle?: 'decimal' | 'percent';
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+})
+    | (DeclarativeNodeBase & {
+    type: 'date';
+    value: DeclarativeValue;
+    variant?: 'title' | 'body' | 'caption' | 'metric';
+    align?: 'left' | 'center' | 'right';
+    dateStyle?: 'short' | 'medium' | 'long' | 'full' | 'none';
+    timeStyle?: 'short' | 'medium' | 'long' | 'none';
+})
+    | (DeclarativeNodeBase & {
+    type: 'relative-time';
+    value: DeclarativeValue;
+    variant?: 'title' | 'body' | 'caption' | 'metric';
+    align?: 'left' | 'center' | 'right';
+})
+    | (DeclarativeNodeBase & {
     type: 'dialog';
     title?: DeclarativeValue;
     children: DeclarativeViewNode[];
 });
+
+export type DeclarativeGranularity = 'second' | 'minute' | 'hour' | 'day';
+
+/**
+ * Named, declarative data sources. Views read their output through the
+ * `data.<key>` namespace; a view can never compute time or fetch on its own.
+ * P5/P6 ship the offline set (`static`/`clock`/`countdown`); external network
+ * providers stay gated behind capability/cache/error design.
+ */
+export type DeclarativeProvider =
+    | {type: 'static'; value: JsonValue}
+    | {type: 'clock'; granularity?: DeclarativeGranularity}
+    | {type: 'countdown'; target: DeclarativeValue; granularity?: DeclarativeGranularity};
 
 export interface DeclarativeTilePackageWire {
     kind: 'voidtab.tile-package';
     packageVersion: 1;
     manifest: TileManifestWire;
     views: Record<string, DeclarativeViewNode>;
+    providers?: Record<string, DeclarativeProvider>;
     defaultSettings?: Record<string, JsonValue>;
 }
 
@@ -395,6 +446,7 @@ export interface DeclarativeTileDefinition {
     compatibility: TileCompatibility;
     renderer: {kind: 'declarative'; coverView: string; dialogView?: string};
     views: Record<string, DeclarativeViewNode>;
+    providers?: Record<string, DeclarativeProvider>;
     defaultSettings: Record<string, JsonValue>;
     packageHash: string;
     audit?: PackageAuditRecord;
@@ -454,6 +506,7 @@ export interface TileInstallRecord {
     pinnedVersion?: boolean;
     manifest?: TileManifestWire;
     views?: Record<string, DeclarativeViewNode>;
+    providers?: Record<string, DeclarativeProvider>;
     sandbox?: SandboxTileSource;
     defaultSettings?: Record<string, JsonValue>;
     installIntent?: TileInstallIntent;

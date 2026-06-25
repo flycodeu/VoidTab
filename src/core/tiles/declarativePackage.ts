@@ -33,7 +33,15 @@ const STYLEABLE_TOKENS: TileStyleableToken[] = [
     'elevation',
 ];
 
-const NODE_TYPES = new Set(['text', 'image', 'icon', 'button', 'stack', 'grid', 'dialog']);
+const NODE_TYPES = new Set([
+    'text', 'image', 'icon', 'button', 'stack', 'grid', 'dialog',
+    'row', 'column', 'spacer', 'divider', 'number', 'date', 'relative-time',
+]);
+const TEXT_VARIANTS = new Set(['title', 'body', 'caption', 'metric']);
+const TEXT_ALIGNS = new Set(['left', 'center', 'right']);
+const DATE_STYLES = new Set(['short', 'medium', 'long', 'full', 'none']);
+const TIME_STYLES = new Set(['short', 'medium', 'long', 'none']);
+const GRANULARITIES = new Set(['second', 'minute', 'hour', 'day']);
 const HOST_FEATURES = new Set([
     'indexedStorage',
     'syncStorage',
@@ -248,6 +256,65 @@ function normalizeNode(raw: unknown, depth = 0): DeclarativeViewNode {
         };
     }
 
+    if (type === 'row' || type === 'column') {
+        return {
+            ...common,
+            type,
+            gap: clampInt(value.gap, 0, 32, 10),
+            align: value.align === 'start' || value.align === 'center' || value.align === 'end' || value.align === 'stretch'
+                ? value.align
+                : 'stretch',
+            children: Array.isArray(value.children) ? value.children.slice(0, 32).map((child) => normalizeNode(child, depth + 1)) : [],
+        };
+    }
+
+    if (type === 'spacer') {
+        return {...common, type: 'spacer', size: clampInt(value.size, 0, 64, 8)};
+    }
+
+    if (type === 'divider') {
+        return {
+            ...common,
+            type: 'divider',
+            orientation: value.orientation === 'vertical' ? 'vertical' : 'horizontal',
+        };
+    }
+
+    if (type === 'number') {
+        return {
+            ...common,
+            type: 'number',
+            value: normalizeDeclarativeValue(value.value),
+            variant: TEXT_VARIANTS.has(String(value.variant)) ? value.variant as any : 'body',
+            align: TEXT_ALIGNS.has(String(value.align)) ? value.align as any : 'left',
+            numberStyle: value.numberStyle === 'percent' ? 'percent' : 'decimal',
+            ...(Number.isFinite(Number(value.minimumFractionDigits)) ? {minimumFractionDigits: clampInt(value.minimumFractionDigits, 0, 20, 0)} : {}),
+            ...(Number.isFinite(Number(value.maximumFractionDigits)) ? {maximumFractionDigits: clampInt(value.maximumFractionDigits, 0, 20, 0)} : {}),
+        };
+    }
+
+    if (type === 'date') {
+        return {
+            ...common,
+            type: 'date',
+            value: normalizeDeclarativeValue(value.value),
+            variant: TEXT_VARIANTS.has(String(value.variant)) ? value.variant as any : 'body',
+            align: TEXT_ALIGNS.has(String(value.align)) ? value.align as any : 'left',
+            dateStyle: DATE_STYLES.has(String(value.dateStyle)) ? value.dateStyle as any : 'medium',
+            ...(TIME_STYLES.has(String(value.timeStyle)) ? {timeStyle: value.timeStyle as any} : {}),
+        };
+    }
+
+    if (type === 'relative-time') {
+        return {
+            ...common,
+            type: 'relative-time',
+            value: normalizeDeclarativeValue(value.value),
+            variant: TEXT_VARIANTS.has(String(value.variant)) ? value.variant as any : 'body',
+            align: TEXT_ALIGNS.has(String(value.align)) ? value.align as any : 'left',
+        };
+    }
+
     return {
         ...common,
         type: 'text',
@@ -257,6 +324,31 @@ function normalizeNode(raw: unknown, depth = 0): DeclarativeViewNode {
             : 'body',
         align: value.align === 'center' || value.align === 'right' ? value.align : 'left',
     };
+}
+
+function normalizeProviders(raw: unknown): Record<string, import('./contracts.ts').DeclarativeProvider> | undefined {
+    if (!isRecord(raw)) return undefined;
+    const out: Record<string, import('./contracts.ts').DeclarativeProvider> = {};
+    for (const [key, entry] of Object.entries(raw)) {
+        if (!key.trim() || !isRecord(entry)) continue;
+        const granularity = GRANULARITIES.has(String(entry.granularity)) ? entry.granularity as any : undefined;
+        if (entry.type === 'static') {
+            out[key.trim()] = {type: 'static', value: isJsonSafe(entry.value) ? cloneJson(entry.value) : null};
+            continue;
+        }
+        if (entry.type === 'clock') {
+            out[key.trim()] = {type: 'clock', ...(granularity ? {granularity} : {})};
+            continue;
+        }
+        if (entry.type === 'countdown') {
+            out[key.trim()] = {
+                type: 'countdown',
+                target: normalizeDeclarativeValue(entry.target) as any,
+                ...(granularity ? {granularity} : {}),
+            };
+        }
+    }
+    return Object.keys(out).length ? out : undefined;
 }
 
 function sanitizeDefaultSettings(raw: unknown): Record<string, JsonValue> {
@@ -351,6 +443,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
         views[viewId] = normalizeNode(node);
     }
     if (!views[rendererInput.coverView]) throw new TypeError(`声明式组件缺少视图：${rendererInput.coverView}`);
+    const providers = normalizeProviders(raw.providers);
 
     const sanitizedSettingsSchema = sanitizeSettingsSchema(manifestInput.settingsSchema);
     const settingsFromSchema = extractDefaultSettingsFromSchema(sanitizedSettingsSchema);
@@ -364,7 +457,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
         : undefined;
     const hash = isRecord(manifestInput.integrity) && typeof manifestInput.integrity.sha256 === 'string' && manifestInput.integrity.sha256.trim()
         ? manifestInput.integrity.sha256.trim()
-        : stableHash({manifest: manifestInput, views});
+        : stableHash({manifest: manifestInput, views, ...(providers ? {providers} : {})});
     const signature = normalizeSignature((manifestInput.integrity as any)?.signature);
 
     const manifest: TileManifestWire = {
@@ -407,6 +500,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
         packageVersion: DECLARATIVE_TILE_PACKAGE_VERSION,
         manifest,
         views,
+        ...(providers ? {providers} : {}),
         ...(Object.keys(defaultSettings).length ? {defaultSettings} : {}),
     };
 
@@ -423,6 +517,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
             updatedAt: Math.round(now),
             manifest,
             views,
+            ...(providers ? {providers} : {}),
             defaultSettings,
         },
         package: pack,
@@ -437,6 +532,7 @@ export function normalizeDeclarativeTileInstallRecord(raw: unknown): TileInstall
             packageVersion: DECLARATIVE_TILE_PACKAGE_VERSION,
             manifest: raw.manifest,
             views: raw.views,
+            providers: raw.providers,
             defaultSettings: raw.defaultSettings,
         }, Number(raw.updatedAt) || Date.now());
         return {
@@ -471,6 +567,7 @@ export function createDeclarativeTileDefinitionFromInstall(install: TileInstallR
             ? install.manifest.renderer
             : {kind: 'declarative', coverView: 'cover'},
         views: install.views,
+        ...(install.providers ? {providers: install.providers} : {}),
         defaultSettings: install.defaultSettings || {},
         packageHash: install.sha256,
         ...(install.audit ? {audit: install.audit} : {}),
@@ -484,6 +581,7 @@ export function createDeclarativeTilePackageExport(install: TileInstallRecord): 
         packageVersion: DECLARATIVE_TILE_PACKAGE_VERSION,
         manifest: cloneJson(install.manifest),
         views: cloneJson(install.views),
+        ...(install.providers ? {providers: cloneJson(install.providers)} : {}),
         ...(install.defaultSettings ? {defaultSettings: cloneJson(install.defaultSettings)} : {}),
     };
 }

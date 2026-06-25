@@ -1,4 +1,10 @@
-import type {ComponentTile, DeclarativeValue, JsonValue} from './contracts.ts';
+import type {
+    ComponentTile,
+    DeclarativeGranularity,
+    DeclarativeProvider,
+    DeclarativeValue,
+    JsonValue,
+} from './contracts.ts';
 import {isExtensionContext, getBrowserInfo} from '../../shared/utils/browser.ts';
 
 export interface DeclarativeDataContext {
@@ -59,6 +65,191 @@ export function createDeclarativeDataContext(
             browser,
         },
     };
+}
+
+const GRANULARITY_MS: Record<DeclarativeGranularity, number> = {
+    second: 1000,
+    minute: 60_000,
+    hour: 3_600_000,
+    day: 86_400_000,
+};
+
+const granularityMs = (granularity: DeclarativeGranularity | undefined, fallback: DeclarativeGranularity): number =>
+    GRANULARITY_MS[granularity ?? fallback] ?? GRANULARITY_MS[fallback];
+
+const floorToGranularity = (now: number, granularity: DeclarativeGranularity | undefined, fallback: DeclarativeGranularity): number => {
+    const step = granularityMs(granularity, fallback);
+    return Math.floor(now / step) * step;
+};
+
+const clockOutput = (epoch: number): JsonValue => {
+    const date = new Date(epoch);
+    return {
+        epoch,
+        iso: date.toISOString(),
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        hour: date.getHours(),
+        minute: date.getMinutes(),
+        second: date.getSeconds(),
+        weekday: date.getDay(),
+    };
+};
+
+const parseTargetEpoch = (value: JsonValue): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = Date.parse(value.trim());
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+};
+
+const countdownOutput = (remainingMs: number): JsonValue => {
+    const clamped = Math.max(0, remainingMs);
+    const totalSeconds = Math.floor(clamped / 1000);
+    return {
+        remainingMs: clamped,
+        done: clamped <= 0,
+        totalSeconds,
+        days: Math.floor(totalSeconds / 86_400),
+        hours: Math.floor((totalSeconds % 86_400) / 3_600),
+        minutes: Math.floor((totalSeconds % 3_600) / 60),
+        seconds: totalSeconds % 60,
+    };
+};
+
+/**
+ * Pure evaluation of declarative providers into the `data.<key>` namespace.
+ * No DOM, no network, no global clock access other than the injected `now`.
+ * `static` returns a constant; `clock`/`countdown` are quantised to their
+ * granularity so the host can throttle refreshes to a safe minimum interval.
+ */
+export function evaluateDeclarativeProviders(
+    providers: Record<string, DeclarativeProvider> | undefined,
+    options: {settings?: Record<string, JsonValue>; host?: DeclarativeDataContext['host']; now?: number} = {},
+): Record<string, JsonValue> {
+    if (!isRecord(providers)) return {};
+    const now = Number.isFinite(options.now) ? Number(options.now) : Date.now();
+    const resolveContext: DeclarativeDataContext = {
+        settings: options.settings || {},
+        data: {},
+        host: options.host || {
+            target: isExtensionContext() ? 'extension' : 'web',
+            now: Math.round(now),
+            locale: typeof navigator !== 'undefined' ? navigator.language : 'zh-CN',
+            browser: typeof navigator !== 'undefined' ? getBrowserInfo().name : 'unknown',
+        },
+    };
+
+    const out: Record<string, JsonValue> = {};
+    for (const [key, provider] of Object.entries(providers)) {
+        if (!key.trim() || !isRecord(provider)) continue;
+        if (provider.type === 'static') {
+            out[key] = isJsonSafe(provider.value) ? cloneJson(provider.value) : null;
+            continue;
+        }
+        if (provider.type === 'clock') {
+            out[key] = clockOutput(floorToGranularity(now, provider.granularity, 'minute'));
+            continue;
+        }
+        if (provider.type === 'countdown') {
+            const target = parseTargetEpoch(resolveDeclarativeValue(provider.target, resolveContext));
+            if (target === null) {
+                out[key] = countdownOutput(0);
+                continue;
+            }
+            const tick = floorToGranularity(now, provider.granularity, 'second');
+            out[key] = countdownOutput(target - tick);
+        }
+    }
+    return out;
+}
+
+/**
+ * Smallest refresh interval (ms) required by the providers, or 0 when none are
+ * time-based. The host uses this to drive a single throttled tick that pauses
+ * while the page is hidden. `static` providers never request a refresh.
+ */
+export function declarativeProvidersRefreshMs(providers: Record<string, DeclarativeProvider> | undefined): number {
+    if (!isRecord(providers)) return 0;
+    let min = 0;
+    for (const provider of Object.values(providers)) {
+        if (!isRecord(provider)) continue;
+        const step = provider.type === 'clock'
+            ? granularityMs(provider.granularity, 'minute')
+            : provider.type === 'countdown'
+                ? granularityMs(provider.granularity, 'second')
+                : 0;
+        if (step <= 0) continue;
+        min = min === 0 ? step : Math.min(min, step);
+    }
+    return min;
+}
+
+const localeOf = (context: DeclarativeDataContext): string | undefined => {
+    const locale = context.host?.locale;
+    return typeof locale === 'string' && locale.trim() ? locale.trim() : undefined;
+};
+
+export function formatDeclarativeNumber(
+    value: JsonValue,
+    context: DeclarativeDataContext,
+    options: {numberStyle?: 'decimal' | 'percent'; minimumFractionDigits?: number; maximumFractionDigits?: number} = {},
+): string {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numeric)) return '';
+    try {
+        return new Intl.NumberFormat(localeOf(context), {
+            style: options.numberStyle === 'percent' ? 'percent' : 'decimal',
+            ...(typeof options.minimumFractionDigits === 'number' ? {minimumFractionDigits: Math.max(0, Math.min(20, options.minimumFractionDigits))} : {}),
+            ...(typeof options.maximumFractionDigits === 'number' ? {maximumFractionDigits: Math.max(0, Math.min(20, options.maximumFractionDigits))} : {}),
+        }).format(numeric);
+    } catch {
+        return String(numeric);
+    }
+}
+
+export function formatDeclarativeDate(
+    value: JsonValue,
+    context: DeclarativeDataContext,
+    options: {dateStyle?: 'short' | 'medium' | 'long' | 'full' | 'none'; timeStyle?: 'short' | 'medium' | 'long' | 'none'} = {},
+): string {
+    const epoch = parseTargetEpoch(value);
+    if (epoch === null) return '';
+    const dateStyle = options.dateStyle === 'none' ? undefined : options.dateStyle ?? 'medium';
+    const timeStyle = options.timeStyle === 'none' ? undefined : options.timeStyle;
+    try {
+        return new Intl.DateTimeFormat(localeOf(context), {
+            ...(dateStyle ? {dateStyle} : {}),
+            ...(timeStyle ? {timeStyle} : {}),
+        }).format(new Date(epoch));
+    } catch {
+        return new Date(epoch).toISOString();
+    }
+}
+
+export function formatDeclarativeRelativeTime(value: JsonValue, context: DeclarativeDataContext): string {
+    const epoch = parseTargetEpoch(value);
+    if (epoch === null) return '';
+    const now = Number.isFinite(context.host?.now) ? Number(context.host.now) : Date.now();
+    const deltaSec = Math.round((epoch - now) / 1000);
+    const abs = Math.abs(deltaSec);
+    const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+        ['year', 31_536_000],
+        ['month', 2_592_000],
+        ['day', 86_400],
+        ['hour', 3_600],
+        ['minute', 60],
+        ['second', 1],
+    ];
+    const [unit, perUnit] = units.find(([, seconds]) => abs >= seconds) ?? ['second', 1];
+    try {
+        return new Intl.RelativeTimeFormat(localeOf(context), {numeric: 'auto'}).format(Math.round(deltaSec / perUnit), unit);
+    } catch {
+        return '';
+    }
 }
 
 export function resolveDeclarativeValue(value: DeclarativeValue | undefined, context: DeclarativeDataContext): JsonValue {

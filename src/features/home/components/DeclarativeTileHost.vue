@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue';
+import {computed, onUnmounted, ref, watch} from 'vue';
+import {useDocumentVisibility} from '@vueuse/core';
 import {PhGear, PhSpinner, PhWarning, PhX} from '@phosphor-icons/vue';
 import type {
   ComponentTile,
@@ -12,6 +13,8 @@ import {useToast} from '../../../shared/composables/useToast.ts';
 import {useTileSizeContext} from '../../../core/tiles/context.ts';
 import {
   createDeclarativeDataContext,
+  declarativeProvidersRefreshMs,
+  evaluateDeclarativeProviders,
   normalizeDeclarativeUrl,
   resolveDeclarativeText,
   resolveDeclarativeValue,
@@ -40,6 +43,7 @@ const draftSettings = ref<Record<string, JsonValue>>({});
 const runtimeStatus = ref<RuntimeStatus>('ready');
 const runtimeMessage = ref('');
 const lastRefreshAt = ref(Date.now());
+const nowTick = ref(Date.now());
 
 const settingsFields = computed(() => listSettingsSchemaFields(props.definition.settingsSchema));
 const normalizedSettings = computed(() => normalizeTileSettingsWithSchema(
@@ -52,14 +56,45 @@ const effectiveTile = computed(() => ({
   ...props.tile,
   settings: normalizedSettings.value.settings,
 }));
-const dataContext = computed(() => createDeclarativeDataContext(
-    effectiveTile.value,
-    {
+const dataContext = computed(() => {
+  const base = createDeclarativeDataContext(effectiveTile.value, {}, nowTick.value);
+  const providerData = evaluateDeclarativeProviders(props.definition.providers, {
+    settings: base.settings,
+    host: base.host,
+    now: nowTick.value,
+  });
+  return {
+    ...base,
+    data: {
+      ...providerData,
       status: runtimeStatus.value,
       refreshedAt: lastRefreshAt.value,
     },
-    lastRefreshAt.value,
-));
+  };
+});
+
+// Single throttled tick driven by the slowest-allowed provider granularity;
+// paused while the page is hidden so offline clocks/countdowns don't burn cycles.
+const visibility = useDocumentVisibility();
+const refreshIntervalMs = computed(() => declarativeProvidersRefreshMs(props.definition.providers));
+let providerTimer: number | null = null;
+const stopProviderTick = () => {
+  if (providerTimer != null) {
+    window.clearInterval(providerTimer);
+    providerTimer = null;
+  }
+};
+const startProviderTick = () => {
+  stopProviderTick();
+  const interval = refreshIntervalMs.value;
+  if (interval <= 0 || visibility.value === 'hidden') return;
+  nowTick.value = Date.now();
+  providerTimer = window.setInterval(() => {
+    nowTick.value = Date.now();
+  }, interval);
+};
+watch([visibility, refreshIntervalMs], startProviderTick, {immediate: true});
+onUnmounted(stopProviderTick);
 const coverNode = computed(() => props.definition.views[props.definition.renderer.coverView]);
 const dialogNode = computed(() => {
   const view = activeDialogView.value || props.definition.renderer.dialogView || '';
@@ -138,6 +173,7 @@ const handleAction = async (action: DeclarativeAction) => {
       runtimeStatus.value = 'loading';
       runtimeMessage.value = '';
       lastRefreshAt.value = Date.now();
+      nowTick.value = lastRefreshAt.value;
       window.setTimeout(() => {
         runtimeStatus.value = 'ready';
       }, 180);

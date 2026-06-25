@@ -2878,6 +2878,119 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
   `);
 });
 
+test('declarative data providers, layout nodes, formatters, and v6 schema save validation', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const parser = await read('src/core/tiles/declarativePackage.ts');
+  const dataProvider = await read('src/core/tiles/declarativeData.ts');
+  const declarativeHost = await read('src/features/home/components/DeclarativeTileHost.vue');
+  const declarativeNode = await read('src/features/home/components/DeclarativeViewNode.vue');
+  const v6 = await read('src/core/config/v6.ts');
+
+  assert.match(contracts, /type DeclarativeProvider/);
+  assert.match(contracts, /type: 'countdown'/);
+  assert.match(contracts, /type: 'relative-time'/);
+  assert.match(parser, /normalizeProviders/);
+  assert.match(dataProvider, /evaluateDeclarativeProviders/);
+  assert.match(dataProvider, /declarativeProvidersRefreshMs/);
+  assert.match(dataProvider, /formatDeclarativeRelativeTime/);
+  assert.match(declarativeHost, /declarativeProvidersRefreshMs/);
+  assert.match(declarativeHost, /useDocumentVisibility/);
+  assert.match(declarativeNode, /node\.type === 'spacer'/);
+  assert.match(declarativeNode, /node\.type === 'divider'/);
+  assert.match(declarativeNode, /formattedValue/);
+  assert.match(v6, /validateComponentSettingsAgainstSchema/);
+
+  await runBundledTypeScript('declarative-providers-nodes', `
+    import assert from 'node:assert/strict';
+    import {parseDeclarativeTilePackage, createDeclarativeTileDefinitionFromInstall} from '../../../src/core/tiles/declarativePackage.ts';
+    import {
+      createDeclarativeDataContext,
+      evaluateDeclarativeProviders,
+      declarativeProvidersRefreshMs,
+      formatDeclarativeNumber,
+      formatDeclarativeDate,
+      formatDeclarativeRelativeTime,
+    } from '../../../src/core/tiles/declarativeData.ts';
+    import {normalizeConfigV6, validateConfigForSaveV6} from '../../../src/core/config/v6.ts';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+
+    const pack = { kind:'voidtab.tile-package', packageVersion:1,
+      manifest: { manifestVersion:1, id:'demo/countdown', version:'1.0.0', apiVersion:1, source:'declarative',
+        metadata:{label:'Countdown', icon:'Clock', category:'time'},
+        sizes:{default:{w:2,h:2}, min:{w:1,h:1}, max:{w:4,h:4}},
+        renderer:{kind:'declarative', coverView:'cover'},
+        settingsSchema:{type:'object', required:['targetAt'], properties:{ targetAt:{type:'string', default:'2030-01-01T00:00:00Z'}, count:{type:'number', default:0}, enabled:{type:'boolean', default:false} }},
+        compatibility:{targets:['web','extension'], minHostVersion:'1.0.0', mobileSupport:'full'},
+        integrity:{sha256:'sha256-cd', assets:{}} },
+      providers: { now:{type:'clock', granularity:'second'}, deadline:{type:'countdown', target:{from:'settings', path:'targetAt'}, granularity:'minute'}, label:{type:'static', value:'hi'} },
+      views: { cover: { type:'column', gap:6, children:[
+        {type:'row', children:[{type:'icon', name:'Clock'}, {type:'spacer', size:6}, {type:'text', text:'t'}]},
+        {type:'divider'},
+        {type:'number', value:{from:'settings', path:'count'}, numberStyle:'decimal'},
+        {type:'date', value:{from:'data', path:'now.epoch'}},
+        {type:'relative-time', value:{from:'data', path:'deadline'}},
+      ]}},
+    };
+    const parsed = parseDeclarativeTilePackage(pack, 1000);
+    assert.ok(parsed.install.providers);
+    assert.equal(parsed.install.providers.now.type, 'clock');
+    assert.equal(parsed.install.providers.deadline.type, 'countdown');
+    assert.equal(parsed.install.providers.label.value, 'hi');
+    const cover = parsed.install.views.cover;
+    assert.equal(cover.type, 'column');
+    assert.equal(cover.children[0].type, 'row');
+    assert.equal(cover.children[0].children[1].type, 'spacer');
+    assert.equal(cover.children[1].type, 'divider');
+    assert.equal(cover.children[2].type, 'number');
+    assert.equal(cover.children[3].type, 'date');
+    assert.equal(cover.children[4].type, 'relative-time');
+    assert.ok(createDeclarativeTileDefinitionFromInstall(parsed.install).providers);
+
+    const settings = {targetAt: '2020-01-01T00:10:00Z'};
+    const fixedNow = Date.parse('2020-01-01T00:00:30Z');
+    const data = evaluateDeclarativeProviders(parsed.install.providers, {settings, now: fixedNow});
+    assert.equal(data.label, 'hi');
+    assert.equal(data.now.second, 30);
+    assert.equal(typeof data.now.epoch, 'number');
+    assert.equal(data.deadline.totalSeconds, 600);
+    assert.equal(data.deadline.minutes, 10);
+    assert.equal(data.deadline.done, false);
+    assert.deepEqual(evaluateDeclarativeProviders(parsed.install.providers, {settings, now: fixedNow}), data);
+    assert.equal(declarativeProvidersRefreshMs(parsed.install.providers), 1000);
+    assert.equal(declarativeProvidersRefreshMs({a:{type:'static', value:1}}), 0);
+
+    const ctx = createDeclarativeDataContext({settings:{}}, {}, fixedNow);
+    ctx.host.locale = 'en-US';
+    assert.equal(formatDeclarativeNumber(1234.5, ctx, {maximumFractionDigits:1}), '1,234.5');
+    assert.equal(formatDeclarativeNumber('x', ctx), '');
+    assert.match(formatDeclarativeDate('2020-01-01T00:00:00Z', ctx, {dateStyle:'short', timeStyle:'none'}), /20/);
+    assert.equal(typeof formatDeclarativeRelativeTime(fixedNow + 3600000, ctx), 'string');
+
+    const base = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId:'t', migratedAt:1}).config);
+    assert.ok(base.layout.length > 0);
+    base.tileInstalls[parsed.tileType] = parsed.install;
+    base.layout[0].tiles.push({
+      id:'tile-cd', tileType: parsed.tileType,
+      settings:{ targetAt:'2030-01-01T00:00:00Z', enabled:'maybe' },
+      layouts:{desktop:{x:0,y:0,w:2,h:2}}, createdAt:1,
+      revision:{updatedAt:1, deviceId:'t', sequence:1},
+    });
+    const okResult = validateConfigForSaveV6(base);
+    assert.equal(okResult.ok, true);
+    assert.ok(okResult.warnings.some((w) => w.includes('enabled')));
+
+    const bad = JSON.parse(JSON.stringify(base));
+    bad.tileInstalls[parsed.tileType].defaultSettings = {count:0};
+    bad.tileInstalls[parsed.tileType].manifest.settingsSchema.properties.targetAt = {type:'string'};
+    const badTile = bad.layout[0].tiles.find((t) => t.id === 'tile-cd');
+    badTile.settings = {count:1};
+    const badResult = validateConfigForSaveV6(bad);
+    assert.equal(badResult.ok, false);
+    assert.ok(badResult.errors.some((e) => e.includes('targetAt')));
+  `);
+});
+
 let failed = 0;
 for (const check of checks) {
   try {

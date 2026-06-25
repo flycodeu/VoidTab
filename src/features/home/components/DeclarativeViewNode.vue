@@ -3,9 +3,13 @@ import {computed} from 'vue';
 import type {DeclarativeAction, DeclarativeViewNode} from '../../../core/tiles/contracts.ts';
 import type {DeclarativeDataContext} from '../../../core/tiles/declarativeData.ts';
 import {
+  formatDeclarativeDate,
+  formatDeclarativeNumber,
+  formatDeclarativeRelativeTime,
   normalizeDeclarativeUrl,
   resolveDeclarativeBoolean,
   resolveDeclarativeText,
+  resolveDeclarativeValue,
 } from '../../../core/tiles/declarativeData.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap.ts';
 
@@ -28,6 +32,26 @@ const text = computed(() => {
   if (props.node.type === 'icon') return resolveDeclarativeText(props.node.label, props.context);
   return '';
 });
+const formattedValue = computed(() => {
+  const node = props.node;
+  if (node.type === 'number') {
+    return formatDeclarativeNumber(resolveDeclarativeValue(node.value, props.context), props.context, {
+      numberStyle: node.numberStyle,
+      minimumFractionDigits: node.minimumFractionDigits,
+      maximumFractionDigits: node.maximumFractionDigits,
+    });
+  }
+  if (node.type === 'date') {
+    return formatDeclarativeDate(resolveDeclarativeValue(node.value, props.context), props.context, {
+      dateStyle: node.dateStyle,
+      timeStyle: node.timeStyle,
+    });
+  }
+  if (node.type === 'relative-time') {
+    return formatDeclarativeRelativeTime(resolveDeclarativeValue(node.value, props.context), props.context);
+  }
+  return '';
+});
 const imageSrc = computed(() => props.node.type === 'image'
     ? normalizeDeclarativeUrl(resolveDeclarativeText(props.node.src, props.context))
     : '');
@@ -39,19 +63,21 @@ const iconName = computed(() => props.node.type === 'icon'
     : 'SquaresFour');
 const iconComponent = computed(() => resolvePhosphorIcon(iconName.value, 'SquaresFour'));
 const containerStyle = computed(() => {
-  if (props.node.type === 'stack') {
+  const node = props.node;
+  if (node.type === 'stack' || node.type === 'row' || node.type === 'column') {
+    const direction = node.type === 'stack' ? (node.direction || 'column') : node.type;
     return {
       display: 'flex',
-      flexDirection: props.node.direction || 'column',
-      gap: `${props.node.gap ?? 10}px`,
-      alignItems: props.node.align === 'stretch' ? 'stretch' : props.node.align || 'stretch',
+      flexDirection: direction,
+      gap: `${node.gap ?? 10}px`,
+      alignItems: node.align === 'stretch' ? 'stretch' : node.align || 'stretch',
     };
   }
-  if (props.node.type === 'grid') {
+  if (node.type === 'grid') {
     return {
       display: 'grid',
-      gridTemplateColumns: `repeat(${props.node.columns || 2}, minmax(0, 1fr))`,
-      gap: `${props.node.gap ?? 10}px`,
+      gridTemplateColumns: `repeat(${node.columns || 2}, minmax(0, 1fr))`,
+      gap: `${node.gap ?? 10}px`,
     };
   }
   return {};
@@ -72,6 +98,14 @@ const imageStyle = computed(() => props.node.type === 'image'
         :class="[`decl-text-${node.variant || 'body'}`, `decl-align-${node.align || 'left'}`]"
     >
       {{ text }}
+    </p>
+
+    <p
+        v-else-if="node.type === 'number' || node.type === 'date' || node.type === 'relative-time'"
+        class="decl-text"
+        :class="[`decl-text-${node.variant || 'body'}`, `decl-align-${node.align || 'left'}`]"
+    >
+      {{ formattedValue }}
     </p>
 
     <img
@@ -105,7 +139,21 @@ const imageStyle = computed(() => props.node.type === 'image'
     </button>
 
     <div
-        v-else-if="node.type === 'stack' || node.type === 'grid'"
+        v-else-if="node.type === 'spacer'"
+        class="decl-spacer"
+        :style="{flex: `0 0 ${node.size ?? 8}px`, height: `${node.size ?? 8}px`}"
+        aria-hidden="true"
+    />
+
+    <div
+        v-else-if="node.type === 'divider'"
+        class="decl-divider"
+        :class="`decl-divider-${node.orientation || 'horizontal'}`"
+        role="separator"
+    />
+
+    <div
+        v-else-if="node.type === 'stack' || node.type === 'grid' || node.type === 'row' || node.type === 'column'"
         class="decl-container"
         :style="containerStyle"
     >
@@ -259,6 +307,26 @@ const imageStyle = computed(() => props.node.type === 'image'
 .decl-container {
   min-width: 0;
   min-height: 0;
+}
+
+.decl-spacer {
+  min-width: 0;
+}
+
+.decl-divider {
+  background: rgba(var(--overlay-rgb), 0.18);
+  border: 0;
+}
+
+.decl-divider-horizontal {
+  width: 100%;
+  height: 1px;
+}
+
+.decl-divider-vertical {
+  align-self: stretch;
+  width: 1px;
+  min-height: 12px;
 }
 
 .decl-dialog-node {

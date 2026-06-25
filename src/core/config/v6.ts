@@ -8,6 +8,7 @@ import {cloneLegacyWidgetSettings} from '../tiles/legacyV5Adapter.ts';
 import {normalizeTileStyleOverride} from '../tiles/style.ts';
 import {isTileType, toBuiltinTileType} from '../tiles/tileType.ts';
 import {normalizeDeclarativeTileInstallRecord} from '../tiles/declarativePackage.ts';
+import {normalizeTileSettingsWithSchema} from '../tiles/settingsSchema.ts';
 import {normalizeSandboxTileInstallRecord} from '../tiles/sandboxPackage.ts';
 import {
     auditTileInstallRecord,
@@ -225,6 +226,42 @@ const addError = (errors: string[], message: string) => {
     if (errors.length < 12) errors.push(message);
 };
 
+const addWarning = (warnings: string[], message: string) => {
+    if (warnings.length < 12) warnings.push(message);
+};
+
+/**
+ * Validate a component tile's settings against the settingsSchema declared by
+ * its install record. Type/enum drift is surfaced as a fixable warning (runtime
+ * normalize coerces it); a required property with neither a value nor a default
+ * is a hard error so corrupt configs are not silently saved.
+ */
+const validateComponentSettingsAgainstSchema = (
+    tile: Record<string, any>,
+    install: unknown,
+    label: string,
+    errors: string[],
+    warnings: string[],
+) => {
+    if (!isRecord(install) || !isRecord(install.manifest)) return;
+    const schema = install.manifest.settingsSchema;
+    if (!isRecord(schema)) return;
+    const defaults = isRecord(install.defaultSettings) ? install.defaultSettings as Record<string, any> : {};
+    const result = normalizeTileSettingsWithSchema(tile.settings, schema, {defaults});
+    for (const issue of result.issues) {
+        addWarning(warnings, `${label}.settings.${issue.path} ${issue.message}`);
+    }
+    const required = Array.isArray(schema.required)
+        ? schema.required.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+    const settings = isRecord(tile.settings) ? tile.settings : {};
+    for (const key of required) {
+        const present = Object.prototype.hasOwnProperty.call(settings, key)
+            || Object.prototype.hasOwnProperty.call(defaults, key);
+        if (!present) addError(errors, `${label}.settings.${key} 是必填项但缺失，且无默认值`);
+    }
+};
+
 /** Validate the v6-specific layout while reusing the existing base-config checks. */
 export function validateConfigForSaveV6(raw: unknown): ConfigSchemaValidationResult {
     if (!isConfigV6(raw)) {
@@ -242,6 +279,8 @@ export function validateConfigForSaveV6(raw: unknown): ConfigSchemaValidationRes
     };
     const base = validateConfigForSave(projection);
     const errors = [...base.errors];
+    const warnings = [...base.warnings];
+    const tileInstalls = isRecord(raw.tileInstalls) ? raw.tileInstalls as Record<string, unknown> : {};
     const workspaceIds = new Set<string>();
 
     raw.layout.forEach((workspace, workspaceIndex) => {
@@ -277,9 +316,11 @@ export function validateConfigForSaveV6(raw: unknown): ConfigSchemaValidationRes
                 if (typeof tile.url !== 'string') addError(errors, `${label}.url 必须是字符串`);
             } else if (!isRecord(tile.settings)) {
                 addError(errors, `${label}.settings 必须是对象`);
+            } else {
+                validateComponentSettingsAgainstSchema(tile, tileInstalls[tile.tileType], label, errors, warnings);
             }
         });
     });
 
-    return {ok: errors.length === 0, errors, warnings: base.warnings};
+    return {ok: errors.length === 0, errors, warnings};
 }
