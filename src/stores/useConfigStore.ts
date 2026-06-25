@@ -101,6 +101,8 @@ export const useConfigStore = defineStore('config', () => {
         resolveKeepLocal: syncActions.resolveKeepLocal,
         resolveUseRemote: syncActions.resolveUseRemote,
         resolvePostpone: syncActions.resolvePostpone,
+        ignoreSyncRecoveryRecord: syncActions.ignoreSyncRecoveryRecord,
+        resolveSyncRecoveryRecord: syncActions.resolveSyncRecoveryRecord,
 
         resetToDefault: lifecycleActions.resetToDefault,
     };

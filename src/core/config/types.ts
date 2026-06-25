@@ -423,6 +423,10 @@ export type RuntimeConfig = {
     };
     sandbox: {
         enabled: boolean;
+        grants?: Record<string, SandboxGrantRecord>;
+        revoked?: Record<string, SandboxGrantRecord>;
+        crashes?: Record<string, SandboxCrashRecord>;
+        limits?: SandboxRuntimeLimits;
     };
     siteList: {
         groups: Record<string, SiteListGroup>;
@@ -434,6 +438,42 @@ export type RuntimeConfig = {
         isOpen: boolean;
     };
 };
+
+export type SandboxRuntimePermission =
+    | 'storage'
+    | 'network'
+    | 'openExternal'
+    | 'clipboard.write'
+    | 'notifications';
+
+export interface SandboxGrantRecord {
+    tileId: string;
+    tileType: string;
+    packageId: string;
+    permissions: SandboxRuntimePermission[];
+    grantedAt: number;
+    updatedAt: number;
+}
+
+export interface SandboxCrashRecord {
+    tileId: string;
+    packageId: string;
+    count: number;
+    firstAt: number;
+    lastAt: number;
+    fusedUntil?: number;
+    reason?: string;
+}
+
+export interface SandboxRuntimeLimits {
+    maxActiveInstances: number;
+    maxStorageBytes: number;
+    maxRequestsPerMinute: number;
+    maxNetworkBytesPerRequest: number;
+    maxCrashCount: number;
+    crashWindowMs: number;
+    fuseDurationMs: number;
+}
 
 
 export interface SiteListEntry {

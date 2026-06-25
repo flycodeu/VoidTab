@@ -1291,6 +1291,7 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
   const contracts = await read('src/core/tiles/contracts.ts');
   const parser = await read('src/core/tiles/declarativePackage.ts');
   const dataProvider = await read('src/core/tiles/declarativeData.ts');
+  const settingsSchema = await read('src/core/tiles/settingsSchema.ts');
   const registry = await read('src/core/tiles/registry.ts');
   const host = await read('src/features/home/components/TileHost.vue');
   const declarativeHost = await read('src/features/home/components/DeclarativeTileHost.vue');
@@ -1305,13 +1306,22 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
   assert.match(contracts, /interface DeclarativeTileDefinition/);
   assert.match(parser, /parseDeclarativeTilePackage/);
   assert.match(parser, /P5 MVP 仅允许导入 declarative 组件/);
+  assert.match(parser, /type === 'refresh'/);
+  assert.match(parser, /type === 'copyText'/);
+  assert.match(parser, /type === 'toggleSetting'/);
   assert.match(dataProvider, /createDeclarativeDataContext/);
   assert.match(dataProvider, /normalizeDeclarativeUrl/);
+  assert.match(dataProvider, /toggleDeclarativeSettingPath/);
+  assert.match(settingsSchema, /normalizeTileSettingsWithSchema/);
+  assert.match(settingsSchema, /listSettingsSchemaFields/);
   assert.match(registry, /listDeclarativeTileDefinitions/);
   assert.match(registry, /createDeclarativeTileDefinitionFromInstall/);
   assert.match(host, /DeclarativeTileHost/);
   assert.match(host, /store\.config\.tileInstalls/);
   assert.match(declarativeHost, /window\.open\(url,\s*'_blank',\s*'noopener,noreferrer'\)/);
+  assert.match(declarativeHost, /updateComponentTileSettings/);
+  assert.match(declarativeHost, /mobileSupport === 'desktop-only'/);
+  assert.match(declarativeHost, /decl-loading/);
   assert.match(declarativeNode, /node\.type === 'text'/);
   assert.match(declarativeNode, /node\.type === 'image'/);
   assert.match(declarativeNode, /node\.type === 'icon'/);
@@ -1327,6 +1337,7 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
   assert.match(siteActions, /importDeclarativeTilePackage/);
   assert.match(siteActions, /exportDeclarativeTilePackage/);
   assert.match(siteActions, /addDeclarativeTile/);
+  assert.match(siteActions, /updateComponentTileSettings/);
   assert.match(v6, /normalizeDeclarativeTileInstallRecord/);
   assert.match(syncChannel, /tileInstalls: _tileInstalls/);
 
@@ -1337,7 +1348,8 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
       createDeclarativeTileDefinitionFromInstall,
       createDeclarativeTilePackageExport,
     } from '../../../src/core/tiles/declarativePackage.ts';
-    import {createDeclarativeDataContext, normalizeDeclarativeUrl, resolveDeclarativeText} from '../../../src/core/tiles/declarativeData.ts';
+    import {createDeclarativeDataContext, normalizeDeclarativeUrl, resolveDeclarativeText, toggleDeclarativeSettingPath} from '../../../src/core/tiles/declarativeData.ts';
+    import {listSettingsSchemaFields, normalizeTileSettingsWithSchema} from '../../../src/core/tiles/settingsSchema.ts';
     import {evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
     import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
     import {createConfigV6SyncExport} from '../../../src/core/sync/v6Channel.ts';
@@ -1371,6 +1383,7 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
           properties: {
             symbol: {type: 'string', default: 'BTC'},
             link: {type: 'string', default: 'https://example.com/?token=not-secret'},
+            enabled: {type: 'boolean', default: false},
           },
         },
         styleable: ['radius', 'accent', 'position'],
@@ -1391,6 +1404,9 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
             {type: 'text', variant: 'title', text: '{{settings.symbol}} spot'},
             {type: 'text', variant: 'metric', text: {from: 'data', path: 'price', fallback: '--'}},
             {type: 'button', label: 'Open', action: {type: 'openUrl', url: {from: 'settings', path: 'link'}}},
+            {type: 'button', label: 'Copy', action: {type: 'copyText', text: '{{settings.symbol}}'}},
+            {type: 'button', label: 'Toggle', action: {type: 'toggleSetting', path: 'enabled'}},
+            {type: 'button', label: 'Refresh', action: {type: 'refresh'}},
           ],
         },
         detail: {
@@ -1407,8 +1423,24 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
     assert.equal(parsed.install.sha256, 'sha256-demo');
     assert.equal(parsed.install.defaultSettings.symbol, 'BTC');
     assert.equal(parsed.install.defaultSettings.link, 'https://example.com/');
+    assert.equal(parsed.install.defaultSettings.enabled, false);
     assert.deepEqual(parsed.install.manifest.styleable, ['radius', 'accent']);
     assert.equal(parsed.install.views.cover.type, 'stack');
+    const cover = parsed.install.views.cover;
+    if (cover.type !== 'stack') throw new Error('expected stack cover');
+    if (cover.children[5].type !== 'button') throw new Error('expected toggle button');
+    assert.equal(cover.children[5].action.type, 'toggleSetting');
+    if (cover.children[6].type !== 'button') throw new Error('expected refresh button');
+    assert.equal(cover.children[6].action.type, 'refresh');
+
+    const fields = listSettingsSchemaFields(parsed.install.manifest.settingsSchema);
+    assert.ok(fields.some((field) => field.key === 'symbol' && field.type === 'string'));
+    const settingsResult = normalizeTileSettingsWithSchema({symbol: 42, enabled: 'true'}, parsed.install.manifest.settingsSchema, {
+      defaults: parsed.install.defaultSettings,
+    });
+    assert.equal(settingsResult.settings.symbol, '42');
+    assert.equal(settingsResult.settings.enabled, true);
+    assert.equal(toggleDeclarativeSettingPath(settingsResult.settings, 'enabled').enabled, false);
 
     const definition = createDeclarativeTileDefinitionFromInstall(parsed.install);
     assert.equal(definition.renderer.kind, 'declarative');
@@ -1468,9 +1500,11 @@ test('P5 imports declarative tile packages and renders inert JSON views', async 
 test('P6 audits package repository installs and preserves sync restore intent', async () => {
   const contracts = await read('src/core/tiles/contracts.ts');
   const packageStore = await read('src/core/tiles/packageStore.ts');
+  const packageRepository = await read('src/core/tiles/packageRepository.ts');
   const v6Channel = await read('src/core/sync/v6Channel.ts');
   const recovery = await read('src/core/sync/recovery.ts');
   const revisionMerge = await read('src/core/sync/revisionMerge.ts');
+  const scheduler = await read('src/core/sync/scheduler.ts');
   const syncTypes = await read('src/core/sync/types.ts');
   const syncActions = await read('src/stores/config/syncActions.ts');
   const dataTab = await read('src/features/settings/components/tabs/DataTab.vue');
@@ -1486,28 +1520,43 @@ test('P6 audits package repository installs and preserves sync restore intent', 
   assert.match(packageStore, /revokedPackages/);
   assert.match(packageStore, /hash-mismatch/);
   assert.match(packageStore, /createTileInstallStubFromIntent/);
+  assert.match(packageStore, /fetchPackageTrustIndex/);
+  assert.match(packageStore, /verifyEd25519PackageSignature/);
+  assert.match(packageRepository, /TILE_PACKAGE_REPOSITORY_KEY/);
+  assert.match(packageRepository, /hydrateTileInstallsFromRepository/);
   assert.match(v6Channel, /tileInstallIntents/);
   assert.match(v6Channel, /restoreConfigV6FromSyncExportWithReport/);
+  assert.match(v6Channel, /mergeConfigV6SyncExportWithLocal/);
   assert.match(recovery, /createSyncRecoveryRecords/);
+  assert.match(recovery, /resolveSyncRecoveryRecord/);
+  assert.match(recovery, /ignoreSyncRecoveryRecord/);
   assert.match(revisionMerge, /mergeTilesByRevision/);
   assert.match(revisionMerge, /classifyRevisionConflict/);
+  assert.match(scheduler, /Return true when the caller merged it automatically/);
   assert.match(syncTypes, /recoveryRecords/);
   assert.match(syncActions, /existingInstalls/);
+  assert.match(syncActions, /tryApplyRevisionMerge/);
+  assert.match(syncActions, /ignoreSyncRecoveryRecord/);
   assert.match(dataTab, /restoreConfigV6FromSyncExportWithReport/);
+  assert.match(dataTab, /hydrateTileInstallsFromRepository/);
   assert.match(syncTab, /recoveryRecords/);
   assert.match(syncTab, /clearRecoveryRecords/);
+  assert.match(syncTab, /fixRecoveryRecord/);
   assert.match(widgetPanel, /auditStateText/);
   assert.match(v6, /normalizePackageAuditRecord/);
 
   await runBundledTypeScript('p6-package-audit-and-sync-restore', `
     import assert from 'node:assert/strict';
     import {
+      createPackageSignaturePayload,
       createTileInstallIntents,
       installDeclarativePackageAtomically,
+      normalizePackageTrustIndex,
       rollbackTilePackageInstall,
     } from '../../../src/core/tiles/packageStore.ts';
-    import {createConfigV6SyncExport, restoreConfigV6FromSyncExportWithReport} from '../../../src/core/sync/v6Channel.ts';
-    import {createSyncRecoveryRecords} from '../../../src/core/sync/recovery.ts';
+    import {createTilePackageRepositoryRecord, normalizeTilePackageRepository} from '../../../src/core/tiles/packageRepository.ts';
+    import {createConfigV6SyncExport, mergeConfigV6SyncExportWithLocal, restoreConfigV6FromSyncExportWithReport} from '../../../src/core/sync/v6Channel.ts';
+    import {createSyncRecoveryRecords, ignoreSyncRecoveryRecord, resolveSyncRecoveryRecord} from '../../../src/core/sync/recovery.ts';
     import {classifyRevisionConflict, mergeTilesByRevision} from '../../../src/core/sync/revisionMerge.ts';
     import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
     import {defaultConfig} from '../../../src/core/config/default.ts';
@@ -1555,12 +1604,23 @@ test('P6 audits package repository installs and preserves sync restore intent', 
       }],
       revokedPackages: [],
     };
+    const normalizedIndex = normalizePackageTrustIndex({
+      ...trustIndex,
+      trustedPackages: [{...trustIndex.trustedPackages[0], publicKey: {algorithm: 'ed25519', keyId: 'voidtab-demo', spki: 'c3BraQ=='}}],
+    });
+    if (!normalizedIndex.trustedPackages[0].publicKey) throw new Error('missing normalized public key');
+    assert.equal(normalizedIndex.trustedPackages[0].publicKey.keyId, 'voidtab-demo');
     const tx = installDeclarativePackageAtomically({}, pack, {trustIndex, now: 100});
     assert.equal(tx.ok, true);
     assert.equal(tx.audit.status, 'trusted');
     assert.equal(tx.install.audit.status, 'trusted');
     assert.equal(tx.install.installIntent.packageId, 'demo/audit-card');
+    assert.equal(createPackageSignaturePayload(tx.install).includes('"manifest"'), true);
     assert.equal(createTileInstallIntents(tx.nextInstalls)['external:demo/audit-card'].sha256, 'sha256-audit-card');
+    const repositoryRecord = createTilePackageRepositoryRecord(tx.install);
+    if (!repositoryRecord) throw new Error('missing repository record');
+    assert.equal(repositoryRecord.tileType, 'external:demo/audit-card');
+    assert.equal(normalizeTilePackageRepository({version: 1, packages: {'external:demo/audit-card': repositoryRecord}}).packages['external:demo/audit-card'].install.audit.status, 'trusted');
     assert.deepEqual(rollbackTilePackageInstall(tx.nextInstalls, tx.rollback), {});
 
     const mismatch = installDeclarativePackageAtomically({}, pack, {
@@ -1653,6 +1713,65 @@ test('P6 audits package repository installs and preserves sync restore intent', 
     );
     assert.ok(merge.records.some((record) => record.kind === 'revision-conflict'));
     assert.ok(merge.records.some((record) => record.kind === 'layout-overlap'));
+
+    const localMergeBase = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'local-merge', migratedAt: 1}).config);
+    const remoteMergeBase = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'remote-merge', migratedAt: 2}).config);
+    localMergeBase.layout = [{
+      id: 'workspace-merge',
+      title: 'Merge',
+      icon: 'SquaresFour',
+      workspaceLayout: {mode: 'canvas', profiles: {desktop: {unit: 96, gap: 12, minCols: 4}}},
+      revision: {updatedAt: 1, deviceId: 'local', sequence: 1},
+      tiles: [{
+        id: 'tile-shared',
+        tileType: 'site',
+        title: 'Local',
+        url: 'https://local.example',
+        layouts: {desktop: {x: 0, y: 0, w: 1, h: 1}},
+        createdAt: 1,
+        revision: {updatedAt: 10, deviceId: 'local', sequence: 1},
+      }],
+    }];
+    remoteMergeBase.layout = [{
+      ...localMergeBase.layout[0],
+      tiles: [{
+        ...localMergeBase.layout[0].tiles[0],
+        title: 'Remote',
+        revision: {updatedAt: 20, deviceId: 'remote', sequence: 2},
+      }],
+    }];
+    remoteMergeBase.tileInstalls = tx.nextInstalls;
+    const remoteExport = createConfigV6SyncExport(remoteMergeBase);
+    const mergedConfig = mergeConfigV6SyncExportWithLocal(localMergeBase, remoteExport, {existingInstalls: tx.nextInstalls, now: 900}).config;
+    assert.equal(mergedConfig.layout[0].tiles[0].title, 'Remote');
+    assert.equal(mergedConfig.tileInstalls['external:demo/audit-card'].views.cover.type, 'stack');
+
+    const overlapConfig = normalizeConfigV6({
+      ...localMergeBase,
+      sync: {...localMergeBase.sync, recoveryRecords: []},
+      layout: [{
+        ...localMergeBase.layout[0],
+        tiles: [
+          localMergeBase.layout[0].tiles[0],
+          {
+            ...localMergeBase.layout[0].tiles[0],
+            id: 'tile-overlap',
+            title: 'Overlap',
+            revision: {updatedAt: 11, deviceId: 'local', sequence: 1},
+          },
+        ],
+      }],
+    });
+    const overlapRecords = createSyncRecoveryRecords(overlapConfig, {now: 901});
+    assert.equal(overlapRecords.some((record) => record.kind === 'layout-overlap'), true);
+    const ignoredRecords = ignoreSyncRecoveryRecord(overlapRecords, overlapRecords[0].id);
+    assert.equal(ignoredRecords.length, overlapRecords.length - 1);
+    const overlapRecord = overlapRecords.find((record) => record.kind === 'layout-overlap');
+    if (!overlapRecord) throw new Error('missing overlap record');
+    overlapConfig.sync.recoveryRecords = overlapRecords;
+    const resolvedOverlap = resolveSyncRecoveryRecord(overlapConfig, overlapRecord.id, {now: 902});
+    assert.equal(resolvedOverlap.resolved, true);
+    assert.equal((resolvedOverlap.config.sync.recoveryRecords || []).some((record) => record.kind === 'layout-overlap'), false);
   `);
 });
 
@@ -1660,6 +1779,7 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   const contracts = await read('src/core/tiles/contracts.ts');
   const sandboxPackage = await read('src/core/tiles/sandboxPackage.ts');
   const sandboxBridge = await read('src/core/tiles/sandboxBridge.ts');
+  const sandboxRuntime = await read('src/core/tiles/sandboxRuntime.ts');
   const sandboxHost = await read('src/features/home/components/SandboxTileHost.vue');
   const tileHost = await read('src/features/home/components/TileHost.vue');
   const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
@@ -1667,6 +1787,7 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   const settingsModal = await read('src/features/settings/components/SettingsModal.vue');
   const packageStore = await read('src/core/tiles/packageStore.ts');
   const hostCapabilities = await read('src/core/tiles/hostCapabilities.ts');
+  const siteActions = await read('src/stores/config/siteActions.ts');
 
   assert.match(contracts, /interface SandboxTilePackageWire/);
   assert.match(contracts, /interface SandboxTileDefinition/);
@@ -1677,17 +1798,36 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   assert.match(sandboxBridge, /Content-Security-Policy/);
   assert.match(sandboxBridge, /connect-src 'none'/);
   assert.match(sandboxBridge, /parseSandboxFrameMessage/);
+  assert.match(sandboxBridge, /network\.fetch/);
+  assert.match(sandboxBridge, /notification\.show/);
+  assert.match(sandboxBridge, /data\.kind === 'pause'/);
+  assert.match(sandboxRuntime, /listMissingSandboxPermissions/);
+  assert.match(sandboxRuntime, /recordSandboxCrash/);
+  assert.match(sandboxRuntime, /evaluateSandboxMarketReview/);
   assert.match(sandboxHost, /event\.source !== iframeRef\.value\?\.contentWindow/);
   assert.match(sandboxHost, /sandbox="allow-scripts"/);
+  assert.match(sandboxHost, /grantSandboxPermissions/);
+  assert.match(sandboxHost, /network\.fetch/);
+  assert.match(sandboxHost, /notification\.show/);
+  assert.match(sandboxHost, /IntersectionObserver/);
+  assert.match(sandboxHost, /visibilitychange/);
+  assert.match(sandboxHost, /recordSandboxCrash/);
+  assert.match(sandboxHost, /registerSandboxInstance/);
   assert.doesNotMatch(sandboxHost, /allow-same-origin/);
   assert.match(tileHost, /SandboxTileHost/);
   assert.match(widgetPanel, /listSandboxTileDefinitions/);
   assert.match(widgetPanel, /sandboxRuntimeEnabled/);
   assert.match(advancedTab, /setSandboxRuntimeEnabled/);
+  assert.match(advancedTab, /revokeSandboxPermissions/);
+  assert.match(advancedTab, /clearSandboxCrash/);
+  assert.match(advancedTab, /maxActiveInstances/);
   assert.match(settingsModal, /advanced/);
   assert.match(packageStore, /installTilePackageAtomically/);
   assert.match(packageStore, /parseSandboxTilePackage/);
   assert.match(hostCapabilities, /sandboxRuntime: options\.sandboxRuntime === true/);
+  assert.match(siteActions, /grantSandboxPermissions/);
+  assert.match(siteActions, /revokeSandboxPermissions/);
+  assert.match(siteActions, /updateSandboxRuntimeLimits/);
 
   await runBundledTypeScript('p7-sandbox-js-local-experiment', `
     import assert from 'node:assert/strict';
@@ -1701,6 +1841,22 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
       parseSandboxFrameMessage,
       SANDBOX_BRIDGE_CHANNEL,
     } from '../../../src/core/tiles/sandboxBridge.ts';
+    import {
+      clearSandboxCrash,
+      createSandboxGrantRecord,
+      DEFAULT_SANDBOX_LIMITS,
+      evaluateSandboxMarketReview,
+      getActiveSandboxInstanceCount,
+      getSandboxFuseState,
+      getSandboxGrantKey,
+      hasSandboxPermission,
+      isSandboxNetworkUrlAllowed,
+      listMissingSandboxPermissions,
+      listSandboxRequiredPermissions,
+      recordSandboxCrash,
+      registerSandboxInstance,
+      unregisterSandboxInstance,
+    } from '../../../src/core/tiles/sandboxRuntime.ts';
     import {installTilePackageAtomically, exportInstalledPackageForAudit} from '../../../src/core/tiles/packageStore.ts';
     import {evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
     import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
@@ -1738,7 +1894,9 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
         },
         capabilities: [
           {type: 'storage', scope: 'instance'},
+          {type: 'network', hosts: ['api.example.com', '*.void.test']},
           {type: 'openExternal'},
+          {type: 'notifications'},
         ],
         compatibility: {targets: ['web'], minHostVersion: '1.0.0', mobileSupport: 'full'},
         integrity: {sha256: 'sha256-sandbox-quote', assets: {}},
@@ -1769,7 +1927,7 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
     const definition = createSandboxTileDefinitionFromInstall(parsed.install);
     if (!definition) throw new Error('missing sandbox definition');
     assert.equal(definition.renderer.kind, 'sandbox');
-    assert.equal(definition.capabilities.length, 2);
+    assert.equal(definition.capabilities.length, 4);
 
     const disabledHost: HostCapabilities = {
       target: 'web',
@@ -1821,6 +1979,33 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
     assert.equal(srcDoc.includes('</script><img src=x>'), false);
     assert.match(srcDoc, /connect-src 'none'/);
     assert.match(srcDoc, /VoidWidget/);
+    assert.match(srcDoc, /network\.fetch/);
+    assert.match(srcDoc, /notification\.show/);
+    assert.match(srcDoc, /data\.kind === 'pause'/);
+
+    const permissions = listSandboxRequiredPermissions(definition);
+    assert.deepEqual(permissions, ['storage', 'network', 'openExternal', 'notifications']);
+    assert.deepEqual(listMissingSandboxPermissions(definition, undefined, tile.id), permissions);
+    const grant = createSandboxGrantRecord(tile, definition, permissions, 200);
+    const grants = {[getSandboxGrantKey(tile.id)]: grant};
+    assert.equal(hasSandboxPermission(definition, grants, tile.id, 'network'), true);
+    assert.deepEqual(listMissingSandboxPermissions(definition, grants, tile.id), []);
+    assert.equal(isSandboxNetworkUrlAllowed(definition, 'https://api.example.com/v1/quote'), true);
+    assert.equal(isSandboxNetworkUrlAllowed(definition, 'https://cdn.void.test/data.json'), true);
+    assert.equal(isSandboxNetworkUrlAllowed(definition, 'https://evil.example.net/data.json'), false);
+
+    const crashLimits = {...DEFAULT_SANDBOX_LIMITS, maxCrashCount: 2, crashWindowMs: 1000, fuseDurationMs: 5000};
+    let crashes = recordSandboxCrash(undefined, tile, definition, 'first crash', crashLimits, 1000);
+    assert.equal(getSandboxFuseState(crashes, tile.id, 1000).fused, false);
+    crashes = recordSandboxCrash(crashes, tile, definition, 'second crash', crashLimits, 1100);
+    assert.equal(getSandboxFuseState(crashes, tile.id, 1100).fused, true);
+    assert.equal(clearSandboxCrash(crashes, tile.id)[getSandboxGrantKey(tile.id)], undefined);
+    assert.equal(evaluateSandboxMarketReview(definition).allowed, false);
+
+    const activeBefore = getActiveSandboxInstanceCount();
+    const registration = registerSandboxInstance(tile.id, {maxActiveInstances: activeBefore + 1});
+    assert.equal(registration.ok, true);
+    unregisterSandboxInstance(tile.id);
 
     const message = parseSandboxFrameMessage({
       channel: SANDBOX_BRIDGE_CHANNEL,
@@ -1831,6 +2016,24 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
     }, 'nonce-1');
     if (!message) throw new Error('missing sandbox request message');
     assert.equal(message.kind, 'request');
+    const networkMessage = parseSandboxFrameMessage({
+      channel: SANDBOX_BRIDGE_CHANNEL,
+      nonce: 'nonce-1',
+      kind: 'request',
+      requestId: 'r2',
+      request: {type: 'network.fetch', payload: {url: 'https://api.example.com/v1'}},
+    }, 'nonce-1');
+    assert.equal(networkMessage?.kind, 'request');
+    assert.equal(networkMessage?.request.type, 'network.fetch');
+    const notificationMessage = parseSandboxFrameMessage({
+      channel: SANDBOX_BRIDGE_CHANNEL,
+      nonce: 'nonce-1',
+      kind: 'request',
+      requestId: 'r3',
+      request: {type: 'notification.show', payload: {title: 'Hello'}},
+    }, 'nonce-1');
+    assert.equal(notificationMessage?.kind, 'request');
+    assert.equal(notificationMessage?.request.type, 'notification.show');
     assert.equal(parseSandboxFrameMessage({...message, nonce: 'bad'}, 'nonce-1'), null);
   `);
 });

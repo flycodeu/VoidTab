@@ -1,8 +1,10 @@
 import type {Ref} from 'vue';
-import type {ConfigV6, SiteItem} from '../../core/config/types';
+import type {ConfigV6, SandboxRuntimeLimits, SandboxRuntimePermission, SiteItem} from '../../core/config/types';
 import type {
+    ComponentTile,
     DeclarativeTileDefinition,
     ExternalTileType,
+    JsonValue,
     SandboxTileDefinition,
     SiteTile,
     TileInstance,
@@ -20,12 +22,23 @@ import {
 } from '../../core/tiles/declarativePackage.ts';
 import {createSandboxTilePackageExport} from '../../core/tiles/sandboxPackage.ts';
 import {installDeclarativePackageAtomically, installTilePackageAtomically} from '../../core/tiles/packageStore.ts';
+import {upsertTilePackageRepositoryRecord} from '../../core/tiles/packageRepository.ts';
+import {normalizeTileSettingsWithSchema} from '../../core/tiles/settingsSchema.ts';
+import {
+    clearSandboxCrash as clearSandboxCrashRecord,
+    createSandboxGrantRecord,
+    DEFAULT_SANDBOX_LIMITS,
+    getSandboxGrantKey,
+    listSandboxRequiredPermissions,
+    recordSandboxCrash as recordSandboxCrashRecord,
+} from '../../core/tiles/sandboxRuntime.ts';
 import {
     createExternalComponentTile,
     createSiteTile as createCanonicalSiteTile,
     createWorkspace,
     findTile,
     findWorkspace,
+    isComponentTile,
     isSiteTile,
     removeTile as removeCanonicalTile,
     setWorkspaceTiles,
@@ -207,6 +220,27 @@ export const createSiteActions = (
         return true;
     };
 
+    const updateComponentTileSettings = (tileId: string, settings: Record<string, JsonValue>) => {
+        for (const group of config.value.layout) {
+            const tile = findTile(group, tileId);
+            if (!tile || !isComponentTile(tile)) continue;
+
+            const definition = resolveTileDefinition(tile.tileType, config.value.tileInstalls);
+            const defaults = 'defaultSettings' in definition ? definition.defaultSettings : undefined;
+            const schema = 'settingsSchema' in definition ? definition.settingsSchema : undefined;
+            const normalized = normalizeTileSettingsWithSchema(settings, schema, {defaults});
+            updateCanonicalTile(tile, {settings: normalized.settings} as Partial<ComponentTile>);
+            void saveConfig();
+            return {success: true, issues: normalized.issues, changed: normalized.changed};
+        }
+
+        return {
+            success: false,
+            issues: [{path: '', message: '未找到组件实例', severity: 'error' as const}],
+            changed: false,
+        };
+    };
+
     const exportTileInstanceForShare = (groupId: string, tileId: string) => {
         const group = findWorkspace(config.value, groupId);
         const tile = findTile(group, tileId);
@@ -234,6 +268,7 @@ export const createSiteActions = (
         const transaction = installDeclarativePackageAtomically(config.value.tileInstalls, raw);
         if (transaction.ok) {
             config.value.tileInstalls = transaction.nextInstalls;
+            void upsertTilePackageRepositoryRecord(transaction.install);
             void saveConfig();
             return {
                 success: true,
@@ -256,6 +291,7 @@ export const createSiteActions = (
         const transaction = installTilePackageAtomically(config.value.tileInstalls, raw);
         if (transaction.ok) {
             config.value.tileInstalls = transaction.nextInstalls;
+            void upsertTilePackageRepositoryRecord(transaction.install);
             void saveConfig();
             return {
                 success: true,
@@ -327,6 +363,131 @@ export const createSiteActions = (
             enabled,
         };
         void saveConfig();
+    };
+
+    const resolveSandboxRuntimeTile = (tileId: string) => {
+        for (const group of config.value.layout) {
+            const tile = findTile(group, tileId);
+            if (!tile || !isComponentTile(tile)) continue;
+            const definition = resolveTileDefinition(tile.tileType, config.value.tileInstalls);
+            if (definition.renderer.kind !== 'sandbox') return null;
+            return {tile, definition: definition as SandboxTileDefinition};
+        }
+        return null;
+    };
+
+    const clampSandboxLimit = (
+        value: unknown,
+        min: number,
+        max: number,
+        fallback: number,
+    ) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(min, Math.min(max, Math.round(numeric)));
+    };
+
+    const normalizeSandboxLimits = (
+        patch: Partial<SandboxRuntimeLimits>,
+        current: Partial<SandboxRuntimeLimits> = {},
+    ): SandboxRuntimeLimits => {
+        const source = {...DEFAULT_SANDBOX_LIMITS, ...current, ...patch};
+        return {
+            maxActiveInstances: clampSandboxLimit(source.maxActiveInstances, 1, 24, DEFAULT_SANDBOX_LIMITS.maxActiveInstances),
+            maxStorageBytes: clampSandboxLimit(source.maxStorageBytes, 4_096, 1_048_576, DEFAULT_SANDBOX_LIMITS.maxStorageBytes),
+            maxRequestsPerMinute: clampSandboxLimit(source.maxRequestsPerMinute, 5, 240, DEFAULT_SANDBOX_LIMITS.maxRequestsPerMinute),
+            maxNetworkBytesPerRequest: clampSandboxLimit(source.maxNetworkBytesPerRequest, 16_384, 1_048_576, DEFAULT_SANDBOX_LIMITS.maxNetworkBytesPerRequest),
+            maxCrashCount: clampSandboxLimit(source.maxCrashCount, 1, 20, DEFAULT_SANDBOX_LIMITS.maxCrashCount),
+            crashWindowMs: clampSandboxLimit(source.crashWindowMs, 60_000, 86_400_000, DEFAULT_SANDBOX_LIMITS.crashWindowMs),
+            fuseDurationMs: clampSandboxLimit(source.fuseDurationMs, 60_000, 86_400_000, DEFAULT_SANDBOX_LIMITS.fuseDurationMs),
+        };
+    };
+
+    const updateSandboxRuntimeLimits = (limits: Partial<SandboxRuntimeLimits>) => {
+        const runtime = config.value.runtime.sandbox || {enabled: false};
+        config.value.runtime.sandbox = {
+            ...runtime,
+            limits: normalizeSandboxLimits(limits, runtime.limits),
+        };
+        void saveConfig();
+    };
+
+    const grantSandboxPermissions = (
+        tileId: string,
+        permissions?: SandboxRuntimePermission[],
+    ) => {
+        const resolved = resolveSandboxRuntimeTile(tileId);
+        if (!resolved) return false;
+
+        const runtime = config.value.runtime.sandbox || {enabled: false};
+        const required = listSandboxRequiredPermissions(resolved.definition);
+        const selected = permissions?.length ? permissions : required;
+        const record = createSandboxGrantRecord(resolved.tile, resolved.definition, selected);
+        const key = getSandboxGrantKey(tileId);
+        const revoked = {...(runtime.revoked || {})};
+        delete revoked[key];
+
+        config.value.runtime.sandbox = {
+            ...runtime,
+            grants: {
+                ...(runtime.grants || {}),
+                [key]: record,
+            },
+            revoked,
+        };
+        void saveConfig();
+        return true;
+    };
+
+    const revokeSandboxPermissions = (tileId: string) => {
+        const runtime = config.value.runtime.sandbox || {enabled: false};
+        const key = getSandboxGrantKey(tileId);
+        const current = runtime.grants?.[key];
+        if (!current) return false;
+
+        const grants = {...(runtime.grants || {})};
+        delete grants[key];
+        config.value.runtime.sandbox = {
+            ...runtime,
+            grants,
+            revoked: {
+                ...(runtime.revoked || {}),
+                [key]: {
+                    ...current,
+                    updatedAt: Date.now(),
+                },
+            },
+        };
+        void saveConfig();
+        return true;
+    };
+
+    const recordSandboxCrash = (tileId: string, reason: string) => {
+        const resolved = resolveSandboxRuntimeTile(tileId);
+        if (!resolved) return false;
+        const runtime = config.value.runtime.sandbox || {enabled: false};
+        config.value.runtime.sandbox = {
+            ...runtime,
+            crashes: recordSandboxCrashRecord(
+                runtime.crashes,
+                resolved.tile,
+                resolved.definition,
+                reason,
+                runtime.limits || DEFAULT_SANDBOX_LIMITS,
+            ),
+        };
+        void saveConfig();
+        return true;
+    };
+
+    const clearSandboxCrash = (tileId: string) => {
+        const runtime = config.value.runtime.sandbox || {enabled: false};
+        config.value.runtime.sandbox = {
+            ...runtime,
+            crashes: clearSandboxCrashRecord(runtime.crashes, tileId),
+        };
+        void saveConfig();
+        return true;
     };
 
     const importBookmarks = (htmlContent: string) => {
@@ -450,6 +611,7 @@ export const createSiteActions = (
         moveSite,
         updateTileStyleOverride,
         resetTileStyleOverride,
+        updateComponentTileSettings,
         exportTileInstanceForShare,
         importTileInstanceToGroup,
         importDeclarativeTilePackage,
@@ -459,6 +621,11 @@ export const createSiteActions = (
         addDeclarativeTile,
         addExternalTile,
         setSandboxRuntimeEnabled,
+        updateSandboxRuntimeLimits,
+        grantSandboxPermissions,
+        revokeSandboxPermissions,
+        recordSandboxCrash,
+        clearSandboxCrash,
         importBookmarks,
         setIconFallback,
         updateGroupSort,

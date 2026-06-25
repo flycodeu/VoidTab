@@ -13,7 +13,9 @@ export type SandboxBridgeRequestType =
     | 'storage.set'
     | 'storage.remove'
     | 'openUrl'
-    | 'clipboard.write';
+    | 'clipboard.write'
+    | 'network.fetch'
+    | 'notification.show';
 
 export interface SandboxBridgeRequest {
     type: SandboxBridgeRequestType;
@@ -130,6 +132,7 @@ const bootstrapScript = `
   const pending = new Map();
   let widget = null;
   let mounted = false;
+  let paused = false;
   let requestSeq = 0;
 
   const post = (kind, payload, requestId) => {
@@ -164,8 +167,17 @@ const bootstrapScript = `
     }),
     openUrl: (url) => request('openUrl', {url}),
     copyText: (text) => request('clipboard.write', {text}),
+    network: Object.freeze({
+      fetch: (url, init) => request('network.fetch', {url, init}),
+    }),
+    notify: (title, options) => request('notification.show', {title, options}),
     emit: (name, data) => post('event', {name, data}),
   });
+
+  const callWidgetLifecycle = (method) => {
+    if (!widget || typeof widget[method] !== 'function') return;
+    Promise.resolve(widget[method](ctx)).catch((error) => post('error', cleanError(error)));
+  };
 
   window.addEventListener('message', (event) => {
     const data = event.data || {};
@@ -182,10 +194,22 @@ const bootstrapScript = `
       Promise.resolve(widget.update(ctx)).catch((error) => post('error', cleanError(error)));
       return;
     }
-    if (data.kind === 'unmount') {
-      if (widget && typeof widget.unmount === 'function') {
-        Promise.resolve(widget.unmount()).catch((error) => post('error', cleanError(error)));
+    if (data.kind === 'pause') {
+      if (!paused) {
+        paused = true;
+        callWidgetLifecycle('pause');
       }
+      return;
+    }
+    if (data.kind === 'resume') {
+      if (paused) {
+        paused = false;
+        callWidgetLifecycle('resume');
+      }
+      return;
+    }
+    if (data.kind === 'unmount') {
+      callWidgetLifecycle('unmount');
       widget = null;
     }
   });
@@ -297,6 +321,8 @@ export function parseSandboxFrameMessage(raw: unknown, nonce: string): SandboxFr
             && type !== 'storage.remove'
             && type !== 'openUrl'
             && type !== 'clipboard.write'
+            && type !== 'network.fetch'
+            && type !== 'notification.show'
         ) return null;
         return {
             channel: SANDBOX_BRIDGE_CHANNEL,

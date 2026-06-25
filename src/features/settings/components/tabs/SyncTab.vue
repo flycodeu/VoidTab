@@ -90,6 +90,7 @@ const showRestoreConfirm = ref(false);
 const showV6SyncConfirm = ref(false);
 const upgradeBusy = ref(false);
 const uploadAfterV6Confirm = ref(false);
+const recoveryBusyId = ref('');
 
 /** 操作结果提示状态 */
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
@@ -285,6 +286,26 @@ const clearRecoveryRecords = async () => {
   await store.saveConfig();
   showFeedback(true, '已清空恢复记录');
 };
+
+const fixRecoveryRecord = async (recordId: string) => {
+  recoveryBusyId.value = recordId;
+  try {
+    const result = await store.resolveSyncRecoveryRecord(recordId);
+    showFeedback(result.success, result.msg);
+  } finally {
+    recoveryBusyId.value = '';
+  }
+};
+
+const ignoreRecoveryRecord = async (recordId: string) => {
+  recoveryBusyId.value = recordId;
+  try {
+    const result = await store.ignoreSyncRecoveryRecord(recordId);
+    showFeedback(result.success, result.msg);
+  } finally {
+    recoveryBusyId.value = '';
+  }
+};
 </script>
 
 <template>
@@ -393,10 +414,31 @@ const clearRecoveryRecords = async () => {
 
         <div class="recovery-list">
           <div v-for="record in recoveryRecords" :key="record.id" class="recovery-item">
-            <span class="recovery-kind" :class="recoveryKindClass(record.kind)">
-              {{ recoveryKindText(record.kind) }}
-            </span>
-            <span class="recovery-message">{{ record.message }}</span>
+            <div class="recovery-main">
+              <span class="recovery-kind" :class="recoveryKindClass(record.kind)">
+                {{ recoveryKindText(record.kind) }}
+              </span>
+              <span class="recovery-message">{{ record.message }}</span>
+            </div>
+            <div class="recovery-actions">
+              <button
+                  v-if="record.kind === 'layout-overlap'"
+                  type="button"
+                  class="recovery-action-btn"
+                  :disabled="recoveryBusyId === record.id"
+                  @click="fixRecoveryRecord(record.id)"
+              >
+                修复
+              </button>
+              <button
+                  type="button"
+                  class="recovery-action-btn ghost"
+                  :disabled="recoveryBusyId === record.id"
+                  @click="ignoreRecoveryRecord(record.id)"
+              >
+                忽略
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -924,6 +966,7 @@ const clearRecoveryRecords = async () => {
   min-width: 0;
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 8px;
   padding: 8px 9px;
   border-radius: 11px;
@@ -932,6 +975,13 @@ const clearRecoveryRecords = async () => {
 
 :global(.dark) .recovery-item {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.recovery-main {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .recovery-kind {
@@ -963,6 +1013,35 @@ const clearRecoveryRecords = async () => {
   line-height: 1.45;
   opacity: 0.78;
   overflow-wrap: anywhere;
+}
+
+.recovery-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recovery-action-btn {
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: rgba(var(--accent-color-rgb), 0.12);
+  color: var(--accent-color);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.22);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.recovery-action-btn.ghost {
+  color: rgb(100 116 139);
+  background: rgba(100, 116, 139, 0.10);
+  border-color: rgba(100, 116, 139, 0.18);
+}
+
+.recovery-action-btn:disabled {
+  opacity: 0.45;
+  cursor: wait;
 }
 
 .truncate {

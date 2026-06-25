@@ -7,6 +7,7 @@ import type {TileInstallIntent, TileInstallRecord} from '../tiles/contracts.ts';
 import {createRestoredTileInstallsFromIntents, createTileInstallIntents} from '../tiles/packageStore.ts';
 import type {SyncFileOptions, SyncOpResult, SyncProfile} from './types.ts';
 import {createSyncRecoveryRecords} from './recovery.ts';
+import {mergeTilesByRevision} from './revisionMerge.ts';
 
 export const V6_CONFIG_VERSION = 6 as const;
 export const V6_MIN_READER_VERSION = 6 as const;
@@ -105,6 +106,69 @@ export function restoreConfigV6FromSyncExportWithReport(
     const recoveryRecords = createSyncRecoveryRecords(config, {now: options.now});
     config.sync.recoveryRecords = recoveryRecords;
     return {config, recoveryRecords};
+}
+
+const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+export function mergeConfigV6SyncExportWithLocal(
+    local: ConfigV6,
+    rawRemote: unknown,
+    options: {
+        existingInstalls?: Record<string, TileInstallRecord>;
+        now?: number;
+    } = {},
+) {
+    const now = options.now ?? Date.now();
+    const restored = restoreConfigV6FromSyncExportWithReport(rawRemote, {
+        existingInstalls: options.existingInstalls || local.tileInstalls,
+        now,
+    });
+    const remote = restored.config;
+    const next = cloneJson(remote);
+    const localWorkspaces = new Map(local.layout.map((workspace) => [workspace.id, workspace]));
+    const remoteWorkspaces = new Map(remote.layout.map((workspace) => [workspace.id, workspace]));
+    const records = [...restored.recoveryRecords];
+    const mergedLayout = [];
+
+    for (const remoteWorkspace of remote.layout) {
+        const localWorkspace = localWorkspaces.get(remoteWorkspace.id);
+        if (!localWorkspace) {
+            mergedLayout.push(cloneJson(remoteWorkspace));
+            continue;
+        }
+
+        const merge = mergeTilesByRevision(localWorkspace.tiles, remoteWorkspace.tiles, {
+            workspaceId: remoteWorkspace.id,
+            now,
+        });
+        records.push(...merge.records);
+        const localNewerWorkspace = localWorkspace.revision.sequence > remoteWorkspace.revision.sequence
+            || (
+                localWorkspace.revision.sequence === remoteWorkspace.revision.sequence
+                && localWorkspace.revision.updatedAt > remoteWorkspace.revision.updatedAt
+            );
+        mergedLayout.push({
+            ...(localNewerWorkspace ? cloneJson(localWorkspace) : cloneJson(remoteWorkspace)),
+            tiles: merge.tiles,
+        });
+    }
+
+    for (const localWorkspace of local.layout) {
+        if (!remoteWorkspaces.has(localWorkspace.id)) mergedLayout.push(cloneJson(localWorkspace));
+    }
+
+    next.layout = mergedLayout;
+    next.tileInstalls = createRestoredTileInstallsFromIntents(
+        (rawRemote as Record<string, unknown>).tileInstallIntents,
+        options.existingInstalls || local.tileInstalls,
+        now,
+    );
+    next.sync.recoveryRecords = [...records, ...createSyncRecoveryRecords(next, {now})]
+        .filter((record, index, all) => all.findIndex((entry) => entry.id === record.id) === index);
+    const normalized = normalizeConfigV6(next);
+    const validation = validateConfigForSaveV6(normalized);
+    if (!validation.ok) throw new TypeError(validation.errors[0] || 'v6 同步合并结果无效');
+    return {config: normalized, recoveryRecords: normalized.sync.recoveryRecords || []};
 }
 
 export interface V6SyncUploader {

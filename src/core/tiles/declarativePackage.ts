@@ -12,6 +12,7 @@ import type {
     TileStyleableToken,
 } from './contracts.ts';
 import {MAX_TILE_SPAN} from './gridMetrics.ts';
+import {extractDefaultSettingsFromSchema} from './settingsSchema.ts';
 import {toExternalTileType} from './tileType.ts';
 
 export const DECLARATIVE_TILE_PACKAGE_KIND = 'voidtab.tile-package' as const;
@@ -156,6 +157,20 @@ function normalizeAction(raw: unknown) {
     const value = isRecord(raw) ? raw : {};
     if (value.type === 'openUrl') return {type: 'openUrl' as const, url: normalizeDeclarativeValue(value.url)};
     if (value.type === 'dialog') return {type: 'dialog' as const, ...(typeof value.view === 'string' ? {view: value.view} : {})};
+    if (value.type === 'refresh') return {type: 'refresh' as const};
+    if (value.type === 'copyText') return {type: 'copyText' as const, text: normalizeDeclarativeValue(value.text)};
+    if (value.type === 'toggleSetting') {
+        const path = typeof value.path === 'string' && value.path.trim()
+            ? value.path.trim()
+            : typeof value.key === 'string' && value.key.trim()
+                ? value.key.trim()
+                : '';
+        return {
+            type: 'toggleSetting' as const,
+            path,
+            ...(value.value !== undefined ? {value: normalizeDeclarativeValue(value.value)} : {}),
+        };
+    }
     return {type: 'none' as const};
 }
 
@@ -242,17 +257,6 @@ function normalizeNode(raw: unknown, depth = 0): DeclarativeViewNode {
             : 'body',
         align: value.align === 'center' || value.align === 'right' ? value.align : 'left',
     };
-}
-
-function deriveDefaultSettingsFromSchema(raw: unknown): Record<string, JsonValue> {
-    const schema = isRecord(raw) ? raw : {};
-    const properties = isRecord(schema.properties) ? schema.properties : {};
-    const settings: Record<string, JsonValue> = {};
-    for (const [key, value] of Object.entries(properties)) {
-        if (!isRecord(value) || !('default' in value) || !isJsonSafe(value.default)) continue;
-        settings[key] = cloneJson(value.default);
-    }
-    return settings;
 }
 
 function sanitizeDefaultSettings(raw: unknown): Record<string, JsonValue> {
@@ -349,7 +353,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
     if (!views[rendererInput.coverView]) throw new TypeError(`声明式组件缺少视图：${rendererInput.coverView}`);
 
     const sanitizedSettingsSchema = sanitizeSettingsSchema(manifestInput.settingsSchema);
-    const settingsFromSchema = deriveDefaultSettingsFromSchema(sanitizedSettingsSchema);
+    const settingsFromSchema = extractDefaultSettingsFromSchema(sanitizedSettingsSchema);
     const defaultSettings = isRecord(raw.defaultSettings)
         ? sanitizeDefaultSettings({...settingsFromSchema, ...cloneJson(raw.defaultSettings) as Record<string, JsonValue>})
         : sanitizeDefaultSettings(settingsFromSchema);

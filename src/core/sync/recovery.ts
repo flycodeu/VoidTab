@@ -1,5 +1,6 @@
 import type {ConfigV6} from '../config/types.ts';
 import type {GridPlacement, TileInstance, Workspace} from '../tiles/contracts.ts';
+import {solveCanvasLayout} from '../tiles/layoutSolver.ts';
 import {isExternalTileType} from '../tiles/tileType.ts';
 import type {SyncRecoveryRecord} from './types.ts';
 
@@ -10,6 +11,8 @@ const overlaps = (left: GridPlacement, right: GridPlacement) =>
     && left.x + left.w > right.x
     && left.y < right.y + right.h
     && left.y + left.h > right.y;
+
+const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const recordId = (kind: SyncRecoveryRecord['kind'], parts: Array<string | undefined>) =>
     [kind, ...parts.filter(Boolean)].join(':');
@@ -110,4 +113,67 @@ export function createSyncRecoveryRecords(
     }
 
     return records;
+}
+
+export function ignoreSyncRecoveryRecord(
+    records: SyncRecoveryRecord[] = [],
+    recordId: string,
+): SyncRecoveryRecord[] {
+    return records.filter((record) => record.id !== recordId);
+}
+
+function compactWorkspaceLayouts(workspace: Workspace) {
+    const profiles = ['desktop', 'tablet', 'mobile'] as const;
+    for (const profile of profiles) {
+        const placements: Record<string, GridPlacement> = {};
+        for (const tile of workspace.tiles) {
+            const placement = tile.layouts[profile];
+            if (placement) placements[tile.id] = clonePlacement(placement);
+        }
+        const entries = Object.entries(placements);
+        if (!entries.length) continue;
+        const configured = workspace.workspaceLayout.profiles?.[profile];
+        const cols = Math.max(
+            1,
+            configured?.minCols || 1,
+            ...entries.map(([, placement]) => placement.x + placement.w),
+        );
+        const result = solveCanvasLayout({cols, placements}, {type: 'compact', profile});
+        if (result.rejected) continue;
+        for (const tile of workspace.tiles) {
+            const placement = result.placements[tile.id];
+            if (!placement) continue;
+            tile.layouts = {
+                ...tile.layouts,
+                [profile]: clonePlacement(placement),
+            };
+        }
+    }
+}
+
+export function resolveSyncRecoveryRecord(
+    config: ConfigV6,
+    recordId: string,
+    options: {now?: number} = {},
+): {config: ConfigV6; resolved: boolean; message: string} {
+    const record = (config.sync.recoveryRecords || []).find((item) => item.id === recordId);
+    if (!record) return {config, resolved: false, message: '恢复记录不存在'};
+    if (record.kind !== 'layout-overlap' || !record.workspaceId) {
+        return {
+            config,
+            resolved: false,
+            message: '该记录需要手动导入组件包、更新组件或确认后忽略',
+        };
+    }
+
+    const next = cloneJson(config);
+    const workspace = next.layout.find((item) => item.id === record.workspaceId);
+    if (!workspace) return {config, resolved: false, message: '对应工作区不存在'};
+    compactWorkspaceLayouts(workspace);
+    next.sync.recoveryRecords = createSyncRecoveryRecords(next, {now: options.now});
+    return {
+        config: next,
+        resolved: true,
+        message: '已紧凑修复该工作区的重叠布局',
+    };
 }

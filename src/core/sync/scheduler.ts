@@ -18,8 +18,8 @@ export interface SyncSchedulerOptions {
     /** Called when remote is newer AND local is clean → safe to auto-apply. */
     onRemotePayload: (remoteText: string, meta?: { etag?: string; mtime?: string }) => Promise<void> | void;
 
-    /** Called when both local and remote changed → show conflict UI, do NOT auto-apply. */
-    onConflictDetected: (snapshot: ConflictSnapshot) => void;
+    /** Called when both local and remote changed. Return true when the caller merged it automatically. */
+    onConflictDetected: (snapshot: ConflictSnapshot) => Promise<boolean | void> | boolean | void;
 
     onSyncMeta?: (meta: { lastSyncTime: number; etag?: string; mtime?: string }) => void;
     onError?: (err: unknown) => void;
@@ -97,7 +97,11 @@ export class SyncScheduler {
                             remoteLastModified: 0,
                         },
                     };
-                    this.opt.onConflictDetected(snapshot);
+                    const handled = await this.opt.onConflictDetected(snapshot);
+                    if (handled) {
+                        this.scheduleNext(intervalMin);
+                        return;
+                    }
                     // Do not schedule next tick — scheduler stays paused until conflict is resolved.
                     return;
                 }

@@ -14,9 +14,15 @@ import {SyncScheduler, syncService} from '../../core/sync';
 import {
     buildConfigV6SyncPayload,
     getV6SiblingFileOptions,
+    mergeConfigV6SyncExportWithLocal,
     restoreConfigV6FromSyncExportWithReport,
     uploadConfigV6ToSibling,
 } from '../../core/sync/v6Channel.ts';
+import {hydrateTileInstallsFromRepository} from '../../core/tiles/packageRepository.ts';
+import {
+    ignoreSyncRecoveryRecord as ignoreSyncRecoveryRecordCore,
+    resolveSyncRecoveryRecord as resolveSyncRecoveryRecordCore,
+} from '../../core/sync/recovery.ts';
 import type {TileInstallRecord} from '../../core/tiles/contracts.ts';
 import type {ConflictSnapshot, SyncConflictState} from '../../core/sync/types';
 import {hashConfig} from '../../core/sync/hash';
@@ -66,6 +72,14 @@ const normalizeRemoteConfig = (
     return next;
 };
 
+const normalizeRemoteConfigWithRepository = async (
+    raw: unknown,
+    existingInstalls: Record<string, TileInstallRecord> = {},
+): Promise<ConfigV6> => {
+    const hydratedInstalls = await hydrateTileInstallsFromRepository(existingInstalls);
+    return normalizeRemoteConfig(raw, hydratedInstalls);
+};
+
 export const buildSyncPayload = (cfg: ConfigV6) => {
     return buildConfigV6SyncPayload(cfg);
 };
@@ -94,9 +108,8 @@ export const createSyncActions = ({
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
-    const applyRemoteRaw = (remoteText: string) => {
-        const raw = JSON.parse(remoteText);
-        const next = mergeLocalSensitiveFields(normalizeRemoteConfig(raw, config.value.tileInstalls), config.value);
+    const applyRemoteConfig = (remoteConfig: ConfigV6) => {
+        const next = mergeLocalSensitiveFields(remoteConfig, config.value);
         next.runtime = config.value.runtime;
         // Preserve device-local conflict/hash fields — do not overwrite with remote values.
         next.sync.lastSyncedHash = config.value.sync.lastSyncedHash;
@@ -110,6 +123,35 @@ export const createSyncActions = ({
         normalizeLayoutItems();
         queueMicrotask(() => (applyingExternal.value = false));
         localRevision.value += 1;
+    };
+
+    const applyRemoteRaw = async (remoteText: string) => {
+        const raw = JSON.parse(remoteText);
+        applyRemoteConfig(await normalizeRemoteConfigWithRepository(raw, config.value.tileInstalls));
+    };
+
+    const tryApplyRevisionMerge = async (
+        remoteText: string,
+        meta: {etag?: string; mtime?: string},
+    ) => {
+        const raw = JSON.parse(remoteText);
+        if (!isV6WirePayload(raw)) return false;
+        const existingInstalls = await hydrateTileInstallsFromRepository(config.value.tileInstalls);
+        const merged = mergeConfigV6SyncExportWithLocal(config.value, raw, {
+            existingInstalls,
+            now: Date.now(),
+        });
+        applyRemoteConfig(merged.config);
+        if (meta.etag) config.value.sync.lastRemoteEtag = meta.etag;
+        if (meta.mtime) config.value.sync.lastRemoteMtime = meta.mtime;
+        config.value.sync.lastSyncTime = Date.now();
+        config.value.sync.recoveryRecords = merged.recoveryRecords;
+        clearConflict();
+        void saveConfig();
+        toast.info(merged.recoveryRecords.length
+            ? `已按 RevisionStamp 合并云端数据，并生成 ${merged.recoveryRecords.length} 条恢复记录`
+            : '已按 RevisionStamp 自动合并云端数据');
+        return true;
     };
 
     const recordSyncedHash = () => {
@@ -146,7 +188,7 @@ export const createSyncActions = ({
 
             onRemotePayload: async (remoteText, meta) => {
                 try {
-                    applyRemoteRaw(remoteText);
+                    await applyRemoteRaw(remoteText);
                     // After clean auto-apply, update the synced hash baseline.
                     recordSyncedHash();
                     if (meta?.etag) config.value.sync.lastRemoteEtag = meta.etag;
@@ -158,7 +200,13 @@ export const createSyncActions = ({
                 }
             },
 
-            onConflictDetected: (snapshot) => {
+            onConflictDetected: async (snapshot) => {
+                try {
+                    const merged = await tryApplyRevisionMerge(snapshot.remoteText, snapshot.remoteMeta);
+                    if (merged) return true;
+                } catch {
+                    // Fall through to the explicit conflict UI below.
+                }
                 // Enrich scheduler's minimal snapshot with real summary data.
                 try {
                     const remoteRaw = JSON.parse(snapshot.remoteText);
@@ -171,6 +219,7 @@ export const createSyncActions = ({
                 config.value.sync.conflictState = 'detected';
                 config.value.sync.conflictSnapshot = snapshot;
                 void saveConfig();
+                return false;
             },
 
             onSyncMeta: (meta) => {
@@ -220,7 +269,7 @@ export const createSyncActions = ({
         if (!snapshot) return {success: false, msg: '冲突快照丢失，请重新同步'};
         conflictState.value = 'resolving';
         try {
-            applyRemoteRaw(snapshot.remoteText);
+            await applyRemoteRaw(snapshot.remoteText);
             recordSyncedHash();
             if (snapshot.remoteMeta.etag) config.value.sync.lastRemoteEtag = snapshot.remoteMeta.etag;
             if (snapshot.remoteMeta.mtime) config.value.sync.lastRemoteMtime = snapshot.remoteMeta.mtime;
@@ -291,7 +340,7 @@ export const createSyncActions = ({
 
             try {
                 const parsed = JSON.parse(res.data);
-                const next = mergeLocalSensitiveFields(normalizeRemoteConfig(parsed, config.value.tileInstalls), config.value);
+                const next = mergeLocalSensitiveFields(await normalizeRemoteConfigWithRepository(parsed, config.value.tileInstalls), config.value);
                 next.runtime = currentRuntime;
                 config.value = next;
                 normalizeLayoutItems();
@@ -328,6 +377,24 @@ export const createSyncActions = ({
         scheduler = null;
     };
 
+    const ignoreSyncRecoveryRecord = async (recordId: string) => {
+        config.value.sync.recoveryRecords = ignoreSyncRecoveryRecordCore(config.value.sync.recoveryRecords || [], recordId);
+        await saveConfig();
+        return {success: true, msg: '已忽略该恢复记录'};
+    };
+
+    const resolveSyncRecoveryRecord = async (recordId: string) => {
+        const result = resolveSyncRecoveryRecordCore(config.value, recordId, {now: Date.now()});
+        if (!result.resolved) return {success: false, msg: result.message};
+        applyingExternal.value = true;
+        config.value = result.config;
+        normalizeLayoutItems();
+        queueMicrotask(() => (applyingExternal.value = false));
+        localRevision.value += 1;
+        await saveConfig();
+        return {success: true, msg: result.message};
+    };
+
     return {
         startScheduler,
         testSyncConnection,
@@ -340,5 +407,7 @@ export const createSyncActions = ({
         resolveKeepLocal,
         resolveUseRemote,
         resolvePostpone,
+        ignoreSyncRecoveryRecord,
+        resolveSyncRecoveryRecord,
     };
 };

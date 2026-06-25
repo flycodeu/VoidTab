@@ -15,6 +15,20 @@ export interface DeclarativeDataContext {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
+const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const isJsonSafe = (value: unknown): value is JsonValue => {
+    try {
+        JSON.stringify(value);
+        return value === null
+            || ['string', 'number', 'boolean'].includes(typeof value)
+            || Array.isArray(value)
+            || isRecord(value);
+    } catch {
+        return false;
+    }
+};
+
 const readPath = (root: unknown, path: string): unknown => {
     if (!path.trim()) return undefined;
     return path.split('.').reduce<unknown>((current, key) => {
@@ -77,6 +91,35 @@ export function resolveDeclarativeBoolean(value: DeclarativeValue | undefined, c
     if (typeof resolved === 'string') return resolved === 'true' || resolved === '1';
     if (typeof resolved === 'number') return resolved !== 0;
     return false;
+}
+
+export function writeDeclarativeSettingPath(
+    settings: Record<string, JsonValue>,
+    path: string,
+    value: JsonValue,
+): Record<string, JsonValue> {
+    const parts = path.split('.').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length || !isJsonSafe(value)) return settings;
+    const next = cloneJson(settings);
+    let cursor: Record<string, JsonValue> = next;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+        const key = parts[index];
+        const current = cursor[key];
+        if (!isRecord(current) || Array.isArray(current)) cursor[key] = {};
+        cursor = cursor[key] as Record<string, JsonValue>;
+    }
+    cursor[parts[parts.length - 1]] = cloneJson(value);
+    return next;
+}
+
+export function toggleDeclarativeSettingPath(
+    settings: Record<string, JsonValue>,
+    path: string,
+    explicitValue?: JsonValue,
+): Record<string, JsonValue> {
+    if (explicitValue !== undefined) return writeDeclarativeSettingPath(settings, path, explicitValue);
+    const current = readPath(settings, path);
+    return writeDeclarativeSettingPath(settings, path, !(current === true));
 }
 
 export function normalizeDeclarativeUrl(raw: string): string {

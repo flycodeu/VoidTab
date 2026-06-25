@@ -67,6 +67,18 @@ function normalizeSignature(raw: unknown): PackageSignature | undefined {
     };
 }
 
+function normalizeTrustedPublicKey(raw: unknown): PackageTrustIndexEntry['publicKey'] | undefined {
+    if (!isRecord(raw)) return undefined;
+    if (raw.algorithm !== 'ed25519') return undefined;
+    if (typeof raw.keyId !== 'string' || !raw.keyId.trim()) return undefined;
+    if (typeof raw.spki !== 'string' || !raw.spki.trim()) return undefined;
+    return {
+        algorithm: 'ed25519',
+        keyId: raw.keyId.trim(),
+        spki: raw.spki.trim(),
+    };
+}
+
 export function normalizeTileInstallIntent(raw: unknown): TileInstallIntent | null {
     if (!isRecord(raw) || !isExternalTileType(raw.tileType)) return null;
     const packageId = typeof raw.packageId === 'string' && raw.packageId.trim()
@@ -109,6 +121,63 @@ export function normalizePackageAuditRecord(raw: unknown): PackageAuditRecord | 
         ...(typeof raw.trustedBy === 'string' && raw.trustedBy.trim() ? {trustedBy: raw.trustedBy.trim()} : {}),
         ...(typeof raw.reason === 'string' && raw.reason.trim() ? {reason: raw.reason.trim()} : {}),
     };
+}
+
+export function normalizePackageTrustIndex(raw: unknown): PackageTrustIndex {
+    if (!isRecord(raw) || raw.version !== 1) return EMPTY_PACKAGE_TRUST_INDEX;
+    const trustedPackages = Array.isArray(raw.trustedPackages)
+        ? raw.trustedPackages
+            .filter(isRecord)
+            .map((entry): PackageTrustIndexEntry | null => {
+                if (typeof entry.packageId !== 'string' || !entry.packageId.trim()) return null;
+                if (typeof entry.sha256 !== 'string' || !entry.sha256.trim()) return null;
+                if (typeof entry.trustedBy !== 'string' || !entry.trustedBy.trim()) return null;
+                const signature = normalizeSignature(entry.signature);
+                const publicKey = normalizeTrustedPublicKey(entry.publicKey);
+                return {
+                    packageId: entry.packageId.trim(),
+                    ...(typeof entry.version === 'string' && entry.version.trim() ? {version: entry.version.trim()} : {}),
+                    sha256: entry.sha256.trim(),
+                    trustedBy: entry.trustedBy.trim(),
+                    ...(signature ? {signature} : {}),
+                    ...(publicKey ? {publicKey} : {}),
+                };
+            })
+            .filter((entry): entry is PackageTrustIndexEntry => !!entry)
+        : [];
+    const revokedPackages = Array.isArray(raw.revokedPackages)
+        ? raw.revokedPackages
+            .filter(isRecord)
+            .map((entry): PackageRevocationEntry | null => {
+                if (typeof entry.reason !== 'string' || !entry.reason.trim()) return null;
+                const tileType = typeof entry.tileType === 'string' && isExternalTileType(entry.tileType) ? entry.tileType : undefined;
+                const packageId = typeof entry.packageId === 'string' && entry.packageId.trim() ? entry.packageId.trim() : undefined;
+                const sha256 = typeof entry.sha256 === 'string' && entry.sha256.trim() ? entry.sha256.trim() : undefined;
+                if (!tileType && !packageId && !sha256) return null;
+                return {
+                    ...(packageId ? {packageId} : {}),
+                    ...(tileType ? {tileType} : {}),
+                    ...(sha256 ? {sha256} : {}),
+                    reason: entry.reason.trim(),
+                    revokedAt: finiteTime(entry.revokedAt, 0),
+                };
+            })
+            .filter((entry): entry is PackageRevocationEntry => !!entry)
+        : [];
+
+    return {version: 1, trustedPackages, revokedPackages};
+}
+
+export async function fetchPackageTrustIndex(url: string, options: {signal?: AbortSignal} = {}): Promise<PackageTrustIndex> {
+    const endpoint = url.trim();
+    if (!/^https:\/\//i.test(endpoint)) throw new TypeError('信任索引必须通过 HTTPS 获取');
+    const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {'Accept': 'application/json'},
+        signal: options.signal,
+    });
+    if (!response.ok) throw new TypeError(`信任索引获取失败：${response.status}`);
+    return normalizePackageTrustIndex(await response.json());
 }
 
 export function createTileInstallIntent(install: TileInstallRecord): TileInstallIntent | null {
@@ -188,6 +257,64 @@ function signatureMatches(expected: PackageSignature | undefined, actual: Packag
         && actual.value === expected.value;
 }
 
+const canonicalize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (!isRecord(value)) return value;
+    return Object.fromEntries(
+        Object.keys(value)
+            .sort()
+            .map((key) => [key, canonicalize(value[key])]),
+    );
+};
+
+const textEncoder = () => new TextEncoder();
+
+function base64ToBytes(value: string): Uint8Array {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    if (typeof atob !== 'function') throw new TypeError('当前环境不支持 base64 解码');
+    return Uint8Array.from(atob(normalized), (char) => char.charCodeAt(0));
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
+}
+
+export function createPackageSignaturePayload(install: TileInstallRecord): string {
+    return JSON.stringify(canonicalize({
+        manifest: install.manifest,
+        runtime: install.runtime,
+        sha256: install.sha256,
+        sandbox: install.sandbox,
+        views: install.views,
+    }));
+}
+
+export async function verifyEd25519PackageSignature(
+    install: TileInstallRecord,
+    trustedEntry: PackageTrustIndexEntry,
+): Promise<boolean> {
+    const publicKey = trustedEntry.publicKey;
+    const signature = install.manifest?.integrity.signature || install.installIntent?.signature;
+    if (!publicKey || !signature || signature.algorithm !== 'ed25519') return false;
+    if (publicKey.keyId !== signature.keyId) return false;
+    if (!globalThis.crypto?.subtle) return false;
+    const key = await globalThis.crypto.subtle.importKey(
+        'spki',
+        bytesToArrayBuffer(base64ToBytes(publicKey.spki)),
+        'Ed25519',
+        false,
+        ['verify'],
+    );
+    return globalThis.crypto.subtle.verify(
+        'Ed25519',
+        key,
+        bytesToArrayBuffer(base64ToBytes(signature.value)),
+        textEncoder().encode(createPackageSignaturePayload(install)),
+    );
+}
+
 export function auditTileInstallRecord(
     install: TileInstallRecord,
     trustIndex: PackageTrustIndex = EMPTY_PACKAGE_TRUST_INDEX,
@@ -249,6 +376,26 @@ export function auditTileInstallRecord(
         ...base,
         status: 'trusted',
         trustedBy: trusted.trustedBy,
+    };
+}
+
+export async function auditTileInstallRecordWithSignature(
+    install: TileInstallRecord,
+    trustIndex: PackageTrustIndex = EMPTY_PACKAGE_TRUST_INDEX,
+    now = Date.now(),
+): Promise<PackageAuditRecord> {
+    const normalizedIndex = normalizePackageTrustIndex(trustIndex);
+    const audit = auditTileInstallRecord(install, normalizedIndex, now);
+    if (audit.status !== 'trusted') return audit;
+    const packageId = install.manifest?.id || install.installIntent?.packageId || audit.packageId;
+    const trusted = normalizedIndex.trustedPackages.find((entry) => trustedEntryMatches(entry, packageId, install));
+    if (!trusted?.publicKey) return audit;
+    const verified = await verifyEd25519PackageSignature(install, trusted);
+    if (verified) return audit;
+    return {
+        ...audit,
+        status: 'hash-mismatch',
+        reason: '组件包 Ed25519 签名验证失败',
     };
 }
 

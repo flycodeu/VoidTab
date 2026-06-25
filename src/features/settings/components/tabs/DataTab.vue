@@ -23,6 +23,7 @@ import {migrateV5ToV6} from '../../../../core/config/migrateV5ToV6.ts';
 import {normalizeConfigV6} from '../../../../core/config/v6.ts';
 import {getStableConfigDeviceId} from '../../../../core/config/deviceId.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
+import {hydrateTileInstallsFromRepository} from '../../../../core/tiles/packageRepository.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
@@ -56,10 +57,11 @@ const v6SyncConfirmationPending = computed(() => store.config.sync.provider === 
 const isV6WirePayload = (raw: unknown): raw is {version: 6} =>
     !!raw && typeof raw === 'object' && (raw as {version?: unknown}).version === 6;
 
-const normalizeImportedConfig = (raw: unknown) => {
+const normalizeImportedConfig = async (raw: unknown) => {
+  const existingInstalls = await hydrateTileInstallsFromRepository(store.config.tileInstalls);
   if (isV6WirePayload(raw)) {
     return restoreConfigV6FromSyncExportWithReport(raw, {
-      existingInstalls: store.config.tileInstalls,
+      existingInstalls,
       now: Date.now(),
     }).config;
   }
@@ -68,7 +70,7 @@ const normalizeImportedConfig = (raw: unknown) => {
     deviceId: getStableConfigDeviceId(),
     migratedAt: Date.now(),
   }).config);
-  next.tileInstalls = store.config.tileInstalls;
+  next.tileInstalls = existingInstalls;
   return next;
 };
 
@@ -176,13 +178,13 @@ const handleImport = (e: Event) => {
 };
 
 // 用户点击“确认覆盖”后执行导入
-const executeImport = () => {
+const executeImport = async () => {
   if (!pendingData.value) return;
 
   try {
     const raw = pendingData.value;
     preflightConfigForReader(raw);
-    const next = mergeLocalSensitiveFields(normalizeImportedConfig(raw), store.config);
+    const next = mergeLocalSensitiveFields(await normalizeImportedConfig(raw), store.config);
 
     // 保留 webdav 字段逻辑（不改变你原本行为）
     const cur = {...(store.config.sync as any)};

@@ -500,10 +500,76 @@ function normalizeRuntimeMusicEmbed(input: any): RuntimeConfig['musicEmbed'] {
     };
 }
 
+const SANDBOX_PERMISSION_SET = new Set(['storage', 'network', 'openExternal', 'clipboard.write', 'notifications']);
+type RuntimeSandboxGrantMap = NonNullable<RuntimeConfig['sandbox']['grants']>;
+type RuntimeSandboxGrant = RuntimeSandboxGrantMap[string];
+type RuntimeSandboxCrashMap = NonNullable<RuntimeConfig['sandbox']['crashes']>;
+
+function normalizeSandboxGrantRecord(raw: any, key: string): RuntimeSandboxGrant | null {
+    if (!isRecordLike(raw)) return null;
+    const permissions = Array.isArray(raw.permissions)
+        ? [...new Set(raw.permissions.filter((item: any) => SANDBOX_PERMISSION_SET.has(item)))]
+        : [];
+    if (!permissions.length) return null;
+    const tileId = typeof raw.tileId === 'string' && raw.tileId.trim() ? raw.tileId.trim() : key;
+    return {
+        tileId,
+        tileType: typeof raw.tileType === 'string' ? raw.tileType : '',
+        packageId: typeof raw.packageId === 'string' ? raw.packageId : '',
+        permissions: permissions as RuntimeSandboxGrant['permissions'],
+        grantedAt: Number.isFinite(Number(raw.grantedAt)) ? Number(raw.grantedAt) : 0,
+        updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : 0,
+    };
+}
+
+function normalizeSandboxGrantMap(raw: any): RuntimeSandboxGrantMap {
+    const out: RuntimeSandboxGrantMap = {};
+    if (!isRecordLike(raw)) return out;
+    for (const [key, value] of Object.entries(raw)) {
+        const record = normalizeSandboxGrantRecord(value, key);
+        if (record) out[key] = record;
+    }
+    return out;
+}
+
+function normalizeSandboxCrashMap(raw: any): RuntimeSandboxCrashMap {
+    const out: RuntimeSandboxCrashMap = {};
+    if (!isRecordLike(raw)) return out;
+    for (const [key, value] of Object.entries(raw)) {
+        if (!isRecordLike(value)) continue;
+        const count = clampInt(value.count, 0, 1000, 0);
+        if (count <= 0) continue;
+        out[key] = {
+            tileId: typeof value.tileId === 'string' && value.tileId.trim() ? value.tileId.trim() : key,
+            packageId: typeof value.packageId === 'string' ? value.packageId : '',
+            count,
+            firstAt: Number.isFinite(Number(value.firstAt)) ? Number(value.firstAt) : 0,
+            lastAt: Number.isFinite(Number(value.lastAt)) ? Number(value.lastAt) : 0,
+            fusedUntil: Number.isFinite(Number(value.fusedUntil)) && Number(value.fusedUntil) > 0 ? Number(value.fusedUntil) : undefined,
+            reason: typeof value.reason === 'string' ? value.reason.slice(0, 240) : undefined,
+        };
+    }
+    return out;
+}
+
 function normalizeRuntimeSandbox(input: any): RuntimeConfig['sandbox'] {
     const base = isRecordLike(input) ? input : {};
+    const fallback = defaultConfig.runtime.sandbox.limits!;
+    const limitsInput = isRecordLike(base.limits) ? base.limits : {};
     return {
         enabled: typeof base.enabled === 'boolean' ? base.enabled : false,
+        grants: normalizeSandboxGrantMap(base.grants),
+        revoked: normalizeSandboxGrantMap(base.revoked),
+        crashes: normalizeSandboxCrashMap(base.crashes),
+        limits: {
+            maxActiveInstances: clampInt(limitsInput.maxActiveInstances, 1, 24, fallback.maxActiveInstances),
+            maxStorageBytes: clampInt(limitsInput.maxStorageBytes, 4_096, 1_048_576, fallback.maxStorageBytes),
+            maxRequestsPerMinute: clampInt(limitsInput.maxRequestsPerMinute, 5, 240, fallback.maxRequestsPerMinute),
+            maxNetworkBytesPerRequest: clampInt(limitsInput.maxNetworkBytesPerRequest, 16_384, 1_048_576, fallback.maxNetworkBytesPerRequest),
+            maxCrashCount: clampInt(limitsInput.maxCrashCount, 1, 20, fallback.maxCrashCount),
+            crashWindowMs: clampInt(limitsInput.crashWindowMs, 60_000, 86_400_000, fallback.crashWindowMs),
+            fuseDurationMs: clampInt(limitsInput.fuseDurationMs, 60_000, 86_400_000, fallback.fuseDurationMs),
+        },
     };
 }
 

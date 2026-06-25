@@ -215,6 +215,11 @@ export interface PackageTrustIndexEntry {
     sha256: string;
     trustedBy: string;
     signature?: PackageSignature;
+    publicKey?: {
+        algorithm: 'ed25519';
+        keyId: string;
+        spki: string;
+    };
 }
 
 export interface PackageRevocationEntry {
@@ -248,7 +253,10 @@ export type DeclarativeValue =
 export type DeclarativeAction =
     | {type: 'none'}
     | {type: 'openUrl'; url: DeclarativeValue}
-    | {type: 'dialog'; view?: string};
+    | {type: 'dialog'; view?: string}
+    | {type: 'refresh'}
+    | {type: 'copyText'; text: DeclarativeValue}
+    | {type: 'toggleSetting'; path: string; value?: DeclarativeValue};
 
 export interface DeclarativeNodeBase {
     id?: string;

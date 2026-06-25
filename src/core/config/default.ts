@@ -139,6 +139,18 @@ export const defaultConfig: ConfigV5 = {
         musicEmbed: {widgets: {}},
         sandbox: {
             enabled: false,
+            grants: {},
+            revoked: {},
+            crashes: {},
+            limits: {
+                maxActiveInstances: 6,
+                maxStorageBytes: 64_000,
+                maxRequestsPerMinute: 30,
+                maxNetworkBytesPerRequest: 128_000,
+                maxCrashCount: 3,
+                crashWindowMs: 10 * 60 * 1000,
+                fuseDurationMs: 30 * 60 * 1000,
+            },
         },
         siteList: {
             groups: {},
