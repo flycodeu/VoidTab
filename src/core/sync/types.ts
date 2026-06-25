@@ -3,6 +3,12 @@
 export type SyncProviderId = 'webdav' | 'none';
 
 export type SyncConflictState = 'none' | 'detected' | 'pending' | 'resolving';
+export type SyncRecoveryRecordKind =
+    | 'install-intent-restored'
+    | 'missing-package'
+    | 'package-revoked'
+    | 'layout-overlap'
+    | 'revision-conflict';
 
 /**
  * The file schema a profile is allowed to write. This is device-local state:
@@ -34,6 +40,16 @@ export interface ConflictSnapshot {
     summary: ConflictSummary;
 }
 
+export interface SyncRecoveryRecord {
+    id: string;
+    kind: SyncRecoveryRecordKind;
+    message: string;
+    createdAt: number;
+    workspaceId?: string;
+    tileId?: string;
+    tileType?: string;
+}
+
 export interface SyncProfileBase {
     provider: SyncProviderId;
     enabled: boolean;
@@ -51,6 +67,7 @@ export interface SyncProfileBase {
     lastSyncedHash?: string;
     conflictState?: SyncConflictState;
     conflictSnapshot?: ConflictSnapshot;
+    recoveryRecords?: SyncRecoveryRecord[];
 
     /**
      * Set by the explicit v5 -> v6 migration transaction. Auto-sync must not

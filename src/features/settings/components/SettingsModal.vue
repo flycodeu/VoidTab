@@ -4,6 +4,7 @@ import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import {
   PhCloudArrowUp,
   PhDatabase,
+  PhFlask,
   PhFrameCorners,
   PhGear,
   PhGlobe,
@@ -16,6 +17,7 @@ import {
 } from '@phosphor-icons/vue';
 
 import AuthorTab from './tabs/AuthorTab.vue';
+import AdvancedTab from './tabs/AdvancedTab.vue';
 import DataTab from './tabs/DataTab.vue';
 import EffectsTab from './tabs/EffectsTab.vue';
 import IconTab from './tabs/IconTab.vue';
@@ -49,6 +51,7 @@ const menuItems = [
   {id: 'privacy', label: '\u9690\u79c1', icon: PhShieldCheck},
   {id: 'data', label: '\u6570\u636e', icon: PhDatabase},
   {id: 'sync', label: '\u4e91\u7aef\u540c\u6b65', icon: PhCloudArrowUp},
+  {id: 'advanced', label: '\u9ad8\u7ea7', icon: PhFlask},
   {id: 'author', label: '\u4f5c\u8005\u4ecb\u7ecd', icon: PhInfo}
 ] as const;
 
@@ -65,6 +68,7 @@ const tabMap: Record<TabType, any> = {
   privacy: PrivacyTab,
   data: DataTab,
   sync: SyncTab,
+  advanced: AdvancedTab,
   author: AuthorTab
 };
 

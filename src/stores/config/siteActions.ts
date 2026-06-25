@@ -1,6 +1,14 @@
 import type {Ref} from 'vue';
 import type {ConfigV6, SiteItem} from '../../core/config/types';
-import type {SiteTile, TileInstance, TileStyleOverride, Workspace} from '../../core/tiles/contracts.ts';
+import type {
+    DeclarativeTileDefinition,
+    ExternalTileType,
+    SandboxTileDefinition,
+    SiteTile,
+    TileInstance,
+    TileStyleOverride,
+    Workspace,
+} from '../../core/tiles/contracts.ts';
 import {parseBookmarkContent} from '../../shared/utils/bookmarkImporter';
 import {dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
 import {clampInt, createTextIconValue, generateColor, MAX_WIDGET_H, MAX_WIDGET_W, normalizeSiteIconType} from './helpers';
@@ -8,6 +16,12 @@ import {exportTileInstance as createTileInstanceExport, importTileInstance} from
 import {resolveTileDefinition} from '../../core/tiles/registry.ts';
 import {applyTileStyleOverride, resetTileStyleOverride as resetCanonicalTileStyleOverride} from '../../core/tiles/style.ts';
 import {
+    createDeclarativeTilePackageExport,
+} from '../../core/tiles/declarativePackage.ts';
+import {createSandboxTilePackageExport} from '../../core/tiles/sandboxPackage.ts';
+import {installDeclarativePackageAtomically, installTilePackageAtomically} from '../../core/tiles/packageStore.ts';
+import {
+    createExternalComponentTile,
     createSiteTile as createCanonicalSiteTile,
     createWorkspace,
     findTile,
@@ -176,7 +190,7 @@ export const createSiteActions = (
         const tile = findTile(group, tileId);
         if (!tile) return false;
 
-        applyTileStyleOverride(tile, styleOverride, resolveTileDefinition(tile.tileType));
+        applyTileStyleOverride(tile, styleOverride, resolveTileDefinition(tile.tileType, config.value.tileInstalls));
         touchRevision(tile);
         void saveConfig();
         return true;
@@ -214,6 +228,105 @@ export const createSiteActions = (
                 message: error instanceof Error ? error.message : '导入卡片实例失败',
             };
         }
+    };
+
+    const importDeclarativeTilePackage = (raw: unknown) => {
+        const transaction = installDeclarativePackageAtomically(config.value.tileInstalls, raw);
+        if (transaction.ok) {
+            config.value.tileInstalls = transaction.nextInstalls;
+            void saveConfig();
+            return {
+                success: true,
+                tileType: transaction.tileType,
+                label: transaction.install.manifest?.metadata.label || transaction.tileType,
+                auditStatus: transaction.audit.status,
+            };
+        }
+        try {
+            return {
+                success: false,
+                message: transaction.message,
+            };
+        } catch {
+            return {success: false, message: '声明式组件导入失败'};
+        }
+    };
+
+    const importTilePackage = (raw: unknown) => {
+        const transaction = installTilePackageAtomically(config.value.tileInstalls, raw);
+        if (transaction.ok) {
+            config.value.tileInstalls = transaction.nextInstalls;
+            void saveConfig();
+            return {
+                success: true,
+                tileType: transaction.tileType,
+                runtime: transaction.install.runtime,
+                label: transaction.install.manifest?.metadata.label || transaction.tileType,
+                auditStatus: transaction.audit.status,
+            };
+        }
+        return {
+            success: false,
+            message: transaction.message,
+        };
+    };
+
+    const exportDeclarativeTilePackage = (tileType: string) => {
+        const install = config.value.tileInstalls[tileType];
+        return install ? createDeclarativeTilePackageExport(install) : null;
+    };
+
+    const exportTilePackage = (tileType: string) => {
+        const install = config.value.tileInstalls[tileType];
+        return install
+            ? createDeclarativeTilePackageExport(install) || createSandboxTilePackageExport(install)
+            : null;
+    };
+
+    const addExternalTile = (groupId: string, tileType: ExternalTileType) => {
+        const group = findWorkspace(config.value, groupId);
+        const definition = resolveTileDefinition(tileType, config.value.tileInstalls);
+        if (!group || (definition.renderer.kind !== 'declarative' && definition.renderer.kind !== 'sandbox')) {
+            return {success: false, message: '外部组件未安装或不可用'};
+        }
+        const externalDefinition = definition as DeclarativeTileDefinition | SandboxTileDefinition;
+
+        const now = Date.now();
+        const desktop = externalDefinition.sizes.default;
+        const mobile = externalDefinition.sizes.mobileFallback || {
+            w: Math.min(desktop.w, 2),
+            h: desktop.h,
+        };
+        const tile = createExternalComponentTile(tileType, {
+            id: createUniqueTileId(),
+            title: externalDefinition.label,
+            settings: externalDefinition.defaultSettings,
+            createdAt: now,
+            layouts: {
+                desktop: {x: 0, y: 0, w: desktop.w, h: desktop.h},
+                tablet: {x: 0, y: 0, w: desktop.w, h: desktop.h},
+                mobile: {x: 0, y: 0, w: mobile.w, h: mobile.h},
+            },
+        });
+        group.tiles.push(tile);
+        void saveConfig();
+        return {success: true, tile};
+    };
+
+    const addDeclarativeTile = (groupId: string, tileType: ExternalTileType) => {
+        const definition = resolveTileDefinition(tileType, config.value.tileInstalls);
+        if (definition.renderer.kind !== 'declarative') {
+            return {success: false, message: '声明式组件未安装或不可用'};
+        }
+        return addExternalTile(groupId, tileType);
+    };
+
+    const setSandboxRuntimeEnabled = (enabled: boolean) => {
+        config.value.runtime.sandbox = {
+            ...(config.value.runtime.sandbox || {enabled: false}),
+            enabled,
+        };
+        void saveConfig();
     };
 
     const importBookmarks = (htmlContent: string) => {
@@ -339,6 +452,13 @@ export const createSiteActions = (
         resetTileStyleOverride,
         exportTileInstanceForShare,
         importTileInstanceToGroup,
+        importDeclarativeTilePackage,
+        importTilePackage,
+        exportDeclarativeTilePackage,
+        exportTilePackage,
+        addDeclarativeTile,
+        addExternalTile,
+        setSandboxRuntimeEnabled,
         importBookmarks,
         setIconFallback,
         updateGroupSort,

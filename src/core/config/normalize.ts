@@ -124,6 +124,26 @@ function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
         lastSyncedHash: typeof input.lastSyncedHash === 'string' ? input.lastSyncedHash : undefined,
         conflictState: undefined,     // never restore conflict state from remote payload
         conflictSnapshot: undefined,  // never restore conflict snapshot from remote payload
+        recoveryRecords: Array.isArray(input.recoveryRecords)
+            ? input.recoveryRecords
+                .filter(isRecordLike)
+                .map((record: any, index: number) => ({
+                    id: typeof record.id === 'string' && record.id ? record.id : `recovery-${index}`,
+                    kind: record.kind === 'install-intent-restored'
+                    || record.kind === 'missing-package'
+                    || record.kind === 'package-revoked'
+                    || record.kind === 'layout-overlap'
+                    || record.kind === 'revision-conflict'
+                        ? record.kind
+                        : 'missing-package',
+                    message: typeof record.message === 'string' ? record.message : '',
+                    createdAt: Number.isFinite(Number(record.createdAt)) ? Number(record.createdAt) : 0,
+                    workspaceId: typeof record.workspaceId === 'string' ? record.workspaceId : undefined,
+                    tileId: typeof record.tileId === 'string' ? record.tileId : undefined,
+                    tileType: typeof record.tileType === 'string' ? record.tileType : undefined,
+                }))
+                .slice(0, 50)
+            : undefined,
     };
 
     if (provider === 'webdav') {
@@ -480,6 +500,13 @@ function normalizeRuntimeMusicEmbed(input: any): RuntimeConfig['musicEmbed'] {
     };
 }
 
+function normalizeRuntimeSandbox(input: any): RuntimeConfig['sandbox'] {
+    const base = isRecordLike(input) ? input : {};
+    return {
+        enabled: typeof base.enabled === 'boolean' ? base.enabled : false,
+    };
+}
+
 function normalizeRuntimeSiteList(input: any): RuntimeConfig['siteList'] {
     const base = isRecordLike(input) ? input : {};
     const groups = isRecordLike(base.groups) ? base.groups : {};
@@ -633,6 +660,7 @@ function normalizeRuntime(input: any): RuntimeConfig {
 
         photo: normalizeRuntimePhoto(base.photo),
         musicEmbed: normalizeRuntimeMusicEmbed(base.musicEmbed),
+        sandbox: normalizeRuntimeSandbox(base.sandbox),
 
         siteList: normalizeRuntimeSiteList(base.siteList)
     };

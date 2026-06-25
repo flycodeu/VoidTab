@@ -1,8 +1,8 @@
 import type {ConfigV6} from '../config/types.ts';
-import type {ComponentTile, GridPlacement, RevisionStamp, SiteTile, TileInstance, Workspace} from './contracts.ts';
+import type {ComponentTile, ExternalTileType, GridPlacement, RevisionStamp, SiteTile, TileInstance, Workspace} from './contracts.ts';
 import {cloneDefaultWorkspaceLayout, MAX_TILE_SPAN} from './gridMetrics.ts';
 import {normalizeTileStyleOverride} from './style.ts';
-import {getLegacyBuiltinWidgetType, toBuiltinTileType} from './tileType.ts';
+import {getLegacyBuiltinWidgetType, isExternalTileType, toBuiltinTileType} from './tileType.ts';
 
 export type RuntimeWorkspace = Workspace;
 export type RuntimeTile = TileInstance;
@@ -181,13 +181,17 @@ export function createSiteTile(site: Partial<SiteTile>): SiteTile {
 }
 
 export function createComponentTile(widgetType: string, input: Partial<ComponentTile> = {}): ComponentTile {
+    return createComponentTileFromType(toBuiltinTileType(widgetType), input);
+}
+
+export function createComponentTileFromType(tileType: ComponentTile['tileType'], input: Partial<ComponentTile> = {}): ComponentTile {
     const now = Date.now();
     const createdAt = typeof input.createdAt === 'number' ? input.createdAt : now;
     const w = clampInt(input.layouts?.desktop.w, 1, MAX_TILE_SPAN, 2);
     const h = clampInt(input.layouts?.desktop.h, 1, MAX_TILE_SPAN, 2);
     return {
         id: input.id || `widget-${now}`,
-        tileType: toBuiltinTileType(widgetType),
+        tileType,
         ...(input.title ? {title: input.title} : {}),
         settings: isRecord(input.settings) ? cloneJson(input.settings) : {},
         ...(input.styleOverride ? {styleOverride: normalizeTileStyleOverride(input.styleOverride)} : {}),
@@ -195,6 +199,11 @@ export function createComponentTile(widgetType: string, input: Partial<Component
         layouts: input.layouts ? cloneLayouts(input.layouts) : {desktop: {x: 0, y: 0, w, h}},
         revision: input.revision ? {...input.revision} : createRevisionStamp(createdAt),
     };
+}
+
+export function createExternalComponentTile(tileType: ExternalTileType, input: Partial<ComponentTile> = {}): ComponentTile {
+    if (!isExternalTileType(tileType)) throw new TypeError('external tileType required');
+    return createComponentTileFromType(tileType, input);
 }
 
 export function updateTile(tile: TileInstance, patch: Partial<SiteTile | ComponentTile>) {

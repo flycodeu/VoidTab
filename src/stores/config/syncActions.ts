@@ -14,9 +14,10 @@ import {SyncScheduler, syncService} from '../../core/sync';
 import {
     buildConfigV6SyncPayload,
     getV6SiblingFileOptions,
-    restoreConfigV6FromSyncExport,
+    restoreConfigV6FromSyncExportWithReport,
     uploadConfigV6ToSibling,
 } from '../../core/sync/v6Channel.ts';
+import type {TileInstallRecord} from '../../core/tiles/contracts.ts';
 import type {ConflictSnapshot, SyncConflictState} from '../../core/sync/types';
 import {hashConfig} from '../../core/sync/hash';
 import {buildConflictSummary} from '../../core/sync/conflictSummary';
@@ -48,13 +49,21 @@ const isV6WirePayload = (raw: unknown): raw is {version: 6} =>
  * full ConfigV6 until the local-only registry has been rebuilt. Keep that
  * distinction at the import boundary instead of feeding it to v5 normalize.
  */
-const normalizeRemoteConfig = (raw: unknown): ConfigV6 => {
+const normalizeRemoteConfig = (
+    raw: unknown,
+    existingInstalls: Record<string, TileInstallRecord> = {},
+): ConfigV6 => {
     preflightConfigForReader(raw);
-    if (isV6WirePayload(raw)) return restoreConfigV6FromSyncExport(raw);
+    if (isV6WirePayload(raw)) return restoreConfigV6FromSyncExportWithReport(raw, {
+        existingInstalls,
+        now: Date.now(),
+    }).config;
 
     const validation = validateImportedConfig(raw);
     if (!validation.ok) throw new Error(validation.errors[0] || 'invalid sync payload');
-    return normalizeRuntimeConfig(raw);
+    const next = normalizeRuntimeConfig(raw);
+    next.tileInstalls = existingInstalls;
+    return next;
 };
 
 export const buildSyncPayload = (cfg: ConfigV6) => {
@@ -87,12 +96,13 @@ export const createSyncActions = ({
 
     const applyRemoteRaw = (remoteText: string) => {
         const raw = JSON.parse(remoteText);
-        const next = mergeLocalSensitiveFields(normalizeRemoteConfig(raw), config.value);
+        const next = mergeLocalSensitiveFields(normalizeRemoteConfig(raw, config.value.tileInstalls), config.value);
         next.runtime = config.value.runtime;
         // Preserve device-local conflict/hash fields — do not overwrite with remote values.
         next.sync.lastSyncedHash = config.value.sync.lastSyncedHash;
         next.sync.syncSchemaUpgradePending = config.value.sync.syncSchemaUpgradePending;
         next.sync.syncSchemaChannel = config.value.sync.syncSchemaChannel;
+        next.sync.recoveryRecords = next.sync.recoveryRecords || [];
         next.sync.conflictState = undefined;
         next.sync.conflictSnapshot = undefined;
         applyingExternal.value = true;
@@ -243,10 +253,13 @@ export const createSyncActions = ({
 
     const uploadBackup = async () => {
         return await measurePerformanceAsync('config.sync.upload', async () => {
-            if (config.value.sync.syncSchemaUpgradePending) {
+            if (!isV6SyncWriteAuthorized(config.value.sync)) {
+                const isPendingWebDav = config.value.sync.provider === 'webdav' && config.value.sync.enabled;
                 return {
                     success: false,
-                    msg: '配置架构已升级；请确认所有设备支持 v6 后再启用 v6 同步',
+                    msg: isPendingWebDav
+                        ? 'v6 同步尚未确认；请先确认所有设备支持 v6。旧 WebDAV 文件仍可通过“恢复数据”只读恢复。'
+                        : '请先启用 WebDAV 同步',
                 };
             }
             const now = Date.now();
@@ -266,23 +279,25 @@ export const createSyncActions = ({
         return await measurePerformanceAsync('config.sync.download', async () => {
             const currentSync = {...config.value.sync};
             const currentRuntime = config.value.runtime;
+            const v6WriteAuthorized = isV6SyncWriteAuthorized(config.value.sync);
 
-            const v6Options = getV6SiblingFileOptions(config.value.sync);
-            if (!v6Options) {
+            const fileOptions = v6WriteAuthorized ? getV6SiblingFileOptions(config.value.sync) : undefined;
+            if (v6WriteAuthorized && !fileOptions) {
                 return {success: false, msg: '当前同步提供方不支持 v6 sibling 文件'};
             }
 
-            const res = await syncService.download(config.value.sync, v6Options);
+            const res = await syncService.download(config.value.sync, fileOptions);
             if (!res.ok || !res.data) return {success: false, msg: res.message};
 
             try {
                 const parsed = JSON.parse(res.data);
-                const next = mergeLocalSensitiveFields(normalizeRemoteConfig(parsed), config.value);
+                const next = mergeLocalSensitiveFields(normalizeRemoteConfig(parsed, config.value.tileInstalls), config.value);
                 next.runtime = currentRuntime;
                 config.value = next;
                 normalizeLayoutItems();
 
                 config.value.sync = {...config.value.sync, ...currentSync};
+                config.value.sync.recoveryRecords = next.sync.recoveryRecords || [];
                 if (res.remoteEtag) config.value.sync.lastRemoteEtag = res.remoteEtag;
                 if (res.remoteMtime) config.value.sync.lastRemoteMtime = res.remoteMtime;
 
@@ -290,7 +305,12 @@ export const createSyncActions = ({
                 recordSyncedHash();
                 clearConflict();
                 void saveConfig();
-                return {success: true, msg: '数据恢复成功'};
+                return {
+                    success: true,
+                    msg: v6WriteAuthorized
+                        ? '数据恢复成功'
+                        : '已从旧 WebDAV 文件恢复到本地；确认 v6 通道前不会写回旧文件',
+                };
             } catch (error) {
                 if (isConfigVersionTooNew(error)) {
                     return {

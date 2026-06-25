@@ -2,15 +2,23 @@
 import {computed, ref, watch} from 'vue';
 import {
   PhCloud,
+  PhCheck,
+  PhDownloadSimple,
   PhFlask,
   PhMagnifyingGlass,
   PhPlus,
   PhSquaresFour,
+  PhUploadSimple,
+  PhWarning,
   PhWifiSlash,
   PhX
 } from '@phosphor-icons/vue';
 import {useConfigStore} from '../../../stores/useConfigStore';
 import {widgetRegistry, type WidgetMeta} from '../../../core/registry/widgets';
+import type {DeclarativeTileDefinition, SandboxTileDefinition} from '../../../core/tiles/contracts.ts';
+import {evaluateTileCompatibility, type CompatibilityStatus} from '../../../core/tiles/compatibility.ts';
+import {getCurrentHostCapabilities} from '../../../core/tiles/hostCapabilities.ts';
+import {listDeclarativeTileDefinitions, listSandboxTileDefinitions} from '../../../core/tiles/registry.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
 import {useEscapeClose} from '../../../shared/composables/useEscapeClose';
 import {useToast} from '../../../shared/composables/useToast';
@@ -30,10 +38,19 @@ useEscapeClose(() => props.isOpen, () => emit('close'));
 const searchQuery = ref('');
 const activeCategory = ref('featured');
 const selectedGroupId = ref('');
+const declarativeImportInput = ref<HTMLInputElement | null>(null);
+const sandboxRuntimeEnabled = computed({
+  get: () => store.config.runtime?.sandbox?.enabled === true,
+  set: (value: boolean) => store.setSandboxRuntimeEnabled(value),
+});
+const hostCapabilities = computed(() => getCurrentHostCapabilities({sandboxRuntime: sandboxRuntimeEnabled.value}));
+const grantedRequiredFeatures = computed(() => sandboxRuntimeEnabled.value ? ['sandboxRuntime' as const] : []);
 
 const categories = [
   {id: 'featured', label: '推荐'},
   {id: 'all', label: '全部'},
+  {id: 'declarative', label: '声明式'},
+  {id: 'sandbox', label: '沙箱 JS'},
   {id: 'time', label: '时间'},
   {id: 'life', label: '生活'},
   {id: 'tool', label: '工具'},
@@ -43,6 +60,9 @@ const categories = [
 
 const featuredWidgets = computed(() => widgetRegistry.filter((widget) => widget.featured));
 const featuredLocalCount = computed(() => featuredWidgets.value.filter((widget) => widget.runtime === 'local').length);
+const declarativeDefinitions = computed(() => listDeclarativeTileDefinitions(store.config.tileInstalls));
+const sandboxDefinitions = computed(() => listSandboxTileDefinitions(store.config.tileInstalls));
+type ExternalDefinition = DeclarativeTileDefinition | SandboxTileDefinition;
 
 const groups = computed(() => store.config.layout || []);
 
@@ -62,6 +82,7 @@ watch(
 
 const filteredWidgets = computed(() => {
   const search = searchQuery.value.trim().toLowerCase();
+  if (activeCategory.value === 'declarative' || activeCategory.value === 'sandbox') return [];
   return widgetRegistry.filter((widget) => {
     const matchCategory = activeCategory.value === 'all'
         || (activeCategory.value === 'featured' ? widget.featured : widget.category === activeCategory.value);
@@ -72,6 +93,28 @@ const filteredWidgets = computed(() => {
     return matchCategory && matchSearch;
   });
 });
+
+const filteredDeclarativeTiles = computed(() => {
+  const search = searchQuery.value.trim().toLowerCase();
+  return declarativeDefinitions.value.filter((definition) => !search
+      || definition.label.toLowerCase().includes(search)
+      || definition.description?.toLowerCase().includes(search)
+      || definition.id.toLowerCase().includes(search));
+});
+
+const filteredSandboxTiles = computed(() => {
+  const search = searchQuery.value.trim().toLowerCase();
+  return sandboxDefinitions.value.filter((definition) => !search
+      || definition.label.toLowerCase().includes(search)
+      || definition.description?.toLowerCase().includes(search)
+      || definition.id.toLowerCase().includes(search));
+});
+
+const activeExternalDefinitions = computed<ExternalDefinition[]>(() =>
+    activeCategory.value === 'sandbox' ? filteredSandboxTiles.value : filteredDeclarativeTiles.value,
+);
+
+const isExternalCategory = computed(() => activeCategory.value === 'declarative' || activeCategory.value === 'sandbox');
 
 const categoryTitle = computed(() => {
   return categories.find((category) => category.id === activeCategory.value)?.label || '组件';
@@ -106,6 +149,102 @@ const addWidgetToGroup = (widget: WidgetMeta) => {
   }
   store.addWidget(selectedGroupId.value, widget.type);
   toast.success(`已添加「${widget.label}」到「${selectedGroupName.value}」`);
+};
+
+const compatibilityStatus = (definition: ExternalDefinition) =>
+    evaluateTileCompatibility({
+      compatibility: definition.compatibility,
+      host: hostCapabilities.value,
+      grantedRequiredFeatures: grantedRequiredFeatures.value,
+    });
+
+const compatibilityStateLabel = (status: CompatibilityStatus) => {
+  if (status.state === 'supported') return 'supported';
+  if (status.state === 'degraded') return 'degraded';
+  if (status.state === 'blocked') return 'blocked';
+  return 'unsupported';
+};
+
+const compatibilityStateText = (status: CompatibilityStatus) => {
+  if (status.state === 'supported') return '可用';
+  if (status.state === 'degraded') return '降级';
+  if (status.state === 'blocked') return '需授权';
+  return '不支持';
+};
+
+const canAddDeclarative = (status: CompatibilityStatus) =>
+    status.state === 'supported' || status.state === 'degraded';
+
+const auditStateLabel = (definition: ExternalDefinition) => definition.audit?.status || 'untrusted';
+
+const auditStateText = (definition: ExternalDefinition) => {
+  const status = auditStateLabel(definition);
+  if (status === 'trusted') return '已信任';
+  if (status === 'revoked') return '已撤销';
+  if (status === 'hash-mismatch') return '校验失败';
+  if (status === 'missing-package') return '缺包';
+  return '本地未信任';
+};
+
+const externalRuntimeText = (definition: ExternalDefinition) => definition.source === 'sandbox' ? 'Sandbox JS' : '声明式';
+
+const addExternalToGroup = (definition: ExternalDefinition) => {
+  if (!selectedGroupId.value) {
+    toast.warning('请先创建一个分组');
+    return;
+  }
+  const status = compatibilityStatus(definition);
+  if (!canAddDeclarative(status)) {
+    toast.warning(status.state === 'blocked' ? status.reasons[0] || '组件需要授权后才能添加' : status.reasons[0] || '当前环境不支持该组件');
+    return;
+  }
+  const result = store.addExternalTile(selectedGroupId.value, definition.id);
+  if (result.success) toast.success(`已添加「${definition.label}」到「${selectedGroupName.value}」`);
+  else toast.error(result.message || '添加外部组件失败');
+};
+
+const triggerDeclarativeImport = () => {
+  declarativeImportInput.value && (declarativeImportInput.value.value = '');
+  declarativeImportInput.value?.click();
+};
+
+const handleDeclarativeImport = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  try {
+    const raw = JSON.parse(await file.text());
+    const result = store.importTilePackage(raw);
+    if (result.success) {
+      activeCategory.value = result.runtime === 'sandbox' ? 'sandbox' : 'declarative';
+      toast.success(`已导入${result.runtime === 'sandbox' ? '沙箱 JS' : '声明式'}组件「${result.label}」`);
+      return;
+    }
+    toast.error(result.message || '组件导入失败');
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '组件导入失败');
+  } finally {
+    if (input) input.value = '';
+  }
+};
+
+const exportExternalPackage = (definition: ExternalDefinition) => {
+  const payload = store.exportTilePackage(definition.id);
+  if (!payload) {
+    toast.warning('组件包不存在，无法导出');
+    return;
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${definition.id.replace(/^external:/, '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')}.voidtile`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  toast.success(`已导出${externalRuntimeText(definition)}组件「${definition.label}」`);
 };
 
 const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFour');
@@ -182,6 +321,18 @@ const onCategoryWheel = (event: WheelEvent) => {
               </option>
             </select>
           </label>
+
+          <button type="button" class="import-btn" @click="triggerDeclarativeImport">
+            <PhUploadSimple size="16" weight="bold"/>
+            导入 .voidtile
+          </button>
+          <input
+              ref="declarativeImportInput"
+              class="hidden"
+              type="file"
+              accept=".voidtile,.json,application/json"
+              @change="handleDeclarativeImport"
+          />
         </div>
 
         <div class="content">
@@ -203,18 +354,97 @@ const onCategoryWheel = (event: WheelEvent) => {
               <div>
                 <div class="summary-title">{{ categoryTitle }}</div>
                 <div class="summary-desc">
+                  <template v-if="activeCategory === 'declarative'">
+                    已安装 {{ filteredDeclarativeTiles.length }} 个本地声明式组件；仅渲染 JSON 视图，不执行外部代码。
+                  </template>
+                  <template v-else-if="activeCategory === 'sandbox'">
+                    已安装 {{ filteredSandboxTiles.length }} 个本地沙箱 JS 组件；仅在本机实验开关开启时运行。
+                  </template>
                   <template v-if="activeCategory === 'featured'">
                     默认推荐 {{ featuredWidgets.length }} 个，其中 {{ featuredLocalCount }} 个可本地运行。
                   </template>
-                  <template v-else>
+                  <template v-else-if="!isExternalCategory">
                     共 {{ filteredWidgets.length }} 个组件，可添加到「{{ selectedGroupName }}」。
                   </template>
                 </div>
               </div>
-              <div class="summary-count">{{ filteredWidgets.length }}</div>
+              <label v-if="activeCategory === 'sandbox'" class="sandbox-switch">
+                <input v-model="sandboxRuntimeEnabled" type="checkbox"/>
+                <span>启用本机 JS 实验</span>
+              </label>
+              <div class="summary-count">{{ isExternalCategory ? activeExternalDefinitions.length : filteredWidgets.length }}</div>
             </div>
 
-            <div v-if="filteredWidgets.length" class="widget-grid">
+            <div v-if="isExternalCategory && activeExternalDefinitions.length" class="widget-grid">
+              <article
+                  v-for="definition in activeExternalDefinitions"
+                  :key="definition.id"
+                  class="widget-option external-option"
+                  :class="definition.source === 'sandbox' ? 'sandbox-option' : 'declarative-option'"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div
+                      class="widget-icon"
+                      :class="definition.source === 'sandbox' ? 'sandbox-icon' : 'declarative-icon'"
+                      aria-hidden="true"
+                  >
+                    <component :is="resolveWidgetIcon(definition.icon)" :size="24" weight="fill"/>
+                  </div>
+                  <span
+                      class="compat-badge"
+                      :class="`compat-${compatibilityStateLabel(compatibilityStatus(definition))}`"
+                  >
+                    <component
+                        :is="canAddDeclarative(compatibilityStatus(definition)) ? PhCheck : PhWarning"
+                        size="13"
+                        weight="bold"
+                    />
+                    {{ compatibilityStateText(compatibilityStatus(definition)) }}
+                  </span>
+                </div>
+
+                <div class="mt-3 flex items-center gap-2">
+                  <span class="runtime-badge" :class="definition.source === 'sandbox' ? 'runtime-experimental' : 'runtime-local'">
+                    <component :is="definition.source === 'sandbox' ? PhFlask : PhWifiSlash" size="13" weight="bold"/>
+                    {{ externalRuntimeText(definition) }}
+                  </span>
+                  <span class="audit-badge" :class="`audit-${auditStateLabel(definition)}`">
+                    {{ auditStateText(definition) }}
+                  </span>
+                  <span class="hash-pill">{{ definition.packageHash }}</span>
+                </div>
+
+                <h3 class="mt-3 font-extrabold text-sm">{{ definition.label }}</h3>
+                <p class="mt-1 text-xs leading-relaxed opacity-66 min-h-[42px]">
+                  {{ definition.description || definition.id }}
+                </p>
+
+                <div class="mt-4 flex items-center justify-between gap-3">
+                  <span class="size-pill">{{ definition.sizes.default.w }} x {{ definition.sizes.default.h }}</span>
+                  <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="icon-btn"
+                        :title="`导出${externalRuntimeText(definition)}组件`"
+                        @click="exportExternalPackage(definition)"
+                    >
+                      <PhDownloadSimple size="15" weight="bold"/>
+                    </button>
+                    <button
+                        type="button"
+                        class="add-btn"
+                        :disabled="!canAddDeclarative(compatibilityStatus(definition))"
+                        @click="addExternalToGroup(definition)"
+                    >
+                      <PhPlus size="15" weight="bold"/>
+                      添加
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div v-else-if="!isExternalCategory && filteredWidgets.length" class="widget-grid">
               <article
                   v-for="widget in filteredWidgets"
                   :key="widget.type"
@@ -255,8 +485,10 @@ const onCategoryWheel = (event: WheelEvent) => {
 
             <div v-else class="empty">
               <PhSquaresFour size="48" weight="duotone"/>
-              <div class="font-bold mt-3">没有找到组件</div>
-              <p class="text-xs opacity-60 mt-1">换个关键词，或切换到“全部”分类。</p>
+              <div class="font-bold mt-3">{{ isExternalCategory ? (activeCategory === 'sandbox' ? '还没有沙箱 JS 组件' : '还没有声明式组件') : '没有找到组件' }}</div>
+              <p class="text-xs opacity-60 mt-1">
+                {{ isExternalCategory ? '导入本地 .voidtile 文件后，会显示兼容状态并可添加到分组。' : '换个关键词，或切换到“全部”分类。' }}
+              </p>
             </div>
           </main>
         </div>
@@ -315,7 +547,7 @@ const onCategoryWheel = (event: WheelEvent) => {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   padding: 14px 22px;
   border-bottom: 1px solid var(--settings-border);
@@ -347,6 +579,33 @@ const onCategoryWheel = (event: WheelEvent) => {
   font-size: 12px;
   font-weight: 800;
   opacity: 0.86;
+}
+
+.import-btn {
+  min-width: 0;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 13px;
+  border-radius: 14px;
+  border: 1px solid var(--settings-border);
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--settings-input-bg));
+  color: var(--settings-text);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+
+.import-btn:hover {
+  border-color: rgba(var(--accent-color-rgb), 0.42);
+  background: color-mix(in srgb, var(--accent-color) 16%, var(--settings-input-bg));
+}
+
+.import-btn:active {
+  transform: scale(0.98);
 }
 
 .content {
@@ -430,6 +689,27 @@ const onCategoryWheel = (event: WheelEvent) => {
   font-weight: 900;
 }
 
+.sandbox-switch {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 119, 6, 0.24);
+  background: rgba(217, 119, 6, 0.10);
+  color: rgb(217 119 6);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.sandbox-switch input {
+  width: 14px;
+  height: 14px;
+  accent-color: rgb(217 119 6);
+}
+
 .widget-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -451,6 +731,18 @@ const onCategoryWheel = (event: WheelEvent) => {
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
 }
 
+.declarative-option {
+  background:
+      linear-gradient(135deg, color-mix(in srgb, var(--accent-color) 8%, transparent), transparent),
+      var(--settings-panel);
+}
+
+.sandbox-option {
+  background:
+      linear-gradient(135deg, rgba(217, 119, 6, 0.10), transparent),
+      var(--settings-panel);
+}
+
 .widget-icon {
   width: 48px;
   height: 48px;
@@ -462,7 +754,17 @@ const onCategoryWheel = (event: WheelEvent) => {
   box-shadow: 0 12px 22px rgba(15, 23, 42, 0.16);
 }
 
+.declarative-icon {
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+}
+
+.sandbox-icon {
+  background: linear-gradient(135deg, #b45309, #334155);
+}
+
 .runtime-badge,
+.compat-badge,
+.audit-badge,
 .size-pill {
   display: inline-flex;
   align-items: center;
@@ -471,6 +773,63 @@ const onCategoryWheel = (event: WheelEvent) => {
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 900;
+}
+
+.audit-badge {
+  max-width: 96px;
+  white-space: nowrap;
+}
+
+.external-option .runtime-badge {
+  max-width: 104px;
+  white-space: nowrap;
+}
+
+.hash-pill {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0.46;
+}
+
+.audit-trusted {
+  color: rgb(22 163 74);
+  background: rgba(22, 163, 74, 0.10);
+}
+
+.audit-untrusted,
+.audit-missing-package {
+  color: rgb(217 119 6);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.audit-revoked,
+.audit-hash-mismatch {
+  color: rgb(220 38 38);
+  background: rgba(220, 38, 38, 0.10);
+}
+
+.compat-supported {
+  color: rgb(22 163 74);
+  background: rgba(22, 163, 74, 0.10);
+}
+
+.compat-degraded {
+  color: rgb(217 119 6);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.compat-blocked {
+  color: rgb(220 38 38);
+  background: rgba(220, 38, 38, 0.10);
+}
+
+.compat-unsupported {
+  color: rgb(100 116 139);
+  background: rgba(100, 116, 139, 0.12);
 }
 
 .runtime-local {
@@ -506,6 +865,34 @@ const onCategoryWheel = (event: WheelEvent) => {
   font-size: 12px;
   font-weight: 900;
   transition: filter 0.14s ease, transform 0.14s ease;
+}
+
+.add-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: grayscale(0.4);
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--settings-text);
+  background: var(--settings-input-bg);
+  border: 1px solid var(--settings-border);
+  transition: border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+
+.icon-btn:hover {
+  color: var(--accent-color);
+  border-color: rgba(var(--accent-color-rgb), 0.42);
+}
+
+.icon-btn:active {
+  transform: scale(0.98);
 }
 
 .add-btn:hover {

@@ -154,7 +154,157 @@ export interface TileManifestWire {
     styleable?: TileStyleableToken[];
     capabilities?: TileCapability[];
     compatibility: TileCompatibility;
-    integrity: {sha256: string; assets: Record<string, string>};
+    integrity: {
+        sha256: string;
+        assets: Record<string, string>;
+        signature?: PackageSignature;
+    };
+}
+
+export interface PackageSignature {
+    algorithm: 'ed25519';
+    keyId: string;
+    value: string;
+}
+
+export type PackageAuditStatus =
+    | 'trusted'
+    | 'untrusted'
+    | 'revoked'
+    | 'hash-mismatch'
+    | 'missing-package';
+
+export interface PackageAuditRecord {
+    packageId: string;
+    tileType: ExternalTileType;
+    version: string;
+    sha256: string;
+    status: PackageAuditStatus;
+    source: 'builtin' | 'official' | 'local';
+    runtime: 'declarative' | 'sandbox';
+    checkedAt: number;
+    signature?: PackageSignature;
+    trustedBy?: string;
+    reason?: string;
+}
+
+export interface PackageTrustIndexEntry {
+    packageId: string;
+    version?: string;
+    sha256: string;
+    trustedBy: string;
+    signature?: PackageSignature;
+}
+
+export interface PackageRevocationEntry {
+    packageId?: string;
+    tileType?: ExternalTileType;
+    sha256?: string;
+    reason: string;
+    revokedAt: number;
+}
+
+export interface PackageTrustIndex {
+    version: 1;
+    trustedPackages: PackageTrustIndexEntry[];
+    revokedPackages: PackageRevocationEntry[];
+}
+
+export interface TileInstallIntent {
+    tileType: ExternalTileType;
+    packageId: string;
+    version: string;
+    source: 'official' | 'local';
+    runtime: 'declarative' | 'sandbox';
+    sha256: string;
+    signature?: PackageSignature;
+}
+
+export type DeclarativeValue =
+    | JsonValue
+    | {from: 'settings' | 'data' | 'host'; path: string; fallback?: JsonValue};
+
+export type DeclarativeAction =
+    | {type: 'none'}
+    | {type: 'openUrl'; url: DeclarativeValue}
+    | {type: 'dialog'; view?: string};
+
+export interface DeclarativeNodeBase {
+    id?: string;
+    className?: string;
+    hidden?: DeclarativeValue;
+}
+
+export type DeclarativeViewNode =
+    | (DeclarativeNodeBase & {
+    type: 'text';
+    text: DeclarativeValue;
+    variant?: 'title' | 'body' | 'caption' | 'metric';
+    align?: 'left' | 'center' | 'right';
+})
+    | (DeclarativeNodeBase & {
+    type: 'image';
+    src: DeclarativeValue;
+    alt?: DeclarativeValue;
+    fit?: 'cover' | 'contain';
+    radius?: number;
+})
+    | (DeclarativeNodeBase & {
+    type: 'icon';
+    name: DeclarativeValue;
+    label?: DeclarativeValue;
+    tone?: 'default' | 'accent' | 'muted';
+    size?: 'sm' | 'md' | 'lg';
+})
+    | (DeclarativeNodeBase & {
+    type: 'button';
+    label: DeclarativeValue;
+    action: DeclarativeAction;
+    tone?: 'primary' | 'secondary' | 'ghost';
+})
+    | (DeclarativeNodeBase & {
+    type: 'stack';
+    direction?: 'row' | 'column';
+    gap?: number;
+    align?: 'start' | 'center' | 'end' | 'stretch';
+    children: DeclarativeViewNode[];
+})
+    | (DeclarativeNodeBase & {
+    type: 'grid';
+    columns?: number;
+    gap?: number;
+    children: DeclarativeViewNode[];
+})
+    | (DeclarativeNodeBase & {
+    type: 'dialog';
+    title?: DeclarativeValue;
+    children: DeclarativeViewNode[];
+});
+
+export interface DeclarativeTilePackageWire {
+    kind: 'voidtab.tile-package';
+    packageVersion: 1;
+    manifest: TileManifestWire;
+    views: Record<string, DeclarativeViewNode>;
+    defaultSettings?: Record<string, JsonValue>;
+}
+
+export interface SandboxTileSource {
+    entry: string;
+    scripts: Record<string, string>;
+    styles?: string;
+    html?: string;
+}
+
+export interface SandboxTilePackageWire {
+    kind: 'voidtab.tile-package';
+    packageVersion: 1;
+    manifest: TileManifestWire & {
+        source: 'sandbox';
+        renderer: {kind: 'sandbox'; entry: string};
+    };
+    sandbox: SandboxTileSource;
+    defaultSettings?: Record<string, JsonValue>;
 }
 
 export interface BuiltinTileRegistration {
@@ -201,7 +351,51 @@ export interface UnsupportedTileDefinition {
     renderer: {kind: 'unsupported'; reason: 'external-runtime-disabled' | 'missing-builtin'};
 }
 
-export type TileDefinition = BuiltinTileDefinition | UnsupportedTileDefinition;
+export interface DeclarativeTileDefinition {
+    id: ExternalTileType;
+    source: 'declarative';
+    label: string;
+    description?: string;
+    icon: string;
+    category: string;
+    version: string;
+    sizes: TileSizeRules;
+    settingsSchema?: JsonValue;
+    styleable?: TileStyleableToken[];
+    capabilities?: TileCapability[];
+    compatibility: TileCompatibility;
+    renderer: {kind: 'declarative'; coverView: string; dialogView?: string};
+    views: Record<string, DeclarativeViewNode>;
+    defaultSettings: Record<string, JsonValue>;
+    packageHash: string;
+    audit?: PackageAuditRecord;
+}
+
+export interface SandboxTileDefinition {
+    id: ExternalTileType;
+    source: 'sandbox';
+    label: string;
+    description?: string;
+    icon: string;
+    category: string;
+    version: string;
+    sizes: TileSizeRules;
+    settingsSchema?: JsonValue;
+    styleable?: TileStyleableToken[];
+    capabilities?: TileCapability[];
+    compatibility: TileCompatibility;
+    renderer: {kind: 'sandbox'; entry: string};
+    sandbox: SandboxTileSource;
+    defaultSettings: Record<string, JsonValue>;
+    packageHash: string;
+    audit?: PackageAuditRecord;
+}
+
+export type TileDefinition =
+    | BuiltinTileDefinition
+    | DeclarativeTileDefinition
+    | SandboxTileDefinition
+    | UnsupportedTileDefinition;
 
 export type ResolvedTileDefinition =
     | (TileManifestWire & {packageRef: {id: string; version: string; hash: string}})
@@ -229,6 +423,12 @@ export interface TileInstallRecord {
     installedAt: number;
     updatedAt: number;
     pinnedVersion?: boolean;
+    manifest?: TileManifestWire;
+    views?: Record<string, DeclarativeViewNode>;
+    sandbox?: SandboxTileSource;
+    defaultSettings?: Record<string, JsonValue>;
+    installIntent?: TileInstallIntent;
+    audit?: PackageAuditRecord;
 }
 
 /** The P0 target shape; not wired into the existing v5 store until P3. */

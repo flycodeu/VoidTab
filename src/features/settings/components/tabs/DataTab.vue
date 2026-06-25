@@ -18,7 +18,7 @@ import {normalizeConfig} from '../../../../core/config/normalize.ts';
 import {mergeLocalSensitiveFields} from '../../../../core/config/sensitive.ts';
 import {isConfigVersionTooNew, preflightConfigForReader} from '../../../../core/config/preflight.ts';
 import {createImportValidationMessages, validateImportedConfig} from '../../../../core/config/validate.ts';
-import {createConfigV6SyncExport, restoreConfigV6FromSyncExport} from '../../../../core/sync/v6Channel.ts';
+import {createConfigV6SyncExport, restoreConfigV6FromSyncExportWithReport} from '../../../../core/sync/v6Channel.ts';
 import {migrateV5ToV6} from '../../../../core/config/migrateV5ToV6.ts';
 import {normalizeConfigV6} from '../../../../core/config/v6.ts';
 import {getStableConfigDeviceId} from '../../../../core/config/deviceId.ts';
@@ -57,12 +57,19 @@ const isV6WirePayload = (raw: unknown): raw is {version: 6} =>
     !!raw && typeof raw === 'object' && (raw as {version?: unknown}).version === 6;
 
 const normalizeImportedConfig = (raw: unknown) => {
-  if (isV6WirePayload(raw)) return restoreConfigV6FromSyncExport(raw);
+  if (isV6WirePayload(raw)) {
+    return restoreConfigV6FromSyncExportWithReport(raw, {
+      existingInstalls: store.config.tileInstalls,
+      now: Date.now(),
+    }).config;
+  }
   const migrated = migrateConfig(raw);
-  return normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
+  const next = normalizeConfigV6(migrateV5ToV6(normalizeConfig(migrated), {
     deviceId: getStableConfigDeviceId(),
     migratedAt: Date.now(),
   }).config);
+  next.tileInstalls = store.config.tileInstalls;
+  return next;
 };
 
 // ===============================
@@ -132,12 +139,21 @@ const handleImport = (e: Event) => {
 
       if (isV6WirePayload(raw)) {
         try {
-          restoreConfigV6FromSyncExport(raw);
+          const restored = restoreConfigV6FromSyncExportWithReport(raw, {
+            existingInstalls: store.config.tileInstalls,
+            now: Date.now(),
+          });
+          const recoveryCount = restored.recoveryRecords.length;
+          pendingImportMessages.value = [
+            '将导入 v6 Tile/Workspace 配置；本地组件安装记录和运行时缓存不会被覆盖。',
+            ...(recoveryCount > 0
+                ? [`检测到 ${recoveryCount} 条恢复记录，导入后可在“同步”页查看缺失组件包、布局重叠或冲突提示。`]
+                : []),
+          ];
         } catch (error: any) {
           showFeedback(false, `导入失败：${error?.message || 'v6 配置结构不符合要求'}`);
           return;
         }
-        pendingImportMessages.value = ['将导入 v6 Tile/Workspace 配置；本地组件安装记录和运行时缓存不会被覆盖。'];
       } else {
         const validation = validateImportedConfig(raw);
         if (!validation.ok) {

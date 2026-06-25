@@ -10,11 +10,13 @@ import {
   PhCheck,
   PhLightning,
   PhInfo,
+  PhTrash,
 } from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import SyncConflictDialog from '../SyncConflictDialog.vue';
 import {useToast} from '../../../../shared/composables/useToast';
+import {getV6SiblingFilename} from '../../../../core/sync/v6Channel.ts';
 
 const store = useConfigStore();
 const toast = useToast();
@@ -85,6 +87,9 @@ const isDownloading = ref(false);
 const testResult = ref<{ success: boolean; msg: string } | null>(null);
 
 const showRestoreConfirm = ref(false);
+const showV6SyncConfirm = ref(false);
+const upgradeBusy = ref(false);
+const uploadAfterV6Confirm = ref(false);
 
 /** 操作结果提示状态 */
 const opResult = ref<{ success: boolean; msg: string } | null>(null);
@@ -100,6 +105,11 @@ const hasConflict = computed(() =>
 );
 const showConflictDialog = ref(false);
 const conflictResolving = computed(() => conflictState.value === 'resolving');
+const recoveryRecords = computed(() => store.config.sync.recoveryRecords || []);
+const v6SyncConfirmationPending = computed(() => isWebdav.value
+    && syncEnabled.value
+    && store.config.sync.syncSchemaChannel !== 'v6');
+const v6SiblingFilename = computed(() => getV6SiblingFilename(webdavFilename.value || 'voidtab-backup.json'));
 
 const openConflictDialog = () => { showConflictDialog.value = true; };
 
@@ -156,6 +166,21 @@ const webdavErrorTips = [
   '503/网络失败：网页版可能被 CORS 拦截；扩展版通常可直连已声明的 WebDAV host。',
 ];
 
+const recoveryKindText = (kind: string) => {
+  if (kind === 'install-intent-restored') return '安装意图';
+  if (kind === 'missing-package') return '缺少组件包';
+  if (kind === 'package-revoked') return '组件撤销';
+  if (kind === 'layout-overlap') return '布局重叠';
+  if (kind === 'revision-conflict') return '版本冲突';
+  return '恢复记录';
+};
+
+const recoveryKindClass = (kind: string) => {
+  if (kind === 'package-revoked' || kind === 'revision-conflict') return 'bad';
+  if (kind === 'layout-overlap' || kind === 'missing-package') return 'warn';
+  return 'info';
+};
+
 const showFeedback = (success: boolean, msg: string) => {
   opResult.value = {success, msg};
   if (success) toast.success(msg);
@@ -197,6 +222,12 @@ const handleTestConnection = async () => {
 };
 
 const handleUpload = async () => {
+  if (v6SyncConfirmationPending.value) {
+    uploadAfterV6Confirm.value = true;
+    showV6SyncConfirm.value = true;
+    return;
+  }
+
   isUploading.value = true;
   opResult.value = null;
 
@@ -225,6 +256,34 @@ const executeRestore = async () => {
   } finally {
     isDownloading.value = false;
   }
+};
+
+const executeV6SyncConfirmation = async () => {
+  upgradeBusy.value = true;
+  const shouldUpload = uploadAfterV6Confirm.value;
+  uploadAfterV6Confirm.value = false;
+
+  try {
+    const result = await store.confirmV6SyncUpgrade();
+    if (!result.success) {
+      showFeedback(false, result.message);
+      return;
+    }
+
+    showV6SyncConfirm.value = false;
+    showFeedback(true, result.message);
+    if (shouldUpload) await handleUpload();
+  } catch (error: any) {
+    showFeedback(false, error?.message || 'v6 同步通道确认失败');
+  } finally {
+    upgradeBusy.value = false;
+  }
+};
+
+const clearRecoveryRecords = async () => {
+  store.config.sync.recoveryRecords = [];
+  await store.saveConfig();
+  showFeedback(true, '已清空恢复记录');
 };
 </script>
 
@@ -298,6 +357,48 @@ const executeRestore = async () => {
           </span>
         </div>
         <span class="text-xs font-bold shrink-0" style="color: var(--accent-color);">处理 →</span>
+      </div>
+
+      <div
+          v-if="v6SyncConfirmationPending"
+          class="mt-3 flex items-start gap-2 px-3 py-2.5 rounded-xl border"
+          style="background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.30);"
+      >
+        <PhWarning size="16" weight="fill" class="text-amber-400 shrink-0 mt-0.5" />
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-bold text-amber-400">v6 同步通道尚未确认</div>
+          <div class="text-[11px] opacity-70 leading-relaxed mt-1" style="color: var(--settings-text);">
+            立即备份前会先确认写入 <code>{{ v6SiblingFilename }}</code>；旧 WebDAV 文件只用于手动恢复，不会被覆盖。
+          </div>
+        </div>
+        <button
+            type="button"
+            class="shrink-0 px-3 py-2 rounded-lg border border-current/25 text-xs font-bold disabled:opacity-50"
+            :disabled="upgradeBusy"
+            @click="showV6SyncConfirm = true"
+        >确认 v6</button>
+      </div>
+
+      <div v-if="recoveryRecords.length" class="recovery-panel mt-3">
+        <div class="recovery-head">
+          <div>
+            <div class="recovery-title">同步恢复记录</div>
+            <div class="recovery-sub">共 {{ recoveryRecords.length }} 条，需要确认组件包或布局状态</div>
+          </div>
+          <button type="button" class="clear-recovery-btn" @click="clearRecoveryRecords">
+            <PhTrash size="14" weight="bold"/>
+            清空
+          </button>
+        </div>
+
+        <div class="recovery-list">
+          <div v-for="record in recoveryRecords" :key="record.id" class="recovery-item">
+            <span class="recovery-kind" :class="recoveryKindClass(record.kind)">
+              {{ recoveryKindText(record.kind) }}
+            </span>
+            <span class="recovery-message">{{ record.message }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- 操作反馈（更靠下更窄） -->
@@ -486,6 +587,25 @@ const executeRestore = async () => {
         :danger="true"
         @cancel="showRestoreConfirm = false"
         @confirm="executeRestore"
+    >
+      <template #icon>
+        <PhWarning :size="32" weight="duotone"/>
+      </template>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+        :show="showV6SyncConfirm"
+        title="启用 v6 WebDAV 同步？"
+        :message="[
+        `确认后，后续备份和自动同步只会读写 ${v6SiblingFilename}。`,
+        '请确认所有会写入该新文件的设备都已升级；原 WebDAV 文件保持为只读恢复源。'
+      ]"
+        confirmText="确认启用 v6 通道"
+        cancelText="取消"
+        :danger="true"
+        :confirmDisabled="upgradeBusy"
+        @cancel="() => { showV6SyncConfirm = false; uploadAfterV6Confirm = false; }"
+        @confirm="executeV6SyncConfirmation"
     >
       <template #icon>
         <PhWarning :size="32" weight="duotone"/>
@@ -742,6 +862,107 @@ const executeRestore = async () => {
   font-size: 11px;
   line-height: 1.45;
   font-weight: 700;
+}
+
+.recovery-panel {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.recovery-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recovery-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: rgb(217 119 6);
+}
+
+.recovery-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.68;
+}
+
+.clear-recovery-btn {
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(217, 119, 6, 0.24);
+  color: rgb(217 119 6);
+  font-size: 11px;
+  font-weight: 900;
+  transition: background .14s ease, transform .14s ease;
+}
+
+.clear-recovery-btn:hover {
+  background: rgba(217, 119, 6, 0.10);
+}
+
+.clear-recovery-btn:active {
+  transform: scale(0.98);
+}
+
+.recovery-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.recovery-item {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+:global(.dark) .recovery-item {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.recovery-kind {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.recovery-kind.info {
+  color: rgb(37 99 235);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.recovery-kind.warn {
+  color: rgb(217 119 6);
+  background: rgba(217, 119, 6, 0.14);
+}
+
+.recovery-kind.bad {
+  color: rgb(220 38 38);
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.recovery-message {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0.78;
+  overflow-wrap: anywhere;
 }
 
 .truncate {

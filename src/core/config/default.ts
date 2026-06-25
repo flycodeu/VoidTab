@@ -137,6 +137,9 @@ export const defaultConfig: ConfigV5 = {
         widgetState: {},
         photo: {widgets: {}},
         musicEmbed: {widgets: {}},
+        sandbox: {
+            enabled: false,
+        },
         siteList: {
             groups: {},
             widgets: {}

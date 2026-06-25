@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import {computed} from 'vue';
 import type {BookmarkDensity} from '../../../core/config/types.ts';
-import type {TileInstance} from '../../../core/tiles/contracts.ts';
+import type {ComponentTile, DeclarativeTileDefinition, SandboxTileDefinition, TileInstance} from '../../../core/tiles/contracts.ts';
 import {resolveTileDefinition} from '../../../core/tiles/registry.ts';
 import {tileStyleOverrideToCssVars} from '../../../core/tiles/style.ts';
 import {toLegacyTileHostItem} from '../../../core/tiles/tileHostAdapter.ts';
+import {useConfigStore} from '../../../stores/useConfigStore.ts';
 import WidgetCard from '../../widgets/components/WidgetCard.vue';
+import DeclarativeTileHost from './DeclarativeTileHost.vue';
 import GlassCard from './GlassCard.vue';
+import SandboxTileHost from './SandboxTileHost.vue';
 
 const props = defineProps<{
   /** Canonical runtime tile; child cards receive only the adapter projection. */
@@ -29,11 +32,22 @@ const emit = defineEmits<{
   (event: 'site-click-capture', value: MouseEvent): void;
 }>();
 
+const store = useConfigStore();
 const renderItem = computed(() => toLegacyTileHostItem(props.tile));
 const tileType = computed(() => props.tile.tileType);
-const definition = computed(() => resolveTileDefinition(tileType.value));
+const definition = computed(() => resolveTileDefinition(tileType.value, store.config.tileInstalls));
 const isWidget = computed(() => definition.value.renderer.kind === 'widget');
+const isDeclarative = computed(() => definition.value.renderer.kind === 'declarative' && props.tile.tileType !== 'site');
+const isSandbox = computed(() => definition.value.renderer.kind === 'sandbox' && props.tile.tileType !== 'site');
 const isUnsupported = computed(() => definition.value.renderer.kind === 'unsupported');
+const componentTile = computed(() => props.tile.tileType !== 'site' ? props.tile as ComponentTile : null);
+const declarativeDefinition = computed<DeclarativeTileDefinition | null>(() =>
+    definition.value.renderer.kind === 'declarative' ? definition.value as DeclarativeTileDefinition : null,
+);
+const sandboxDefinition = computed<SandboxTileDefinition | null>(() =>
+    definition.value.renderer.kind === 'sandbox' ? definition.value as SandboxTileDefinition : null,
+);
+const sandboxRuntimeEnabled = computed(() => store.config.runtime?.sandbox?.enabled === true);
 const tileStyleVars = computed(() => tileStyleOverrideToCssVars(props.tile.styleOverride));
 const widgetNameMode = computed(() => {
   if (!props.showWidgetName || !isWidget.value) return 'none';
@@ -64,6 +78,22 @@ const widgetNameMode = computed(() => {
           {{ renderItem.title || definition.label }}
         </div>
       </div>
+    </div>
+
+    <div
+        v-else-if="isDeclarative && componentTile && declarativeDefinition"
+        class="declarative-host-shell w-full h-full overflow-hidden"
+        @contextmenu.prevent.stop="emit('contextmenu', $event)"
+    >
+      <DeclarativeTileHost :tile="componentTile" :definition="declarativeDefinition"/>
+    </div>
+
+    <div
+        v-else-if="isSandbox && componentTile && sandboxDefinition"
+        class="sandbox-host-shell w-full h-full overflow-hidden"
+        @contextmenu.prevent.stop="emit('contextmenu', $event)"
+    >
+      <SandboxTileHost :tile="componentTile" :definition="sandboxDefinition" :enabled="sandboxRuntimeEnabled"/>
     </div>
 
     <div
@@ -123,6 +153,10 @@ const widgetNameMode = computed(() => {
 }
 
 .widget-host-shell {
+  border-radius: var(--tile-radius);
+}
+
+.sandbox-host-shell {
   border-radius: var(--tile-radius);
 }
 

@@ -4,10 +4,13 @@ import type {
     BuiltinTileId,
     TileCompatibility,
     TileDefinition,
+    TileInstallRecord,
     TileType,
 } from './contracts.ts';
+import {createDeclarativeTileDefinitionFromInstall} from './declarativePackage.ts';
 import {createUnsupportedExternalTileDefinition} from './externalDefinition.ts';
 import {MAX_TILE_SPAN} from './gridMetrics.ts';
+import {createSandboxTileDefinitionFromInstall} from './sandboxPackage.ts';
 import {
     isExternalTileType,
     SITE_TILE_TYPE,
@@ -83,13 +86,36 @@ export function resolveBuiltinTileDefinition(tileType: BuiltinTileId): BuiltinTi
     return definition;
 }
 
-/** Resolve canonical IDs without ever executing an external tile package. */
-export function resolveTileDefinition(tileType: TileType): TileDefinition {
-    if (isExternalTileType(tileType)) return createUnsupportedExternalTileDefinition(tileType);
+/** Resolve canonical IDs without executing external code. Declarative packages are inert JSON views. */
+export function resolveTileDefinition(
+    tileType: TileType,
+    installs?: Record<string, TileInstallRecord>,
+): TileDefinition {
+    if (isExternalTileType(tileType)) {
+        const declarative = installs?.[tileType]
+            ? createDeclarativeTileDefinitionFromInstall(installs[tileType])
+            : null;
+        const sandbox = installs?.[tileType]
+            ? createSandboxTileDefinitionFromInstall(installs[tileType])
+            : null;
+        return declarative || sandbox || createUnsupportedExternalTileDefinition(tileType);
+    }
     if (tileType === SITE_TILE_TYPE) return resolveBuiltinTileDefinition(tileType);
     return builtinTileTypes.get(tileType) || createUnsupportedExternalTileDefinition(tileType);
 }
 
 export function listBuiltinTileDefinitions() {
     return [...builtinTileTypes.values()];
+}
+
+export function listDeclarativeTileDefinitions(installs: Record<string, TileInstallRecord> = {}) {
+    return Object.values(installs)
+        .map(createDeclarativeTileDefinitionFromInstall)
+        .filter((definition): definition is NonNullable<ReturnType<typeof createDeclarativeTileDefinitionFromInstall>> => !!definition);
+}
+
+export function listSandboxTileDefinitions(installs: Record<string, TileInstallRecord> = {}) {
+    return Object.values(installs)
+        .map(createSandboxTileDefinitionFromInstall)
+        .filter((definition): definition is NonNullable<ReturnType<typeof createSandboxTileDefinitionFromInstall>> => !!definition);
 }

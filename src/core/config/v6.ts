@@ -7,6 +7,15 @@ import {MAX_TILE_SPAN, normalizeWorkspaceLayout} from '../tiles/gridMetrics.ts';
 import {cloneLegacyWidgetSettings} from '../tiles/legacyV5Adapter.ts';
 import {normalizeTileStyleOverride} from '../tiles/style.ts';
 import {isTileType, toBuiltinTileType} from '../tiles/tileType.ts';
+import {normalizeDeclarativeTileInstallRecord} from '../tiles/declarativePackage.ts';
+import {normalizeSandboxTileInstallRecord} from '../tiles/sandboxPackage.ts';
+import {
+    auditTileInstallRecord,
+    createTileInstallIntent,
+    createTileInstallStubFromIntent,
+    normalizePackageAuditRecord,
+    normalizeTileInstallIntent,
+} from '../tiles/packageStore.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -110,6 +119,45 @@ function normalizeTileInstalls(raw: unknown): ConfigV6['tileInstalls'] {
     const installs: ConfigV6['tileInstalls'] = {};
     for (const [id, install] of Object.entries(value)) {
         if (!isRecord(install) || !isTileType(install.tileType)) continue;
+        const intent = normalizeTileInstallIntent(install.installIntent);
+        if (intent && !install.manifest && !install.views) {
+            const stub = createTileInstallStubFromIntent(intent, clampInt(install.updatedAt, 0, Number.MAX_SAFE_INTEGER, Date.now()));
+            if (stub) installs[id] = stub;
+            continue;
+        }
+        const declarative = normalizeDeclarativeTileInstallRecord(install);
+        if (declarative) {
+            const normalizedIntent = intent || createTileInstallIntent(declarative);
+            const audit = normalizePackageAuditRecord(install.audit)
+                || auditTileInstallRecord({...declarative, ...(normalizedIntent ? {installIntent: normalizedIntent} : {})}, undefined, declarative.updatedAt);
+            installs[id] = {
+                ...declarative,
+                ...(normalizedIntent ? {installIntent: normalizedIntent} : {}),
+                audit,
+            };
+            continue;
+        }
+        const sandbox = normalizeSandboxTileInstallRecord(install);
+        if (sandbox) {
+            const normalizedIntent = intent || createTileInstallIntent(sandbox);
+            const audit = normalizePackageAuditRecord(install.audit)
+                || auditTileInstallRecord({...sandbox, ...(normalizedIntent ? {installIntent: normalizedIntent} : {})}, undefined, sandbox.updatedAt);
+            installs[id] = {
+                ...sandbox,
+                ...(normalizedIntent ? {installIntent: normalizedIntent} : {}),
+                audit,
+            };
+            continue;
+        }
+        const fallbackIntent = intent || (typeof install.tileType === 'string' && install.tileType.startsWith('external:') ? normalizeTileInstallIntent({
+            tileType: install.tileType,
+            packageId: String(install.tileType).slice('external:'.length),
+            version: install.version,
+            source: install.source,
+            runtime: install.runtime,
+            sha256: install.sha256,
+        }) : null);
+        const fallbackAudit = normalizePackageAuditRecord(install.audit);
         installs[id] = {
             tileType: install.tileType,
             version: typeof install.version === 'string' ? install.version : '',
@@ -122,6 +170,8 @@ function normalizeTileInstalls(raw: unknown): ConfigV6['tileInstalls'] {
             installedAt: clampInt(install.installedAt, 0, Number.MAX_SAFE_INTEGER, 0),
             updatedAt: clampInt(install.updatedAt, 0, Number.MAX_SAFE_INTEGER, 0),
             ...(install.pinnedVersion === true ? {pinnedVersion: true} : {}),
+            ...(fallbackIntent ? {installIntent: fallbackIntent} : {}),
+            ...(fallbackAudit ? {audit: fallbackAudit} : {}),
         };
     }
     return installs;

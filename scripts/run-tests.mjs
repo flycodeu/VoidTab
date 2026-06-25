@@ -728,6 +728,7 @@ test('P3.6 isolates v6 sync files and rejects future configuration before normal
   const webdav = await read('src/core/sync/providers/webdav.ts');
   const syncActions = await read('src/stores/config/syncActions.ts');
   const dataTab = await read('src/features/settings/components/tabs/DataTab.vue');
+  const syncTab = await read('src/features/settings/components/tabs/SyncTab.vue');
   const transaction = await read('src/core/config/v6MigrationTransaction.ts');
 
   assert.match(preflight, /export function preflightConfigForReader/);
@@ -736,7 +737,8 @@ test('P3.6 isolates v6 sync files and rejects future configuration before normal
   assert.match(upgrade, /confirmV6SyncSchemaUpgrade/);
   assert.match(channel, /getV6SiblingFilename/);
   assert.match(channel, /minReaderVersion: V6_MIN_READER_VERSION/);
-  assert.match(channel, /tileInstalls: \{\}/);
+  assert.match(channel, /createRestoredTileInstallsFromIntents/);
+  assert.match(channel, /tileInstalls: restoredInstalls/);
   assert.match(syncTypes, /syncSchemaUpgradePending/);
   assert.match(syncTypes, /SyncFileOptions/);
   assert.match(webdav, /options\?\.filename \|\| p\.filename/);
@@ -748,9 +750,15 @@ test('P3.6 isolates v6 sync files and rejects future configuration before normal
   assert.match(syncActions, /getV6SiblingFileOptions/);
   assert.match(syncActions, /restoreConfigV6FromSyncExport/);
   assert.match(syncActions, /isV6SyncWriteAuthorized/);
+  assert.match(syncActions, /v6WriteAuthorized\s*\?\s*getV6SiblingFileOptions\(config\.value\.sync\)\s*:\s*undefined/);
+  assert.match(syncActions, /旧 WebDAV 文件.*只读恢复/);
   assert.match(dataTab, /preflightConfigForReader\(raw\)/);
   assert.match(dataTab, /createConfigV6SyncExport/);
   assert.match(dataTab, /restoreConfigV6FromSyncExport/);
+  assert.match(syncTab, /v6SyncConfirmationPending/);
+  assert.match(syncTab, /getV6SiblingFilename/);
+  assert.match(syncTab, /confirmV6SyncUpgrade/);
+  assert.match(syncTab, /原 WebDAV 文件保持为只读恢复源/);
   assert.match(transaction, /markConfigV6SyncSchemaUpgradePending/);
 
   await runBundledTypeScript('p3-6-v6-sync-isolation', `
@@ -1232,6 +1240,554 @@ test('P4 controls tile appearance and shares sanitized instances', async () => {
     const missing = createUnsupportedExternalTileDefinition('builtin:not_installed');
     assert.equal(missing.renderer.kind, 'unsupported');
     assert.equal(missing.renderer.reason, 'missing-builtin');
+  `);
+});
+
+test('P5 imports declarative tile packages and renders inert JSON views', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const parser = await read('src/core/tiles/declarativePackage.ts');
+  const dataProvider = await read('src/core/tiles/declarativeData.ts');
+  const registry = await read('src/core/tiles/registry.ts');
+  const host = await read('src/features/home/components/TileHost.vue');
+  const declarativeHost = await read('src/features/home/components/DeclarativeTileHost.vue');
+  const declarativeNode = await read('src/features/home/components/DeclarativeViewNode.vue');
+  const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
+  const siteActions = await read('src/stores/config/siteActions.ts');
+  const v6 = await read('src/core/config/v6.ts');
+  const syncChannel = await read('src/core/sync/v6Channel.ts');
+
+  assert.match(contracts, /type DeclarativeViewNode/);
+  assert.match(contracts, /interface DeclarativeTilePackageWire/);
+  assert.match(contracts, /interface DeclarativeTileDefinition/);
+  assert.match(parser, /parseDeclarativeTilePackage/);
+  assert.match(parser, /P5 MVP 仅允许导入 declarative 组件/);
+  assert.match(dataProvider, /createDeclarativeDataContext/);
+  assert.match(dataProvider, /normalizeDeclarativeUrl/);
+  assert.match(registry, /listDeclarativeTileDefinitions/);
+  assert.match(registry, /createDeclarativeTileDefinitionFromInstall/);
+  assert.match(host, /DeclarativeTileHost/);
+  assert.match(host, /store\.config\.tileInstalls/);
+  assert.match(declarativeHost, /window\.open\(url,\s*'_blank',\s*'noopener,noreferrer'\)/);
+  assert.match(declarativeNode, /node\.type === 'text'/);
+  assert.match(declarativeNode, /node\.type === 'image'/);
+  assert.match(declarativeNode, /node\.type === 'icon'/);
+  assert.match(declarativeNode, /node\.type === 'button'/);
+  assert.match(declarativeNode, /node\.type === 'stack' \|\| node\.type === 'grid'/);
+  assert.match(declarativeNode, /node\.type === 'dialog'/);
+  assert.match(widgetPanel, /导入 \.voidtile/);
+  assert.match(widgetPanel, /compatibilityStateLabel/);
+  assert.match(widgetPanel, /supported/);
+  assert.match(widgetPanel, /degraded/);
+  assert.match(widgetPanel, /unsupported/);
+  assert.match(widgetPanel, /blocked/);
+  assert.match(siteActions, /importDeclarativeTilePackage/);
+  assert.match(siteActions, /exportDeclarativeTilePackage/);
+  assert.match(siteActions, /addDeclarativeTile/);
+  assert.match(v6, /normalizeDeclarativeTileInstallRecord/);
+  assert.match(syncChannel, /tileInstalls: _tileInstalls/);
+
+  await runBundledTypeScript('p5-declarative-tile-package', `
+    import assert from 'node:assert/strict';
+    import {
+      parseDeclarativeTilePackage,
+      createDeclarativeTileDefinitionFromInstall,
+      createDeclarativeTilePackageExport,
+    } from '../../../src/core/tiles/declarativePackage.ts';
+    import {createDeclarativeDataContext, normalizeDeclarativeUrl, resolveDeclarativeText} from '../../../src/core/tiles/declarativeData.ts';
+    import {evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {createConfigV6SyncExport} from '../../../src/core/sync/v6Channel.ts';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+
+    const pack = {
+      kind: 'voidtab.tile-package',
+      packageVersion: 1,
+      manifest: {
+        manifestVersion: 1,
+        id: 'demo/market-card',
+        version: '1.0.0',
+        apiVersion: 1,
+        source: 'declarative',
+        metadata: {
+          label: 'Market Card',
+          description: 'A safe declarative tile',
+          icon: 'ChartLine',
+          category: 'finance',
+        },
+        sizes: {
+          default: {w: 3, h: 2},
+          min: {w: 1, h: 1},
+          max: {w: 6, h: 4},
+          mobileFallback: {w: 2, h: 2},
+        },
+        renderer: {kind: 'declarative', coverView: 'cover', dialogView: 'detail'},
+        settingsSchema: {
+          type: 'object',
+          properties: {
+            symbol: {type: 'string', default: 'BTC'},
+            link: {type: 'string', default: 'https://example.com/?token=not-secret'},
+          },
+        },
+        styleable: ['radius', 'accent', 'position'],
+        compatibility: {
+          targets: ['web', 'extension'],
+          minHostVersion: '1.0.0',
+          mobileSupport: 'full',
+          capabilities: [{feature: 'clipboardWrite', level: 'optional'}],
+        },
+        integrity: {sha256: 'sha256-demo', assets: {}},
+      },
+      views: {
+        cover: {
+          type: 'stack',
+          gap: 8,
+          children: [
+            {type: 'icon', name: 'ChartLine', tone: 'accent'},
+            {type: 'text', variant: 'title', text: '{{settings.symbol}} spot'},
+            {type: 'text', variant: 'metric', text: {from: 'data', path: 'price', fallback: '--'}},
+            {type: 'button', label: 'Open', action: {type: 'openUrl', url: {from: 'settings', path: 'link'}}},
+          ],
+        },
+        detail: {
+          type: 'dialog',
+          title: 'Details',
+          children: [{type: 'grid', columns: 2, children: [{type: 'text', text: 'A'}, {type: 'image', src: '/icon-192.png'}]}],
+        },
+      },
+    };
+
+    const parsed = parseDeclarativeTilePackage(pack, 123);
+    assert.equal(parsed.tileType, 'external:demo/market-card');
+    assert.equal(parsed.install.runtime, 'declarative');
+    assert.equal(parsed.install.sha256, 'sha256-demo');
+    assert.equal(parsed.install.defaultSettings.symbol, 'BTC');
+    assert.equal(parsed.install.defaultSettings.link, 'https://example.com/');
+    assert.deepEqual(parsed.install.manifest.styleable, ['radius', 'accent']);
+    assert.equal(parsed.install.views.cover.type, 'stack');
+
+    const definition = createDeclarativeTileDefinitionFromInstall(parsed.install);
+    assert.equal(definition.renderer.kind, 'declarative');
+    assert.equal(definition.label, 'Market Card');
+    assert.equal(definition.views.detail.type, 'dialog');
+
+    const tile = {
+      id: 'tile-1',
+      tileType: parsed.tileType,
+      settings: {symbol: 'ETH', link: 'javascript:alert(1)'},
+      layouts: {desktop: {x: 0, y: 0, w: 3, h: 2}},
+      createdAt: 1,
+      revision: {updatedAt: 1, deviceId: 'test', sequence: 1},
+    };
+    const context = createDeclarativeDataContext(tile, {price: '4200'}, 456);
+    assert.equal(resolveDeclarativeText('{{settings.symbol}} @ {{data.price}} / {{host.target}}', context), 'ETH @ 4200 / web');
+    assert.equal(normalizeDeclarativeUrl('javascript:alert(1)'), '');
+    assert.equal(normalizeDeclarativeUrl('https://example.com/path'), 'https://example.com/path');
+
+    const host = {
+      target: 'web',
+      hostVersion: '1.0.5',
+      browser: {family: 'chrome', version: 120},
+      features: {
+        indexedStorage: true,
+        syncStorage: false,
+        networkProxy: true,
+        clipboardWrite: false,
+        notifications: false,
+        openExternal: true,
+        contextMenus: false,
+        localFileImport: true,
+        sandboxRuntime: false,
+      },
+    };
+    assert.equal(evaluateTileCompatibility({compatibility: parsed.install.manifest.compatibility, host}).state, 'degraded');
+
+    assert.throws(() => parseDeclarativeTilePackage({
+      ...pack,
+      manifest: {...pack.manifest, source: 'sandbox', renderer: {kind: 'sandbox', entry: 'index.js'}},
+    }), /declarative/);
+
+    const exported = createDeclarativeTilePackageExport(parsed.install);
+    assert.equal(exported.kind, 'voidtab.tile-package');
+    assert.equal(exported.manifest.id, 'demo/market-card');
+    assert.ok(!JSON.stringify(exported).includes('not-secret'));
+
+    const migrated = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'p5-test', migratedAt: 1}).config);
+    migrated.tileInstalls[parsed.tileType] = parsed.install;
+    const normalized = normalizeConfigV6(migrated);
+    assert.equal(normalized.tileInstalls[parsed.tileType].views.cover.type, 'stack');
+    const syncExport = createConfigV6SyncExport(normalized);
+    assert.equal('tileInstalls' in syncExport, false);
+  `);
+});
+
+test('P6 audits package repository installs and preserves sync restore intent', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const packageStore = await read('src/core/tiles/packageStore.ts');
+  const v6Channel = await read('src/core/sync/v6Channel.ts');
+  const recovery = await read('src/core/sync/recovery.ts');
+  const revisionMerge = await read('src/core/sync/revisionMerge.ts');
+  const syncTypes = await read('src/core/sync/types.ts');
+  const syncActions = await read('src/stores/config/syncActions.ts');
+  const dataTab = await read('src/features/settings/components/tabs/DataTab.vue');
+  const syncTab = await read('src/features/settings/components/tabs/SyncTab.vue');
+  const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
+  const v6 = await read('src/core/config/v6.ts');
+
+  assert.match(contracts, /interface PackageTrustIndex/);
+  assert.match(contracts, /interface TileInstallIntent/);
+  assert.match(contracts, /interface PackageAuditRecord/);
+  assert.match(packageStore, /installDeclarativePackageAtomically/);
+  assert.match(packageStore, /rollbackTilePackageInstall/);
+  assert.match(packageStore, /revokedPackages/);
+  assert.match(packageStore, /hash-mismatch/);
+  assert.match(packageStore, /createTileInstallStubFromIntent/);
+  assert.match(v6Channel, /tileInstallIntents/);
+  assert.match(v6Channel, /restoreConfigV6FromSyncExportWithReport/);
+  assert.match(recovery, /createSyncRecoveryRecords/);
+  assert.match(revisionMerge, /mergeTilesByRevision/);
+  assert.match(revisionMerge, /classifyRevisionConflict/);
+  assert.match(syncTypes, /recoveryRecords/);
+  assert.match(syncActions, /existingInstalls/);
+  assert.match(dataTab, /restoreConfigV6FromSyncExportWithReport/);
+  assert.match(syncTab, /recoveryRecords/);
+  assert.match(syncTab, /clearRecoveryRecords/);
+  assert.match(widgetPanel, /auditStateText/);
+  assert.match(v6, /normalizePackageAuditRecord/);
+
+  await runBundledTypeScript('p6-package-audit-and-sync-restore', `
+    import assert from 'node:assert/strict';
+    import {
+      createTileInstallIntents,
+      installDeclarativePackageAtomically,
+      rollbackTilePackageInstall,
+    } from '../../../src/core/tiles/packageStore.ts';
+    import {createConfigV6SyncExport, restoreConfigV6FromSyncExportWithReport} from '../../../src/core/sync/v6Channel.ts';
+    import {createSyncRecoveryRecords} from '../../../src/core/sync/recovery.ts';
+    import {classifyRevisionConflict, mergeTilesByRevision} from '../../../src/core/sync/revisionMerge.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+
+    const signature = {algorithm: 'ed25519', keyId: 'voidtab-demo', value: 'signed-demo'};
+    const pack = {
+      kind: 'voidtab.tile-package',
+      packageVersion: 1,
+      manifest: {
+        manifestVersion: 1,
+        id: 'demo/audit-card',
+        version: '1.0.0',
+        apiVersion: 1,
+        source: 'declarative',
+        metadata: {
+          label: 'Audit Card',
+          description: 'Repository audit sample',
+          icon: 'ShieldCheck',
+          category: 'audit',
+        },
+        sizes: {
+          default: {w: 2, h: 2},
+          min: {w: 1, h: 1},
+          max: {w: 4, h: 4},
+          mobileFallback: {w: 2, h: 1},
+        },
+        renderer: {kind: 'declarative', coverView: 'cover'},
+        compatibility: {targets: ['web', 'extension'], minHostVersion: '1.0.0', mobileSupport: 'full'},
+        integrity: {sha256: 'sha256-audit-card', assets: {}, signature},
+      },
+      views: {
+        cover: {type: 'stack', children: [{type: 'text', text: 'Audit'}]},
+      },
+    };
+
+    const trustIndex = {
+      version: 1,
+      trustedPackages: [{
+        packageId: 'demo/audit-card',
+        version: '1.0.0',
+        sha256: 'sha256-audit-card',
+        trustedBy: 'VoidTab Local Index',
+        signature,
+      }],
+      revokedPackages: [],
+    };
+    const tx = installDeclarativePackageAtomically({}, pack, {trustIndex, now: 100});
+    assert.equal(tx.ok, true);
+    assert.equal(tx.audit.status, 'trusted');
+    assert.equal(tx.install.audit.status, 'trusted');
+    assert.equal(tx.install.installIntent.packageId, 'demo/audit-card');
+    assert.equal(createTileInstallIntents(tx.nextInstalls)['external:demo/audit-card'].sha256, 'sha256-audit-card');
+    assert.deepEqual(rollbackTilePackageInstall(tx.nextInstalls, tx.rollback), {});
+
+    const mismatch = installDeclarativePackageAtomically({}, pack, {
+      trustIndex: {
+        version: 1,
+        trustedPackages: [{packageId: 'demo/audit-card', sha256: 'different', trustedBy: 'VoidTab Local Index'}],
+        revokedPackages: [],
+      },
+      now: 101,
+    });
+    assert.equal(mismatch.ok, false);
+    assert.equal(mismatch.audit.status, 'hash-mismatch');
+    assert.deepEqual(mismatch.nextInstalls, {});
+
+    const revoked = installDeclarativePackageAtomically({}, pack, {
+      trustIndex: {
+        version: 1,
+        trustedPackages: [],
+        revokedPackages: [{packageId: 'demo/audit-card', reason: 'test revoke', revokedAt: 1}],
+      },
+      now: 102,
+    });
+    assert.equal(revoked.ok, false);
+    assert.equal(revoked.audit.status, 'revoked');
+
+    const localOnly = installDeclarativePackageAtomically({}, pack, {now: 103});
+    assert.equal(localOnly.ok, true);
+    assert.equal(localOnly.audit.status, 'untrusted');
+
+    const config = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'p6', migratedAt: 1}).config);
+    config.tileInstalls = tx.nextInstalls;
+    config.layout[0].tiles.push({
+      id: 'external-tile-1',
+      tileType: 'external:demo/audit-card',
+      title: 'Audit Card',
+      settings: {},
+      layouts: {desktop: {x: 0, y: 0, w: 2, h: 2}},
+      createdAt: 10,
+      revision: {updatedAt: 10, deviceId: 'a', sequence: 1},
+    });
+
+    const exported = createConfigV6SyncExport(config);
+    assert.equal('tileInstalls' in exported, false);
+    assert.equal(exported.tileInstallIntents['external:demo/audit-card'].packageId, 'demo/audit-card');
+    assert.equal(JSON.stringify(exported).includes('"views"'), false);
+
+    const restoredMissing = restoreConfigV6FromSyncExportWithReport(exported, {now: 200});
+    assert.equal(restoredMissing.config.tileInstalls['external:demo/audit-card'].enabled, false);
+    assert.equal(restoredMissing.config.tileInstalls['external:demo/audit-card'].audit.status, 'missing-package');
+    assert.ok(restoredMissing.recoveryRecords.some((record) => record.kind === 'missing-package'));
+    assert.equal(restoredMissing.config.layout[0].tiles.at(-1).layouts.desktop.w, 2);
+
+    const restoredWithLocalPackage = restoreConfigV6FromSyncExportWithReport(exported, {
+      existingInstalls: tx.nextInstalls,
+      now: 201,
+    });
+    assert.equal(restoredWithLocalPackage.config.tileInstalls['external:demo/audit-card'].views.cover.type, 'stack');
+    assert.equal(restoredWithLocalPackage.recoveryRecords.some((record) => record.kind === 'missing-package'), false);
+    assert.equal(createSyncRecoveryRecords(restoredWithLocalPackage.config, {now: 202}).some((record) => record.kind === 'missing-package'), false);
+
+    const localTile = {
+      id: 'tile-a',
+      tileType: 'builtin:clock',
+      settings: {},
+      layouts: {desktop: {x: 0, y: 0, w: 2, h: 2}},
+      createdAt: 1,
+      revision: {updatedAt: 20, deviceId: 'local', sequence: 2},
+    };
+    const remoteTile = {
+      ...localTile,
+      title: 'Remote Clock',
+      revision: {updatedAt: 25, deviceId: 'remote', sequence: 2},
+    };
+    assert.equal(classifyRevisionConflict(localTile.revision, remoteTile.revision), 'diverged');
+
+    const merge = mergeTilesByRevision(
+      [
+        localTile,
+        {
+          id: 'tile-b',
+          tileType: 'builtin:calendar',
+          settings: {},
+          layouts: {desktop: {x: 1, y: 1, w: 2, h: 2}},
+          createdAt: 1,
+          revision: {updatedAt: 15, deviceId: 'local', sequence: 1},
+        },
+      ],
+      [remoteTile],
+      {workspaceId: 'workspace-1', now: 300},
+    );
+    assert.ok(merge.records.some((record) => record.kind === 'revision-conflict'));
+    assert.ok(merge.records.some((record) => record.kind === 'layout-overlap'));
+  `);
+});
+
+test('P7 imports and renders local sandbox JS packages behind an explicit host switch', async () => {
+  const contracts = await read('src/core/tiles/contracts.ts');
+  const sandboxPackage = await read('src/core/tiles/sandboxPackage.ts');
+  const sandboxBridge = await read('src/core/tiles/sandboxBridge.ts');
+  const sandboxHost = await read('src/features/home/components/SandboxTileHost.vue');
+  const tileHost = await read('src/features/home/components/TileHost.vue');
+  const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
+  const advancedTab = await read('src/features/settings/components/tabs/AdvancedTab.vue');
+  const settingsModal = await read('src/features/settings/components/SettingsModal.vue');
+  const packageStore = await read('src/core/tiles/packageStore.ts');
+  const hostCapabilities = await read('src/core/tiles/hostCapabilities.ts');
+
+  assert.match(contracts, /interface SandboxTilePackageWire/);
+  assert.match(contracts, /interface SandboxTileDefinition/);
+  assert.match(sandboxPackage, /parseSandboxTilePackage/);
+  assert.match(sandboxPackage, /sandboxRuntime/);
+  assert.match(sandboxPackage, /MAX_SCRIPT_BYTES/);
+  assert.match(sandboxBridge, /SANDBOX_BRIDGE_CHANNEL/);
+  assert.match(sandboxBridge, /Content-Security-Policy/);
+  assert.match(sandboxBridge, /connect-src 'none'/);
+  assert.match(sandboxBridge, /parseSandboxFrameMessage/);
+  assert.match(sandboxHost, /event\.source !== iframeRef\.value\?\.contentWindow/);
+  assert.match(sandboxHost, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(sandboxHost, /allow-same-origin/);
+  assert.match(tileHost, /SandboxTileHost/);
+  assert.match(widgetPanel, /listSandboxTileDefinitions/);
+  assert.match(widgetPanel, /sandboxRuntimeEnabled/);
+  assert.match(advancedTab, /setSandboxRuntimeEnabled/);
+  assert.match(settingsModal, /advanced/);
+  assert.match(packageStore, /installTilePackageAtomically/);
+  assert.match(packageStore, /parseSandboxTilePackage/);
+  assert.match(hostCapabilities, /sandboxRuntime: options\.sandboxRuntime === true/);
+
+  await runBundledTypeScript('p7-sandbox-js-local-experiment', `
+    import assert from 'node:assert/strict';
+    import type {HostCapabilities} from '../../../src/core/tiles/contracts.ts';
+    import {
+      createSandboxTileDefinitionFromInstall,
+      parseSandboxTilePackage,
+    } from '../../../src/core/tiles/sandboxPackage.ts';
+    import {
+      buildSandboxSrcDoc,
+      parseSandboxFrameMessage,
+      SANDBOX_BRIDGE_CHANNEL,
+    } from '../../../src/core/tiles/sandboxBridge.ts';
+    import {installTilePackageAtomically, exportInstalledPackageForAudit} from '../../../src/core/tiles/packageStore.ts';
+    import {evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+
+    const pack = {
+      kind: 'voidtab.tile-package',
+      packageVersion: 1,
+      manifest: {
+        manifestVersion: 1,
+        id: 'local/sandbox-quote',
+        version: '0.1.0',
+        apiVersion: 1,
+        source: 'sandbox',
+        metadata: {
+          label: 'Sandbox Quote',
+          description: 'Local iframe sandbox sample',
+          icon: 'Code',
+          category: 'local',
+        },
+        sizes: {
+          default: {w: 2, h: 2},
+          min: {w: 1, h: 1},
+          max: {w: 4, h: 4},
+          mobileFallback: {w: 2, h: 1},
+        },
+        renderer: {kind: 'sandbox', entry: 'index.js'},
+        settingsSchema: {
+          type: 'object',
+          properties: {
+            title: {type: 'string', default: 'Hello sandbox'},
+            token: {type: 'string', default: 'sk-secret'},
+          },
+        },
+        capabilities: [
+          {type: 'storage', scope: 'instance'},
+          {type: 'openExternal'},
+        ],
+        compatibility: {targets: ['web'], minHostVersion: '1.0.0', mobileSupport: 'full'},
+        integrity: {sha256: 'sha256-sandbox-quote', assets: {}},
+      },
+      sandbox: {
+        entry: 'index.js',
+        html: '<section id="quote"></section>',
+        styles: '#quote{font-weight:800;}',
+        scripts: {
+          'index.js': 'VoidWidget.define({ mount(ctx) { ctx.root.textContent = ctx.settings.title + "</script><img src=x>"; } });',
+        },
+      },
+      defaultSettings: {
+        title: 'Local quote',
+        apiKey: 'not-exported',
+      },
+    };
+
+    const parsed = parseSandboxTilePackage(pack, 100);
+    assert.equal(parsed.tileType, 'external:local/sandbox-quote');
+    assert.equal(parsed.install.runtime, 'sandbox');
+    assert.equal(parsed.install.sandbox.entry, 'index.js');
+    assert.equal(parsed.install.defaultSettings.title, 'Local quote');
+    assert.equal('apiKey' in parsed.install.defaultSettings, false);
+    assert.equal('token' in parsed.install.defaultSettings, false);
+    assert.ok(parsed.install.manifest.compatibility.capabilities.some((entry) => entry.feature === 'sandboxRuntime' && entry.level === 'required'));
+
+    const definition = createSandboxTileDefinitionFromInstall(parsed.install);
+    if (!definition) throw new Error('missing sandbox definition');
+    assert.equal(definition.renderer.kind, 'sandbox');
+    assert.equal(definition.capabilities.length, 2);
+
+    const disabledHost: HostCapabilities = {
+      target: 'web',
+      hostVersion: '1.0.5',
+      browser: {family: 'chrome', version: 122},
+      features: {
+        indexedStorage: true,
+        syncStorage: false,
+        networkProxy: false,
+        clipboardWrite: true,
+        notifications: false,
+        openExternal: true,
+        contextMenus: false,
+        localFileImport: true,
+        sandboxRuntime: false,
+      },
+    };
+    assert.equal(evaluateTileCompatibility({compatibility: definition.compatibility, host: disabledHost}).state, 'unsupported');
+    const enabledHost = {...disabledHost, features: {...disabledHost.features, sandboxRuntime: true}};
+    assert.equal(evaluateTileCompatibility({compatibility: definition.compatibility, host: enabledHost}).state, 'blocked');
+    assert.equal(evaluateTileCompatibility({compatibility: definition.compatibility, host: enabledHost, grantedRequiredFeatures: ['sandboxRuntime']}).state, 'supported');
+
+    const tx = installTilePackageAtomically({}, pack, {now: 101});
+    if (!tx.ok) throw new Error(tx.message);
+    assert.equal(tx.install.runtime, 'sandbox');
+    assert.equal(tx.audit.status, 'untrusted');
+    const auditedExport = exportInstalledPackageForAudit(tx.install);
+    assert.equal(auditedExport.package.sandbox.scripts['index.js'].includes('VoidWidget.define'), true);
+
+    const config = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'p7', migratedAt: 1}).config);
+    config.tileInstalls = tx.nextInstalls;
+    const normalized = normalizeConfigV6(config);
+    assert.equal(normalized.tileInstalls['external:local/sandbox-quote'].sandbox.entry, 'index.js');
+    const normalizedDefinition = createSandboxTileDefinitionFromInstall(normalized.tileInstalls['external:local/sandbox-quote']);
+    assert.equal(normalizedDefinition.renderer.kind, 'sandbox');
+    assert.equal(normalizedDefinition.label, 'Sandbox Quote');
+
+    const tile = {
+      id: 'sandbox-tile-1',
+      tileType: parsed.tileType,
+      title: 'Sandbox Quote',
+      settings: parsed.install.defaultSettings,
+      layouts: {desktop: {x: 0, y: 0, w: 2, h: 2}},
+      createdAt: 1,
+      revision: {updatedAt: 1, deviceId: 'p7', sequence: 1},
+    };
+    const srcDoc = buildSandboxSrcDoc({definition, tile, nonce: 'nonce-1', host: enabledHost});
+    assert.match(srcDoc, /voidtab-boot/);
+    assert.equal(srcDoc.includes('</script><img src=x>'), false);
+    assert.match(srcDoc, /connect-src 'none'/);
+    assert.match(srcDoc, /VoidWidget/);
+
+    const message = parseSandboxFrameMessage({
+      channel: SANDBOX_BRIDGE_CHANNEL,
+      nonce: 'nonce-1',
+      kind: 'request',
+      requestId: 'r1',
+      request: {type: 'openUrl', payload: {url: 'https://example.com'}},
+    }, 'nonce-1');
+    if (!message) throw new Error('missing sandbox request message');
+    assert.equal(message.kind, 'request');
+    assert.equal(parseSandboxFrameMessage({...message, nonce: 'bad'}, 'nonce-1'), null);
   `);
 });
 

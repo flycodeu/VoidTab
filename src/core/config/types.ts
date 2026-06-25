@@ -421,6 +421,9 @@ export type RuntimeConfig = {
     musicEmbed: {
         widgets: Record<string, MusicEmbedWidgetState>;
     };
+    sandbox: {
+        enabled: boolean;
+    };
     siteList: {
         groups: Record<string, SiteListGroup>;
         widgets: Record<string, SiteListWidgetRef>;
