@@ -9,6 +9,7 @@ import {tempStorage} from "../../../../core/storage/tempStorage.ts";
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
 import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const HolidayDetailModal = defineAsyncComponent(() => import('./HolidayDetailModal.vue'));
 
@@ -16,6 +17,7 @@ const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const toast = useToast();
 const showModal = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 
 // 优化：每分钟刷新一次即可，不需要每秒刷新
 const now = useNow({interval: 60 * 1000});
@@ -162,8 +164,7 @@ const nextHoliday = computed(() => upcomingList.value[0] || {
 });
 
 const layout = computed(() => {
-  const w = props.item.w || 2;
-  const h = props.item.h || 2;
+  const {w, h} = tileSize.value.placement;
   return {
     is1x1: w === 1 && h === 1,
     is1x2: w === 1 && h >= 2,

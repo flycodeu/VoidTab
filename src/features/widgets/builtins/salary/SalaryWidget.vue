@@ -2,6 +2,7 @@
 import {ref, computed, onMounted, defineAsyncComponent} from 'vue';
 import {useNow} from '@vueuse/core';
 import type {SiteItem} from '../../../../core/config/types.ts';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 import {
   PhCalendarHeart, PhTrendUp, PhPiggyBank, PhSparkle
 } from '@phosphor-icons/vue';
@@ -10,6 +11,7 @@ import {
 const SalaryDetailModal = defineAsyncComponent(() => import('./SalaryDetailModal.vue'));
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 
 // === 核心状态 ===
 const showModal = ref(false);
@@ -71,8 +73,7 @@ const calculation = computed(() => {
 
 // === 布局判断 ===
 const layout = computed(() => {
-  const w = props.item.w || 2;
-  const h = props.item.h || 2;
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,      // 1x1
     isVertical: w === 1 && h >= 2,   // 1x2

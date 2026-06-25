@@ -3,6 +3,7 @@ import {ref, computed} from 'vue';
 import type {SiteItem} from '../../../../core/config/types.ts';
 import ClockDetailModal from './ClockDetailModal.vue';
 import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 // 默认值
 const props = withDefaults(defineProps<{ item?: SiteItem }>(), {
@@ -11,6 +12,7 @@ const props = withDefaults(defineProps<{ item?: SiteItem }>(), {
 
 const now = ref(new Date());
 const showModal = ref(false);
+const tileSize = useTileSizeContext(() => ({w: props.item?.w ?? 2, h: props.item?.h ?? 1}));
 
 const hStr = ref('');
 const mStr = ref('');
@@ -26,8 +28,7 @@ useVisibilityInterval(updateClock, 1000, {immediate: true});
 
 // --- 核心修复：全尺寸适配逻辑 ---
 const layout = computed(() => {
-  const w = props.item?.w ?? 2;
-  const h = props.item?.h ?? 1;
+  const {w, h} = tileSize.value.placement;
 
   // 1. 基础特征判断
   const isCompactHeight = h === 1; // 高度为1 (如 2x1, 3x1, 4x1)

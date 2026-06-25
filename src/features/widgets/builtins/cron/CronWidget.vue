@@ -8,9 +8,11 @@ import {useDebounceFn} from '@vueuse/core';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
 import ToolWidgetState from '../../components/ToolWidgetState.vue';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}));
 const saveDebounced = useDebounceFn(() => store.saveConfig?.(), 300);
 
 // --- Config Check ---
@@ -103,8 +105,7 @@ const openModal = () => {
 
 // --- 精细化布局判断 ---
 const layout = computed(() => {
-  const w = props.item.w || 1;
-  const h = props.item.h || 1;
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,       // 1x1
     isWide: w >= 2 && h === 1,        // 2x1, 3x1

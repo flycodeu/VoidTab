@@ -9,9 +9,11 @@ import {
 import JWTSentryModal from './JWTSentryModal.vue'
 import {useConfigStore} from '../../../../stores/useConfigStore'
 import ToolWidgetState from '../../components/ToolWidgetState.vue'
+import {useTileSizeContext} from '../../../../core/tiles/context.ts'
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>()
 const store = useConfigStore()
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}))
 
 //   Config Safety Check
 if (!store.config.runtime) (store.config as any).runtime = {}
@@ -85,8 +87,7 @@ const timeAgo = useTimeAgo(computed(() => {
 }))
 
 const layout = computed(() => {
-  const w = props.item.w || 1
-  const h = props.item.h || 1
+  const {w, h} = tileSize.value.placement
   return {
     isMini: w === 1 && h === 1,
     isWide: w >= 2 && h === 1,

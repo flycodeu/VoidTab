@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import type {SiteItem} from '../../../core/config/types.ts';
 import {getWidgetMeta} from '../../../core/registry/widgets.ts';
+import {useTileSizeContext} from '../../../core/tiles/context.ts';
 import WidgetErrorBoundary from './WidgetErrorBoundary.vue';
 import WidgetState from './WidgetState.vue';
 
@@ -14,17 +15,36 @@ const props = defineProps<{
 const currentWidget = computed(() => {
   return getWidgetMeta(props.item.widgetType)?.component || null;
 });
+const tileSize = useTileSizeContext(() => ({
+  w: Number(props.item.w || 1),
+  h: Number(props.item.h || 1),
+}));
+const tileSizeVars = computed(() => ({
+  '--runtime-tile-cols': String(tileSize.value.cols),
+  '--runtime-tile-w': String(tileSize.value.placement.w),
+  '--runtime-tile-h': String(tileSize.value.placement.h),
+  '--runtime-tile-px-w': `${tileSize.value.width}px`,
+  '--runtime-tile-px-h': `${tileSize.value.height}px`,
+}));
 
 const typeLabel = computed(() => props.item.widgetType?.toUpperCase() || 'WIDGET');
 const widgetResetKey = computed(() => [
   props.item.id,
   props.item.widgetType,
-  props.item.w,
-  props.item.h,
+  tileSize.value.profile,
+  tileSize.value.placement.w,
+  tileSize.value.placement.h,
 ].join(':'));
 </script>
 <template>
-  <div class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 select-none bg-[#121212]">
+  <div
+      class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 select-none bg-[#121212]"
+      :style="tileSizeVars"
+      :data-tile-size-profile="tileSize.profile"
+      :data-tile-size-breakpoint="tileSize.breakpoint"
+      :data-tile-size-w="tileSize.placement.w"
+      :data-tile-size-h="tileSize.placement.h"
+  >
     <!--   唯一的玻璃层：默认不 blur，hover/edit 才 blur -->
     <div
         class="absolute inset-0 bg-white/5 border border-white/10 z-0 transition-opacity transition-[backdrop-filter]"

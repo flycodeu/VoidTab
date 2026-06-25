@@ -9,10 +9,12 @@ import {tempStorage} from '../../../../core/storage/tempStorage';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
 import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const WeatherDetailModal = defineAsyncComponent(() => import("./WeatherDetailModal.vue"));
 const props = defineProps<{ item: SiteItem }>();
 const toast = useToast();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item?.w || 2), h: Number(props.item?.h || 2)}));
 
 
 // ================= 配置 =================
@@ -221,8 +223,7 @@ useDeferredWidgetLoad(rootEl, fetchData, {
 type Variant = "mini" | "wide" | "square" | "tallNarrow" | "tall" | "large";
 
 const layout = computed(() => {
-  const w = Number(props.item?.w || 2);
-  const h = Number(props.item?.h || 2);
+  const {w, h} = tileSize.value.placement;
   const info = weatherData.value ? getWInfo(weatherData.value.current.weather_code) : weatherCodeMap[0];
 
   let variant: Variant = "large";

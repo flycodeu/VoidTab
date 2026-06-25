@@ -3,6 +3,7 @@ import {computed, ref} from 'vue';
 import type {SiteItem} from '../../../../core/config/types';
 import {PhBookOpen, PhUploadSimple} from '@phosphor-icons/vue';
 import NovelReaderModal from './NovelReaderModal.vue';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 type NovelMeta = {
   title: string;
@@ -14,6 +15,7 @@ type NovelMeta = {
 };
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 
 const showModal = ref(false);
 const storageKey = computed(() => `voidtab:novel-reader:${props.item.id}`);
@@ -35,8 +37,7 @@ const meta = computed(readMeta);
 const progressPercent = computed(() => Math.round(Math.max(0, Math.min(1, Number(meta.value?.progress || 0))) * 100));
 
 const layout = computed(() => {
-  const w = Number(props.item.w || 2);
-  const h = Number(props.item.h || 2);
+  const {w, h} = tileSize.value.placement;
   const isMini = w === 1 && h === 1;
   const isWide = w >= 2 && h === 1;
   const isTall = w === 1 && h >= 2;

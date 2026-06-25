@@ -7,6 +7,7 @@ import {tempStorage} from '../../../../core/storage/tempStorage';
 import {useToast} from '../../../../shared/composables/useToast';
 import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
 import {fetchStockMarketData, normalizeStockSymbols, type StockMarketItem} from './stockData';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 // 异步加载配置弹窗
 const StockConfigModal = defineAsyncComponent(() => import('./StockConfigModal.vue'));
@@ -14,6 +15,7 @@ const StockConfigModal = defineAsyncComponent(() => import('./StockConfigModal.v
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const toast = useToast();
 const showModal = ref(false);
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 const CACHE_TIME = 15 * 60 * 1000;
 
 // === 配置状态 ===
@@ -133,8 +135,7 @@ useIntervalFn(() => {
 
 // === 辅助逻辑 ===
 const layout = computed(() => {
-  const w = Number(props.item.w || 2);
-  const h = Number(props.item.h || 2);
+  const {w, h} = tileSize.value.placement;
   const isMini = w === 1 && h === 1;
   const isWide = w >= 2 && h === 1;
   const isTall = w === 1 && h >= 2;

@@ -5,9 +5,11 @@ import {useConfigStore} from '../../../../stores/useConfigStore';
 import PhotoWallModal from './PhotoWallModal.vue';
 import {idbGetBlob} from '../../../../core/storage/photoIdb';
 import {PhImages, PhPlus} from '@phosphor-icons/vue';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}));
 
 const widgetId = computed(() => String(props.item.id));
 const showModal = ref(false);
@@ -71,9 +73,8 @@ const openModal = () => {
 };
 
 // === Layout ===
- computed(() => {
-  const w = props.item.w || 1;
-  const h = props.item.h || 1;
+const layout = computed(() => {
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,
     isWide: w >= 2 && h === 1,
@@ -87,6 +88,7 @@ const openModal = () => {
 <template>
   <div
       class="w-full h-full relative overflow-hidden rounded-[22px] transition-all duration-300 group"
+      :data-layout="layout.isMini ? 'mini' : layout.isWide ? 'wide' : layout.isTall ? 'tall' : layout.isLarge ? 'large' : 'standard'"
       :class="[
         !isEditMode ? 'cursor-pointer' : 'cursor-move',
         'bg-[var(--widget-surface)] border border-[var(--widget-border)] hover:bg-[var(--widget-surface-2)] shadow-sm'

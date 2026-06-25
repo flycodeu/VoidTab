@@ -1,6 +1,8 @@
 import type {Ref} from 'vue';
 import type {ConfigV6} from '../../core/config/types';
+import type {TileInstance, TileSize} from '../../core/tiles/contracts.ts';
 import {getWidgetLabel, getWidgetMeta} from '../../core/registry/widgets';
+import {resolveTileDefinition} from '../../core/tiles/registry.ts';
 import {clampInt, MAX_WIDGET_H, MAX_WIDGET_W} from './helpers';
 import {
     createComponentTile,
@@ -19,6 +21,29 @@ export const createLayoutActions = (
     config: Ref<ConfigV6>,
     saveConfig: () => Promise<void>
 ) => {
+    const normalizeRequestedTileSize = (item: TileInstance, w: number, h: number, fallback: TileSize): TileSize | null => {
+        const definition = resolveTileDefinition(item.tileType, config.value.tileInstalls);
+        if (!('sizes' in definition)) {
+            return {
+                w: clampInt(w, 1, MAX_WIDGET_W, fallback.w),
+                h: clampInt(h, 1, MAX_WIDGET_H, fallback.h),
+            };
+        }
+        const rules = definition.sizes;
+        const max = {
+            w: Math.max(rules.min.w, Math.min(rules.max.w, MAX_WIDGET_W)),
+            h: Math.max(rules.min.h, Math.min(rules.max.h, MAX_WIDGET_H)),
+        };
+        const requested = {
+            w: clampInt(w, rules.min.w, max.w, fallback.w),
+            h: clampInt(h, rules.min.h, max.h, fallback.h),
+        };
+        if (rules.allowed?.length && !rules.allowed.some((size) => size.w === requested.w && size.h === requested.h)) {
+            return null;
+        }
+        return requested;
+    };
+
     const normalizeLayoutItems = () => {
         if (!config.value.layout) return;
 
@@ -59,19 +84,24 @@ export const createLayoutActions = (
     const updateItemSize = (groupId: string, itemId: string, w: number, h: number) => {
         const group = findWorkspace(config.value, groupId);
         const item = findTile(group, itemId);
-        if (!item) return;
+        if (!item) return false;
 
         if (!isComponentTile(item)) {
-            setTileSize(item, clampInt(w, 1, MAX_WIDGET_W, 1), clampInt(h, 1, MAX_WIDGET_H, 1));
+            const next = normalizeRequestedTileSize(item, w, h, {w: 1, h: 1});
+            if (!next) return false;
+            setTileSize(item, next.w, next.h);
         } else {
             const meta = getWidgetMeta(getLegacyWidgetType(item));
             const defW = meta?.defaultW ?? 2;
             const defH = meta?.defaultH ?? 2;
+            const next = normalizeRequestedTileSize(item, w, h, {w: defW, h: defH});
+            if (!next) return false;
 
-            setTileSize(item, clampInt(w, 1, MAX_WIDGET_W, defW), clampInt(h, 1, MAX_WIDGET_H, defH));
+            setTileSize(item, next.w, next.h);
         }
 
         void saveConfig();
+        return true;
     };
 
     const addWidget = (groupId: string, widgetType: string) => {

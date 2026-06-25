@@ -4,6 +4,7 @@ import {useElementSize} from '@vueuse/core';
 import type {MusicEmbedWidgetState, SiteItem} from '../../../../core/config/types';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useMusicPlayer} from '../../../../stores/useMusicPlayer';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 import {DEFAULT_MUSIC_EMBED, MUSIC_PRESETS, getMusicProvider, isBlockedMusicSource} from './providers';
 import MusicEmbedModal from './MusicEmbedModal.vue';
 import {
@@ -23,6 +24,7 @@ import {
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
 const player = useMusicPlayer();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}));
 
 const widgetId = computed(() => String(props.item.id));
 const showModal = ref(false);
@@ -48,8 +50,8 @@ const title = computed(() => effectiveState.value.title || providerLabel.value);
 const isDefault = computed(() => !state.value || isBlockedMusicSource(state.value));
 const isActive = computed(() => player.isActiveSource(effectiveState.value));
 
-const w = computed(() => Number(props.item.w || 1));
-const h = computed(() => Number(props.item.h || 1));
+const w = computed(() => tileSize.value.placement.w);
+const h = computed(() => tileSize.value.placement.h);
 
 // 桌面提供的尺寸：1×1 / 2×1 / 1×2 / 2×2 / 4×2。
 // 用实际像素判断版式（尺寸未测量前用网格单元估算），每个尺寸只展示与版面相称的信息。

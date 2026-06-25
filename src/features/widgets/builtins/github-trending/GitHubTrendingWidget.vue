@@ -8,6 +8,7 @@ import {tempStorage} from '../../../../core/storage/tempStorage';
 import {fetchJsonWithRetry} from '../../../../shared/utils/network';
 import {useToast} from '../../../../shared/composables/useToast';
 import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem }>();
 const toast = useToast();
@@ -15,6 +16,7 @@ const trends = ref<any[]>([]);
 const isLoading = ref(true);
 const showModal = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
+const tileSize = useTileSizeContext(() => ({w: Number(props.item?.w ?? 2), h: Number(props.item?.h ?? 2)}));
 
 const EXPIRE_TIME = 2 * 60 * 60 * 1000; // 2小时过期
 type GitHubSearchResponse = {items?: any[]};
@@ -85,8 +87,7 @@ useDeferredWidgetLoad(rootEl, () => fetchTrends(false), {
 });
 
 const layout = computed(() => {
-  const w = Number(props.item?.w ?? 2);
-  const h = Number(props.item?.h ?? 2);
+  const {w, h} = tileSize.value.placement;
   const isMini = w === 1 && h === 1;
   const isWide = w >= 2 && h === 1;
   const isTall = w === 1 && h >= 2;

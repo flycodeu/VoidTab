@@ -7,17 +7,18 @@ import SiteListModal from './SiteListModal.vue';
 import {PhGear, PhFolderNotch, PhArrowUpRight} from '@phosphor-icons/vue';
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from '../../../../shared/utils/siteIconCache.ts';
 import {getInstantAutoIconUrl} from '../../../../shared/utils/icon.ts';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
 const store = useConfigStore();
 const showModal = ref(false);
+const tileSize = useTileSizeContext(() => ({w: Number(props.item?.w ?? 2), h: Number(props.item?.h ?? 2)}));
 
 const widgetId = computed(() => String(props.item.id));
 
 // 1) Layout detection
 const layout = computed(() => {
-  const w = props.item?.w ?? 2;
-  const h = props.item?.h ?? 2;
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,          // 1x1
     isSlim: w === 1 && h >= 2,           // 1x2 vertical

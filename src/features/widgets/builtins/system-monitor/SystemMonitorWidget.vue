@@ -14,9 +14,11 @@ import {
 } from '@phosphor-icons/vue';
 import SystemMonitorDetailModal from './SystemMonitorDetailModal.vue';
 import {useSystemStats} from './useSystemStats';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem }>();
 const showModal = ref(false);
+const tileSize = useTileSizeContext(() => ({w: Number(props.item?.w ?? 2), h: Number(props.item?.h ?? 2)}));
 
 const {stats} = useSystemStats({pingUrl: '/ping'});
 
@@ -48,8 +50,7 @@ onMounted(async () => {
 });
 
 const layout = computed(() => {
-  const w = props.item?.w ?? 2;
-  const h = props.item?.h ?? 2;
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,
     isSlim: w === 1 && h >= 2,

@@ -4,8 +4,10 @@ import type {SiteItem} from '../../../../core/config/types.ts';
 import {Solar} from 'lunar-typescript';
 import CalendarDetailModal from './CalendarDetailModal.vue';
 import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item?.w || 2), h: Number(props.item?.h || 2)}));
 
 const now = ref(new Date());
 const showModal = ref(false);
@@ -51,8 +53,7 @@ const displayData = computed(() => {
 type Variant = 'mini' | 'wide' | 'square' | 'tallNarrow' | 'tall' | 'large';
 
 const layout = computed(() => {
-  const w = Number(props.item?.w || 2);
-  const h = Number(props.item?.h || 2);
+  const {w, h} = tileSize.value.placement;
 
   let variant: Variant = 'large';
   if (w === 1 && h === 1) variant = 'mini';

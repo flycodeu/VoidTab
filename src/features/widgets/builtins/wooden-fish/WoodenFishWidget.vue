@@ -4,6 +4,7 @@ import {useIntervalFn, useDebounceFn} from '@vueuse/core';
 import type {SiteItem} from '../../../../core/config/types';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useToast} from '../../../../shared/composables/useToast';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 import {
   PhHandsPraying, PhSpeakerHigh, PhSpeakerSlash,
@@ -16,6 +17,7 @@ const toast = useToast();
 if (!store.config.runtime) (store.config as any).runtime = {};
 if (!store.config.runtime.widgetState) store.config.runtime.widgetState = {};
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}));
 
 // === 状态管理 ===
 const saveDebounced = useDebounceFn(() => store.saveConfig?.(), 300);
@@ -56,8 +58,7 @@ let textIdCounter = 0;
 
 // === 布局判断 ===
 const layout = computed(() => {
-  const w = props.item.w || 1;
-  const h = props.item.h || 1;
+  const {w, h} = tileSize.value.placement;
   return {
     isMini: w === 1 && h === 1,
     isWide: w >= 2 && h === 1,

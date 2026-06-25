@@ -6,8 +6,10 @@ import IpInfoDetailModal from './IpInfoDetailModal.vue';
 import {fetchIpInfo, readCachedIpInfo, type IpInfo} from './ipInfoData';
 import ToolWidgetState from '../../components/ToolWidgetState.vue';
 import {useDeferredWidgetLoad} from '../../../../shared/composables/useDeferredWidgetLoad';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 
 const info = ref<IpInfo | null>(null);
 const loading = ref(true);
@@ -16,8 +18,7 @@ const showModal = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 
 const layout = computed(() => {
-  const w = Number(props.item.w || 2);
-  const h = Number(props.item.h || 2);
+  const {w, h} = tileSize.value.placement;
   const isMini = w === 1 && h === 1;
   const isWide = w >= 2 && h === 1;
   const isTall = w === 1 && h >= 2;

@@ -5,16 +5,17 @@ import {PhIdentificationCard, PhMagnifyingGlass} from '@phosphor-icons/vue';
 import CodeLookupModal from './CodeLookupModal.vue';
 import {getTypeLabel, searchGeoCodes} from './geoCodes';
 import ToolWidgetState from '../../components/ToolWidgetState.vue';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = defineProps<{ item: SiteItem; isEditMode: boolean }>();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 2), h: Number(props.item.h || 2)}));
 
 const showModal = ref(false);
 const query = ref('');
 const results = computed(() => searchGeoCodes(query.value || 'CN', 3));
 
 const layout = computed(() => {
-  const w = Number(props.item.w || 2);
-  const h = Number(props.item.h || 2);
+  const {w, h} = tileSize.value.placement;
   const isMini = w === 1 && h === 1;
   const isWide = w >= 2 && h === 1;
   const isTall = w === 1 && h >= 2;

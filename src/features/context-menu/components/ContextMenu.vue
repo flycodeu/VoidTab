@@ -5,9 +5,12 @@ import {useUiStore} from '../../../stores/ui/useUiStore.ts';
 import {useToast} from '../../../shared/composables/useToast.ts';
 import {cloneConfigSnapshot} from '../../../shared/utils/configSnapshot.ts';
 import {tileStylePresets} from '../../../core/tiles/style.ts';
+import type {TileSize} from '../../../core/tiles/contracts.ts';
+import {resolveTileDefinition} from '../../../core/tiles/registry.ts';
 import {
   cloneRuntimeTile,
   getLegacyWidgetType,
+  getTileDesktopSize,
   getWorkspaceTiles,
   removeTile,
 } from '../../../core/tiles/tileAccess.ts';
@@ -273,6 +276,87 @@ const currentGroupName = computed(() => {
   return g ? g.title : '';
 });
 
+type SizeEditor = {
+  current: TileSize;
+  default: TileSize;
+  min: TileSize;
+  max: TileSize;
+  mobileFallback?: TileSize;
+  allowed?: TileSize[];
+};
+
+const clampSizeValue = (value: unknown, fallback: number, min: number, max: number) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(numeric)));
+};
+
+const cloneSize = (size: TileSize): TileSize => ({w: size.w, h: size.h});
+
+const sizeKey = (size: TileSize) => `${size.w}x${size.h}`;
+
+const uniqueSizes = (sizes: (TileSize | undefined)[]) => {
+  const seen = new Set<string>();
+  const result: TileSize[] = [];
+  for (const size of sizes) {
+    if (!size) continue;
+    const key = sizeKey(size);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cloneSize(size));
+  }
+  return result;
+};
+
+const sizeEditor = computed<SizeEditor | null>(() => {
+  const {type, item} = ui.contextMenu;
+  if ((type !== 'site' && type !== 'widget') || !item?.id || !item.tileType) return null;
+  const definition = resolveTileDefinition(item.tileType, store.config.tileInstalls);
+  if (!('sizes' in definition)) return null;
+  const rules = definition.sizes;
+  const min = cloneSize(rules.min);
+  const max = {
+    w: Math.max(min.w, rules.max.w),
+    h: Math.max(min.h, rules.max.h),
+  };
+  const current = getTileDesktopSize(item);
+  return {
+    current: {
+      w: clampSizeValue(current.w, rules.default.w, min.w, max.w),
+      h: clampSizeValue(current.h, rules.default.h, min.h, max.h),
+    },
+    default: cloneSize(rules.default),
+    min,
+    max,
+    ...(rules.mobileFallback ? {mobileFallback: cloneSize(rules.mobileFallback)} : {}),
+    ...(rules.allowed?.length ? {allowed: uniqueSizes(rules.allowed)} : {}),
+  };
+});
+
+const normalizeRequestedSize = (item: any, w: number, h: number): TileSize | null => {
+  const definition = resolveTileDefinition(item.tileType, store.config.tileInstalls);
+  if (!('sizes' in definition)) {
+    return {
+      w: clampSizeValue(w, 1, 1, 16),
+      h: clampSizeValue(h, 1, 1, 16),
+    };
+  }
+  const rules = definition.sizes;
+  const min = rules.min;
+  const max = {
+    w: Math.max(min.w, rules.max.w),
+    h: Math.max(min.h, rules.max.h),
+  };
+  const requested = {
+    w: clampSizeValue(w, rules.default.w, min.w, max.w),
+    h: clampSizeValue(h, rules.default.h, min.h, max.h),
+  };
+  if (rules.allowed?.length && !rules.allowed.some((size) => size.w === requested.w && size.h === requested.h)) {
+    return null;
+  }
+  return requested;
+};
+
 // --- 事件处理 ---
 const moveTo = (targetGroupId: string) => {
   if (targetGroupId === ui.contextMenu.groupId) return;
@@ -317,7 +401,7 @@ const handleExportTile = () => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `${safeFilename(item.title || item.id)}.voidtab-tile.json`;
+  anchor.download = `${safeFilename(item.title || item.id)}.voidtile-instance`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -386,7 +470,14 @@ const handleResetStyle = () => {
 
 const handleResizeItem = (w: number, h: number) => {
   if (ui.contextMenu.item && ui.contextMenu.groupId) {
-    store.updateItemSize(ui.contextMenu.groupId, ui.contextMenu.item.id, w, h);
+    const nextSize = normalizeRequestedSize(ui.contextMenu.item, w, h);
+    if (!nextSize) {
+      toast.warning('这个尺寸不在该卡片允许范围内。');
+      ui.closeContextMenu();
+      return;
+    }
+    const success = store.updateItemSize(ui.contextMenu.groupId, ui.contextMenu.item.id, nextSize.w, nextSize.h);
+    if (success === false) toast.warning('这个尺寸不在该卡片允许范围内。');
   }
   ui.closeContextMenu();
 };
@@ -463,6 +554,7 @@ onUnmounted(() => {
         :groups="store.config.layout"
         :currentGroupId="ui.contextMenu.groupId"
         :currentGroupName="currentGroupName"
+        :sizeEditor="sizeEditor"
         @toggleGlobalEdit="handleToggleGlobalEdit"
         @move="moveTo"
         @delete="openDeleteModal"
@@ -483,7 +575,7 @@ onUnmounted(() => {
       ref="tileImportInput"
       class="hidden"
       type="file"
-      accept=".json,.voidtab-tile.json,application/json"
+      accept=".voidtile-instance,.json,.voidtab-tile.json,application/json"
       @change="handleTileImportFile"
   />
   <ConfirmDialog

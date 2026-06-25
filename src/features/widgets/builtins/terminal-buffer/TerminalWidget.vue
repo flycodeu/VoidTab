@@ -6,9 +6,11 @@ import {getMemoNoteCategoryLabel} from '../../../../core/config/memoNotes';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {ensureTerminalBufferState, getMemoExcerpt, getMemoWordCount} from './commandMemo';
 import TerminalModal from './TerminalModal.vue';
+import {useTileSizeContext} from '../../../../core/tiles/context.ts';
 
 const props = withDefaults(defineProps<{ item: SiteItem; isEditMode?: boolean }>(), {isEditMode: false});
 const store = useConfigStore();
+const tileSize = useTileSizeContext(() => ({w: Number(props.item.w || 1), h: Number(props.item.h || 1)}));
 const showModal = ref(false);
 const createOnOpen = ref(false);
 const memoState = computed(() => ensureTerminalBufferState(store.config.runtime));
@@ -22,9 +24,9 @@ const totalWords = computed(() => sortedNotes.value.reduce((sum, note) => sum + 
 const todoCount = computed(() => sortedNotes.value.reduce((sum, note) => (
   sum + (note.content.match(/^\s*[-*]\s+\[\s]\s+/gim) || []).length
 ), 0));
-const isMini = computed(() => props.item.w === 1 && props.item.h === 1);
-const isWide = computed(() => (props.item.w || 1) >= 2);
-const isTall = computed(() => (props.item.h || 1) >= 2);
+const isMini = computed(() => tileSize.value.placement.w === 1 && tileSize.value.placement.h === 1);
+const isWide = computed(() => tileSize.value.placement.w >= 2);
+const isTall = computed(() => tileSize.value.placement.h >= 2);
 const visibleCount = computed(() => {
   if (isMini.value) return 0;
   if (isWide.value && isTall.value) return 5;

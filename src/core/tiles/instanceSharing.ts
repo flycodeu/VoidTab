@@ -7,6 +7,7 @@ import type {
     TileInstance,
     TileLayouts,
     TileStyleOverride,
+    TileType,
 } from './contracts.ts';
 import {MAX_TILE_SPAN} from './gridMetrics.ts';
 import {normalizeTileStyleOverride} from './style.ts';
@@ -17,9 +18,16 @@ export const TILE_INSTANCE_EXPORT_VERSION = 1 as const;
 export interface TileInstanceExportV1 {
     kind: 'voidtab.tile-instance';
     version: typeof TILE_INSTANCE_EXPORT_VERSION;
+    formatVersion: typeof TILE_INSTANCE_EXPORT_VERSION;
     minReaderVersion: 1;
+    requiredVersion: string;
     exportedAt: number;
     sourceId: string;
+    tileType: TileType;
+    title?: string;
+    settings?: Record<string, JsonValue>;
+    styleOverride?: TileStyleOverride;
+    layouts: TileLayouts;
     tile: TileInstance;
     sanitized: {
         sensitiveFieldsRemoved: string[];
@@ -167,13 +175,21 @@ function exportableTile(tile: TileInstance, removed: string[]): TileInstance {
 
 export function exportTileInstance(tile: TileInstance, now = Date.now()): TileInstanceExportV1 {
     const sensitiveFieldsRemoved: string[] = [];
+    const tileExport = exportableTile(tile, sensitiveFieldsRemoved);
     return {
         kind: 'voidtab.tile-instance',
         version: TILE_INSTANCE_EXPORT_VERSION,
+        formatVersion: TILE_INSTANCE_EXPORT_VERSION,
         minReaderVersion: 1,
+        requiredVersion: '*',
         exportedAt: Math.round(now),
         sourceId: tile.id,
-        tile: exportableTile(tile, sensitiveFieldsRemoved),
+        tileType: tileExport.tileType,
+        ...(tileExport.title ? {title: tileExport.title} : {}),
+        ...('settings' in tileExport ? {settings: tileExport.settings} : {}),
+        ...(tileExport.styleOverride ? {styleOverride: tileExport.styleOverride} : {}),
+        layouts: tileExport.layouts,
+        tile: tileExport,
         sanitized: {
             sensitiveFieldsRemoved: [...new Set(sensitiveFieldsRemoved)],
         },
@@ -182,6 +198,7 @@ export function exportTileInstance(tile: TileInstance, now = Date.now()): TileIn
 
 function resolveRawTile(raw: unknown): unknown {
     if (isRecord(raw) && raw.kind === 'voidtab.tile-instance' && isRecord(raw.tile)) return raw.tile;
+    if (isRecord(raw) && raw.kind === 'voidtab.tile-instance' && raw.formatVersion === 1 && raw.tileType) return raw;
     if (isRecord(raw) && raw.tileType) return raw;
     throw new TypeError('不是有效的 VoidTab 卡片实例文件');
 }

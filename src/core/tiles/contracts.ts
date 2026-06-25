@@ -94,6 +94,27 @@ export interface TileStyleOverride {
 
 export type TileStyleableToken = keyof TileStyleOverride;
 
+export type TileSizeBreakpoint = 'mini' | 'normal' | 'wide' | 'tall' | 'large';
+
+export interface TileSizeContext {
+    profile: LayoutProfileId;
+    cols: number;
+    unit: number;
+    gap: number;
+    placement: GridPlacement;
+    width: number;
+    height: number;
+    breakpoint: TileSizeBreakpoint;
+}
+
+export interface TileRuntimeContext {
+    instanceId: string;
+    tileType: TileType;
+    source: TileSource | 'unsupported';
+    settings: Readonly<Record<string, JsonValue>>;
+    size: TileSizeContext;
+}
+
 export type TileCapability =
     | {type: 'storage'; scope: 'instance'}
     | {type: 'network'; hosts: string[]}

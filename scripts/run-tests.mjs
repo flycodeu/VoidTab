@@ -306,6 +306,8 @@ test('MainGrid measures focus/sidebar container changes on the next frame', asyn
 test('TileHost routes canonical tiles through one legacy-prop adapter', async () => {
   const grid = await read('src/features/home/components/MainGrid.vue');
   const host = await read('src/features/home/components/TileHost.vue');
+  const widgetCard = await read('src/features/widgets/components/WidgetCard.vue');
+  const context = await read('src/core/tiles/context.ts');
   const registry = await read('src/core/tiles/registry.ts');
 
   assert.match(grid, /import TileHost/);
@@ -314,8 +316,17 @@ test('TileHost routes canonical tiles through one legacy-prop adapter', async ()
   assert.match(host, /resolveTileDefinition/);
   assert.match(host, /tile: TileInstance/);
   assert.match(host, /toLegacyTileHostItem/);
+  assert.match(host, /provideTileRuntimeContext/);
+  assert.match(host, /tileSizeContext/);
+  assert.match(host, /w: tilePlacement\.value\.w/);
   assert.match(host, /<WidgetCard/);
   assert.match(host, /<GlassCard/);
+  assert.match(context, /useTileRuntimeContext/);
+  assert.match(context, /useTileSizeContext/);
+  assert.match(context, /tileRuntimeContextKey/);
+  assert.match(widgetCard, /useTileSizeContext/);
+  assert.match(widgetCard, /data-tile-size-breakpoint/);
+  assert.match(widgetCard, /container-type:\s*size/);
   assert.match(registry, /registerBuiltinTileType/);
   assert.doesNotMatch(registry, /SiteItem/);
 
@@ -325,6 +336,30 @@ test('TileHost routes canonical tiles through one legacy-prop adapter', async ()
   assert.match(registry, /createUnsupportedExternalTileDefinition/);
   assert.match(registry, /builtinTileTypes\.get\(tileType\) \|\| createUnsupportedExternalTileDefinition\(tileType\)/);
   assert.match(registry, /renderer: \{kind: 'widget', widgetType/);
+
+  const sizeAwareWidgets = [
+    'src/features/widgets/builtins/clock/ClockWidget.vue',
+    'src/features/widgets/builtins/calendar/CalendarWidget.vue',
+    'src/features/widgets/builtins/weather/WeatherWidget.vue',
+    'src/features/widgets/builtins/system-monitor/SystemMonitorWidget.vue',
+    'src/features/widgets/builtins/github-trending/GitHubTrendingWidget.vue',
+    'src/features/widgets/builtins/salary/SalaryWidget.vue',
+    'src/features/widgets/builtins/holiday/HolidayWidget.vue',
+    'src/features/widgets/builtins/wooden-fish/WoodenFishWidget.vue',
+    'src/features/widgets/builtins/terminal-buffer/TerminalWidget.vue',
+    'src/features/widgets/builtins/jwt-sentry/JWTSentryWidget.vue',
+    'src/features/widgets/builtins/stock-ticker/StockTickerWidget.vue',
+    'src/features/widgets/builtins/novel-reader/NovelReaderWidget.vue',
+    'src/features/widgets/builtins/code-lookup/CodeLookupWidget.vue',
+    'src/features/widgets/builtins/ip-info/IpInfoWidget.vue',
+    'src/features/widgets/builtins/cron/CronWidget.vue',
+    'src/features/widgets/builtins/photo-wall/PhotoWallWidget.vue',
+    'src/features/widgets/builtins/music-embed/MusicEmbedWidget.vue',
+    'src/features/widgets/builtins/site/SiteListWidget.vue',
+  ];
+  for (const file of sizeAwareWidgets) {
+    assert.match(await read(file), /useTileSizeContext/, file);
+  }
 });
 
 test('P3.1 keeps v5 data at one pure canonical tile boundary', async () => {
@@ -427,6 +462,7 @@ test('P3.2 exposes a v6 config model and renders canonical tiles without package
   assert.match(host, /tile: TileInstance/);
   assert.match(host, /toLegacyTileHostItem/);
   assert.match(host, /isUnsupported/);
+  assert.match(host, /TileRuntimeContext/);
   assert.match(registry, /resolveTileDefinition/);
   assert.match(externalDefinition, /external-runtime-disabled/);
   assert.match(adapter, /widgetConfig: tile\.settings/);
@@ -1172,11 +1208,15 @@ test('P4 controls tile appearance and shares sanitized instances', async () => {
   assert.match(style, /normalizeTileStyleOverride/);
   assert.match(style, /tileStyleOverrideToCssVars/);
   assert.match(sharing, /exportTileInstance/);
+  assert.match(sharing, /formatVersion/);
+  assert.match(sharing, /requiredVersion/);
   assert.match(sharing, /SENSITIVE_KEY_RE/);
   assert.match(host, /tileStyleOverrideToCssVars/);
   assert.match(host, /:style="tileStyleVars"/);
+  assert.match(host, /recover-tile/);
   assert.match(menu, /exportTileInstanceForShare/);
   assert.match(menu, /importTileInstanceToGroup/);
+  assert.match(menu, /\.voidtile-instance/);
   assert.match(panel, /导出卡片实例/);
   assert.match(panel, /导入卡片实例/);
   assert.match(panel, /重置外观/);
@@ -1221,6 +1261,10 @@ test('P4 controls tile appearance and shares sanitized instances', async () => {
     };
     const exported = exportTileInstance(tile, 123);
     assert.equal(exported.kind, 'voidtab.tile-instance');
+    assert.equal(exported.formatVersion, 1);
+    assert.equal(exported.requiredVersion, '*');
+    assert.equal(exported.tileType, 'builtin:jwt_sentry');
+    assert.deepEqual(exported.layouts.desktop, {x: 0, y: 0, w: 2, h: 2});
     assert.equal(exported.tile.id, 'jwt-1');
     assert.equal(exported.tile.settings.apiKey, undefined);
     assert.equal(exported.tile.settings.nested.refreshToken, undefined);
@@ -2019,6 +2063,9 @@ test('P1 supports fixed-unit grids and persists canvas layout bridge fields', as
   const grid = await read('src/features/home/components/MainGrid.vue');
   const normalize = await read('src/core/config/normalize.ts');
   const metrics = await read('src/core/tiles/gridMetrics.ts');
+  const menu = await read('src/features/context-menu/components/ContextMenu.vue');
+  const menuPanel = await read('src/features/context-menu/components/ContextMenuPanel.vue');
+  const layoutActions = await read('src/stores/config/layoutActions.ts');
 
   assert.match(grid, /gridTemplateColumns: `repeat\(\$\{metrics\.cols\}, \$\{metrics\.unit\}px\)`/);
   assert.match(grid, /gridColumnStart: placement\.x \+ 1/);
@@ -2026,6 +2073,22 @@ test('P1 supports fixed-unit grids and persists canvas layout bridge fields', as
   assert.match(grid, /toggleCanvasLayout/);
   assert.match(grid, /recordCanvasHistory/);
   assert.match(grid, /undoCanvasLayout/);
+  assert.match(grid, /handleCanvasTileKeydown/);
+  assert.match(grid, /canvas-mobile-toolbar/);
+  assert.match(grid, /getCanvasSizeRules/);
+  assert.match(grid, /sizeRules: getCanvasSizeRules/);
+  assert.match(grid, /:placement="getTileRenderPlacement\(group, item\)"/);
+  assert.match(grid, /resolveTileDefinition/);
+  assert.match(grid, /canvas-profile-manager/);
+  assert.match(grid, /setCanvasProfileOverride/);
+  assert.match(grid, /copyDesktopToCanvasProfile/);
+  assert.match(grid, /resetCanvasProfile/);
+  assert.match(grid, /getCanvasProfileDiffCount/);
+  assert.match(menu, /sizeEditor/);
+  assert.match(menu, /resolveTileDefinition/);
+  assert.match(menuPanel, /sizeEditor/);
+  assert.match(layoutActions, /normalizeRequestedTileSize/);
+  assert.doesNotMatch(menuPanel, /emit\('resize', 4, 2\)/);
   assert.match(normalize, /normalizeTileLayouts/);
   assert.match(normalize, /normalizeWorkspaceLayout/);
   assert.match(metrics, /MAX_TILE_SPAN = 16/);
