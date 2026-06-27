@@ -5,7 +5,14 @@ import type {MusicEmbedWidgetState, SiteItem} from '../../../../core/config/type
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useMusicPlayer} from '../../../../stores/useMusicPlayer';
 import {useTileSizeContext} from '../../../../core/tiles/context.ts';
-import {DEFAULT_MUSIC_EMBED, MUSIC_PRESETS, getMusicProvider, isBlockedMusicSource} from './providers';
+import {
+  DEFAULT_MUSIC_EMBED,
+  MUSIC_PRESETS,
+  buildMusicEmbedUrl,
+  getMusicProvider,
+  isBlockedMusicSource,
+  isNativeAudioSource,
+} from './providers';
 import MusicEmbedModal from './MusicEmbedModal.vue';
 import {
   PhGearSix,
@@ -48,7 +55,6 @@ const provider = computed(() => getMusicProvider(effectiveState.value.provider))
 const providerLabel = computed(() => provider.value?.label || '音乐');
 const title = computed(() => effectiveState.value.title || providerLabel.value);
 const isDefault = computed(() => !state.value || isBlockedMusicSource(state.value));
-const isActive = computed(() => player.isActiveSource(effectiveState.value));
 
 const w = computed(() => tileSize.value.placement.w);
 const h = computed(() => tileSize.value.placement.h);
@@ -121,6 +127,24 @@ const previewCount = computed(() => {
   }
 });
 const previewItems = computed(() => queueSources.value.slice(0, previewCount.value));
+const activeQueueItem = computed(() => queueSources.value.find((item) => player.isActiveSource(item.state)) || null);
+const isActive = computed(() => !!activeQueueItem.value);
+const displayTitle = computed(() => activeQueueItem.value?.label || title.value);
+const displayProviderLabel = computed(() => activeQueueItem.value?.group || providerLabel.value);
+const playbackStatus = computed(() => {
+  if (player.lastError) return player.lastError;
+  if (activeQueueItem.value) return '正在播放';
+  return '点击查看列表播放';
+});
+const activeEmbedUrl = computed(() => {
+  if (!player.visible || !player.source || isNativeAudioSource(player.source)) return '';
+  return buildMusicEmbedUrl(player.source);
+});
+
+function normalizePlaybackSource(source: MusicEmbedWidgetState): MusicEmbedWidgetState {
+  if (source.provider === 'youtube') return {...source, autoplay: true};
+  return source;
+}
 
 function openQueue() {
   if (props.isEditMode) return;
@@ -129,13 +153,13 @@ function openQueue() {
 
 function playSource(source: MusicEmbedWidgetState) {
   if (props.isEditMode) return;
-  player.play(source);
+  player.play(normalizePlaybackSource(source));
 }
 
 function togglePrimary() {
   if (props.isEditMode) return;
   if (isActive.value) player.close();
-  else player.play(effectiveState.value);
+  else player.play(normalizePlaybackSource(effectiveState.value));
 }
 
 function currentIndex() {
@@ -148,7 +172,7 @@ function playNext() {
   if (!list.length) return;
   const index = currentIndex();
   const next = list[index < 0 ? 0 : (index + 1) % list.length];
-  player.play(next.state);
+  player.play(normalizePlaybackSource(next.state));
 }
 
 function playPrev() {
@@ -157,7 +181,7 @@ function playPrev() {
   if (!list.length) return;
   const index = currentIndex();
   const prev = list[index <= 0 ? list.length - 1 : index - 1];
-  player.play(prev.state);
+  player.play(normalizePlaybackSource(prev.state));
 }
 
 function playShuffle() {
@@ -168,7 +192,7 @@ function playShuffle() {
   let target = index;
   if (list.length > 1) while (target === index) target = Math.floor(Math.random() * list.length);
   else target = 0;
-  player.play(list[target].state);
+  player.play(normalizePlaybackSource(list[target].state));
 }
 
 function openSettings() {
@@ -185,7 +209,7 @@ function openSettings() {
       :class="[`layout-${layoutKind}`, isEditMode ? 'is-edit' : '', isActive ? 'is-active' : '']"
       role="button"
       tabindex="0"
-      :aria-label="`打开音乐列表：${title}`"
+      :aria-label="`打开音乐列表：${displayTitle}`"
       @click="openQueue"
       @keydown.enter.prevent="openQueue"
       @keydown.space.prevent="openQueue"
@@ -217,10 +241,10 @@ function openSettings() {
           <div v-if="showCopy" class="track-copy">
             <div class="eyebrow">
               <PhWaveform size="12" weight="bold"/>
-              {{ providerLabel }}<span v-if="isDefault"> · 默认</span>
+              {{ displayProviderLabel }}<span v-if="isDefault && !activeQueueItem"> · 默认</span>
             </div>
-            <div class="track-title">{{ title }}</div>
-            <div class="track-status">{{ isActive ? '正在播放' : '点击查看列表播放' }}</div>
+            <div class="track-title">{{ displayTitle }}</div>
+            <div class="track-status" :class="{ error: !!player.lastError }">{{ playbackStatus }}</div>
           </div>
         </div>
 
@@ -304,9 +328,23 @@ function openSettings() {
                 </span>
               </button>
               <div class="min-w-0 flex-1">
-                <div class="queue-now">{{ title }}</div>
-                <div class="queue-sub">{{ providerLabel }} · {{ isActive ? '正在播放' : '待播放' }}</div>
+                <div class="queue-now">{{ displayTitle }}</div>
+                <div class="queue-sub" :class="{ error: !!player.lastError }">{{ displayProviderLabel }} · {{ playbackStatus }}</div>
               </div>
+            </div>
+
+            <div v-if="player.lastError" class="queue-alert">
+              {{ player.lastError }}
+            </div>
+
+            <div v-if="activeEmbedUrl" class="queue-embed">
+              <iframe
+                  :src="activeEmbedUrl"
+                  title="当前嵌入音乐播放器"
+                  frameborder="0"
+                  allow="autoplay; encrypted-media; clipboard-write; picture-in-picture"
+                  referrerpolicy="no-referrer"
+              ></iframe>
             </div>
 
             <div class="queue-transport">
@@ -545,6 +583,12 @@ function openSettings() {
 
 .track-status {
   margin-top: 4px;
+}
+
+.track-status.error,
+.queue-sub.error {
+  color: #fecaca;
+  opacity: .95;
 }
 
 .transport {
@@ -891,6 +935,34 @@ function openSettings() {
   border-radius: 20px;
   background: rgba(var(--accent-color-rgb), .14);
   border: 1px solid rgba(var(--accent-color-rgb), .20);
+}
+
+.queue-alert {
+  margin: -2px 18px 12px;
+  padding: 9px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(248, 113, 113, .30);
+  background: rgba(127, 29, 29, .24);
+  color: #fecaca;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.queue-embed {
+  margin: -2px 18px 14px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, .13);
+  background: rgba(0, 0, 0, .24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+
+.queue-embed iframe {
+  display: block;
+  width: 100%;
+  height: 152px;
+  border: 0;
 }
 
 .queue-now {

@@ -63,6 +63,11 @@ import {
   type RuntimeTile,
   type RuntimeWorkspace,
 } from "../../../core/tiles/tileAccess.ts";
+import {
+  cleanupDeletedMusicEmbedTile,
+  restoreMusicEmbedWidgetState,
+  type MusicEmbedCleanupSnapshot,
+} from "../../widgets/builtins/music-embed/cleanup.ts";
 
 type LayoutItem = RuntimeTile;
 type LayoutGroup = RuntimeWorkspace;
@@ -1236,6 +1241,7 @@ type DeletedItemSnapshot = {
   item: LayoutItem;
   title: string;
   kindLabel: string;
+  music?: MusicEmbedCleanupSnapshot | null;
 };
 
 const deleteDialogOpen = ref(false);
@@ -1282,6 +1288,7 @@ const restoreDeletedItem = (snapshot: DeletedItemSnapshot) => {
   const tiles = getWorkspaceTiles(group);
   const index = Math.max(0, Math.min(snapshot.index, tiles.length));
   tiles.splice(index, 0, cloneLayoutItem(snapshot.item));
+  restoreMusicEmbedWidgetState(store.config, snapshot.music);
   void store.saveConfig();
 
   toast.success(`已恢复「${snapshot.title}」。`);
@@ -1310,6 +1317,7 @@ const confirmDelete = () => {
     item: cloneLayoutItem(item),
     title: getItemTitle(item),
     kindLabel: getItemKindLabel(item),
+    music: cleanupDeletedMusicEmbedTile(store.config, item),
   };
 
   store.removeSite(groupId, itemId);

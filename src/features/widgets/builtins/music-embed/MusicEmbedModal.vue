@@ -14,6 +14,7 @@ import {
 } from './providers';
 import {useEscapeClose} from '../../../../shared/composables/useEscapeClose';
 import {useMusicPlayer} from '../../../../stores/useMusicPlayer';
+import {cleanupMusicEmbedWidgetState} from './cleanup';
 import {PhX, PhMusicNotes, PhCheck, PhTrash, PhPlay} from '@phosphor-icons/vue';
 
 const props = defineProps<{ show: boolean; widgetId: string }>();
@@ -116,7 +117,7 @@ function apply(play = false) {
 }
 
 function clear() {
-  delete widgets.value[props.widgetId];
+  cleanupMusicEmbedWidgetState(store.config, props.widgetId);
   store.saveConfig?.();
   emit('close');
 }

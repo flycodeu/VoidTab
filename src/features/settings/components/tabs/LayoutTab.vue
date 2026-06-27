@@ -82,7 +82,7 @@ const preset = computed<CardPreset>({
 
 const previewCardStyle = computed(() => ({
   gridColumn: cardW.value > 4 ? '1 / -1' : `span ${Math.max(1, cardW.value)}`,
-  minHeight: `${Math.max(72, cardH.value * 76)}px`,
+  minHeight: `${Math.min(180, Math.max(72, cardH.value * 42))}px`,
   background: 'rgba(var(--overlay-rgb), 0.14)',
   border: '1px solid rgba(var(--overlay-rgb), 0.14)',
 }));
@@ -91,8 +91,8 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
 </script>
 
 <template>
-  <div class="space-y-6 animate-fade-in">
-    <div class="space-y-3">
+  <div class="layout-tab animate-fade-in">
+    <section class="layout-section">
       <div class="flex justify-between items-center">
         <label class="font-bold text-sm">布局模式</label>
 
@@ -215,16 +215,13 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
           </div>
         </div>
 
-        <div class="text-[11px] opacity-60" style="color: var(--text-secondary);">
-          支持 1×1 到 16×16。常用入口建议保持较小尺寸；大尺寸更适合自由布局中的信息卡或照片墙。
-        </div>
       </div>
 
-      <div class="grid grid-cols-4 gap-3">
+      <div class="layout-preview-grid">
         <button
             type="button"
             @click="mode = 'icon'"
-            class="col-span-1 w-full rounded-2xl p-3 text-left transition-all"
+            class="w-full rounded-2xl p-3 text-left transition-all"
             :class="mode === 'icon' ? 'ring-2 ring-[var(--accent-color)]' : 'opacity-80 hover:opacity-100'"
             style="background: rgba(var(--overlay-rgb), 0.14); border: 1px solid rgba(var(--overlay-rgb), 0.14);"
         >
@@ -291,18 +288,12 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
           </div>
         </button>
       </div>
+    </section>
 
-      <div class="text-[11px] opacity-60" style="color: var(--text-secondary);">
-        图标模式更简洁；卡片模式可展示域名与备注（更适合管理类分组）。
-      </div>
-    </div>
-
-    <div class="flex justify-between items-center gap-4">
+    <section class="layout-section">
+    <div class="setting-line">
       <div class="min-w-0">
         <label class="font-bold text-sm">显示分组栏</label>
-        <div class="text-[11px] opacity-60 mt-1" style="color: var(--text-secondary);">
-          关闭后不显示分组导航，主内容和快捷操作仍保持可用。
-        </div>
       </div>
       <input
           type="checkbox"
@@ -312,7 +303,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
     </div>
 
     <div
-        class="hidden lg:flex justify-between items-center gap-4"
+        class="setting-line desktop-only"
         :class="!store.config.theme.showSidebar ? 'opacity-45' : ''"
     >
       <label class="font-bold text-sm">分组栏位置</label>
@@ -334,18 +325,15 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
     </div>
 
     <div
-        class="lg:hidden p-3 rounded-xl border text-xs leading-relaxed"
+        class="lg:hidden mobile-note"
         style="border-color: var(--glass-border); background: var(--modal-input-bg); color: var(--text-secondary);"
     >
-      手机端分组栏固定在底部，桌面端才支持左侧、右侧、顶部和底部位置切换。
+      手机端分组栏固定在底部。
     </div>
 
-    <div class="flex justify-between items-center gap-4">
+    <div class="setting-line">
       <div class="min-w-0">
         <label class="font-bold text-sm">显示全部分组</label>
-        <div class="text-[11px] opacity-60 mt-1" style="color: var(--text-secondary);">
-          关闭时只显示当前分组；开启后中间区域可连续浏览所有分组。
-        </div>
       </div>
       <input
           type="checkbox"
@@ -354,7 +342,7 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
       />
     </div>
 
-    <div class="flex justify-between items-center">
+    <div class="setting-line">
       <label class="font-bold text-sm">时间组件</label>
       <input
           type="checkbox"
@@ -362,8 +350,10 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
           class="w-5 h-5 accent-[var(--accent-color)]"
       />
     </div>
+    </section>
 
-    <div class="flex justify-between items-center">
+    <section class="layout-section">
+    <div class="setting-line">
       <label class="font-bold text-sm">最大宽度</label>
       <span class="text-xs opacity-60">{{ store.config.theme.gridMaxWidth }}px</span>
     </div>
@@ -374,12 +364,75 @@ const previewRemarkClamp = computed(() => (cardW.value >= 3 || cardH.value >= 2 
         max="2000"
         class="w-full accent-[var(--accent-color)]"
     />
+    </section>
   </div>
 </template>
 
 <style scoped>
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+.layout-tab {
+  display: grid;
+  gap: 16px;
+}
+
+.layout-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  background: var(--modal-input-bg);
+}
+
+.layout-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.layout-preview-grid > button:first-child {
+  grid-column: span 1;
+}
+
+.setting-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+}
+
+.mobile-note {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1023px) {
+  .desktop-only {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .layout-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .layout-preview-grid > button,
+  .layout-preview-grid > button:first-child {
+    grid-column: 1 / -1 !important;
+  }
+
+  .setting-line {
+    align-items: flex-start;
+  }
 }
 
 @keyframes fadeIn {

@@ -130,70 +130,61 @@ const tileSpanOptions = [3, 4, 5, 6];
         桌面与右键菜单
       </div>
 
-      <div class="flex items-start justify-between gap-4">
+      <div class="compact-setting-row">
         <div class="min-w-0">
           <div class="font-extrabold text-[13px]">组件最大尺寸</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            右键调整组件大小时允许的最大宽 / 高（格）。设大后可把组件拉到 {{ maxTileSpan }}×{{ maxTileSpan }}；
-            声明更小尺寸的组件仍按其自身限制。
-          </p>
+          <span class="setting-meta">右键尺寸上限：{{ maxTileSpan }}×{{ maxTileSpan }}</span>
         </div>
         <select v-model.number="maxTileSpan" class="span-select shrink-0" aria-label="组件最大尺寸">
           <option v-for="n in tileSpanOptions" :key="n" :value="n">{{ n }}×{{ n }}</option>
         </select>
       </div>
 
-      <label class="toggle-row">
-        <div class="min-w-0">
-          <div class="font-extrabold text-[13px]">右键显示「实例外观」</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            关闭后，右键菜单不再展示清爽 / 柔和 / 醒目外观预设，菜单更精简。
-          </p>
-        </div>
-        <input v-model="showTileAppearanceMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
-      </label>
+      <div class="switch-grid">
+        <label class="toggle-card">
+          <span>
+            <strong>实例外观</strong>
+            <small>右键预设</small>
+          </span>
+          <input v-model="showTileAppearanceMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+        </label>
 
-      <label class="toggle-row">
-        <div class="min-w-0">
-          <div class="font-extrabold text-[13px]">右键显示「布局尺寸」</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            关闭后，右键菜单不再展示尺寸预设与宽高输入，菜单更精简。
-          </p>
-        </div>
-        <input v-model="showTileSizeMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
-      </label>
+        <label class="toggle-card">
+          <span>
+            <strong>布局尺寸</strong>
+            <small>右键调宽高</small>
+          </span>
+          <input v-model="showTileSizeMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+        </label>
+      </div>
 
       <div class="section-subtitle">进阶 / 开发者入口（按需开启）</div>
 
-      <label class="toggle-row">
-        <div class="min-w-0">
-          <div class="font-extrabold text-[13px]">右键显示「设计组件」</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            面向开发者的在线组件设计器入口。普通用户可保持关闭，减少干扰与资源占用。
-          </p>
-        </div>
-        <input v-model="showDesignerMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
-      </label>
+      <div class="switch-grid">
+        <label class="toggle-card">
+          <span>
+            <strong>设计组件</strong>
+            <small>Sandbox 编辑器</small>
+          </span>
+          <input v-model="showDesignerMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+        </label>
 
-      <label class="toggle-row">
-        <div class="min-w-0">
-          <div class="font-extrabold text-[13px]">右键显示「导入卡片实例」</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            从 .voidtile-instance 文件导入卡片。仅在需要迁移 / 分享卡片时开启即可。
-          </p>
-        </div>
-        <input v-model="showImportTileMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
-      </label>
+        <label class="toggle-card">
+          <span>
+            <strong>导入实例</strong>
+            <small>.voidtile-instance</small>
+          </span>
+          <input v-model="showImportTileMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+        </label>
 
-      <label class="toggle-row">
-        <div class="min-w-0">
-          <div class="font-extrabold text-[13px]">右键显示「开发者工具 (F12)」</div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            在右键菜单中显示打开浏览器开发者工具的入口，便于调试。默认关闭。
-          </p>
-        </div>
-        <input v-model="showDevToolsMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
-      </label>
+        <label class="toggle-card">
+          <span>
+            <strong>开发者工具</strong>
+            <small>F12 入口</small>
+          </span>
+          <input v-model="showDevToolsMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+        </label>
+      </div>
     </section>
 
     <section class="advanced-section space-y-4">
@@ -402,12 +393,75 @@ const tileSpanOptions = [3, 4, 5, 6];
   opacity: 0.55;
 }
 
+.compact-setting-row,
 .toggle-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.compact-setting-row {
+  align-items: center;
+  padding: 12px;
+  border-radius: 13px;
+  border: 1px solid var(--glass-border);
+  background: rgba(var(--overlay-rgb), 0.06);
+}
+
+.setting-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  opacity: 0.56;
+}
+
+.switch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(174px, 1fr));
+  gap: 10px;
+}
+
+.toggle-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid var(--glass-border);
+  background: rgba(var(--overlay-rgb), 0.06);
   cursor: pointer;
+}
+
+.toggle-card:hover {
+  border-color: rgba(var(--accent-color-rgb), 0.28);
+  background: rgba(var(--accent-color-rgb), 0.08);
+}
+
+.toggle-card span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.toggle-card strong {
+  font-size: 12px;
+  line-height: 1.15;
+  font-weight: 900;
+}
+
+.toggle-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.1;
+  opacity: 0.55;
 }
 
 .span-select {

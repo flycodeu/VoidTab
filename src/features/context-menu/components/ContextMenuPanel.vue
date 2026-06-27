@@ -11,7 +11,6 @@ import {
   PhGear,
   PhCode,
   PhPalette,
-  PhArrowClockwise,
   PhDownloadSimple,
   PhUploadSimple
 } from '@phosphor-icons/vue';
@@ -57,13 +56,18 @@ const emit = defineEmits<{
   (e: 'importTile'): void;
   (e: 'exportTile'): void;
   (e: 'stylePreset', preset: 'clean' | 'soft' | 'vivid'): void;
-  (e: 'resetStyle'): void;
   (e: 'configWidget'): void;
   (e: 'edit'): void;
 
   (e: 'openSettings'): void;
   (e: 'openDevTools'): void;
 }>();
+
+const STYLE_PRESETS = [
+  {id: 'clean', label: '清爽', tone: '细边 / 低噪', accent: '#2563eb', surface: '#e5e7eb', radius: 8, elevation: 0},
+  {id: 'soft', label: '柔和', tone: '圆角 / 柔面', accent: '#14b8a6', surface: '#99f6e4', radius: 18, elevation: 1},
+  {id: 'vivid', label: '醒目', tone: '高亮 / 强阴影', accent: '#f97316', surface: '#fed7aa', radius: 13, elevation: 2},
+] as const;
 
 const sameSize = (left: SizeValue | undefined, right: SizeValue | undefined) =>
     !!left && !!right && left.w === right.w && left.h === right.h;
@@ -120,7 +124,7 @@ const emitResizeHeight = (event: Event) => {
   <Transition name="scale">
     <div
         v-if="show"
-        class="context-menu-panel-root fixed z-[99999] min-w-[170px] p-1.5 rounded-xl flex flex-col gap-1
+        class="context-menu-panel-root fixed z-[99999] min-w-[258px] p-2 rounded-xl flex flex-col gap-1
              origin-top-left select-none text-sm font-medium"
         :style="styleObj"
         @click.stop
@@ -185,15 +189,26 @@ const emitResizeHeight = (event: Event) => {
             <PhPalette size="13" aria-hidden="true"/>
             实例外观
           </div>
-          <div class="grid grid-cols-3 gap-1">
-            <button @click="emit('stylePreset', 'clean')" class="style-chip" type="button">清爽</button>
-            <button @click="emit('stylePreset', 'soft')" class="style-chip" type="button">柔和</button>
-            <button @click="emit('stylePreset', 'vivid')" class="style-chip" type="button">醒目</button>
+          <div class="style-preset-grid">
+            <button
+                v-for="preset in STYLE_PRESETS"
+                :key="preset.id"
+                @click="emit('stylePreset', preset.id)"
+                class="style-card"
+                :style="{
+                  '--style-accent': preset.accent,
+                  '--style-surface': preset.surface,
+                  '--style-radius': preset.radius + 'px',
+                  '--style-shadow': preset.elevation,
+                }"
+                type="button"
+            >
+              <span class="style-copy">
+                <strong>{{ preset.label }}</strong>
+                <small>{{ preset.tone }}</small>
+              </span>
+            </button>
           </div>
-          <button @click="emit('resetStyle')" class="menu-btn compact" type="button">
-            <PhArrowClockwise size="14" class="opacity-70"/>
-            重置外观
-          </button>
         </div>
 
         <div v-if="showSizeEditor !== false && sizeEditor" class="size-panel">
@@ -322,15 +337,26 @@ const emitResizeHeight = (event: Event) => {
             <PhPalette size="13" aria-hidden="true"/>
             实例外观
           </div>
-          <div class="grid grid-cols-3 gap-1">
-            <button @click="emit('stylePreset', 'clean')" class="style-chip" type="button">清爽</button>
-            <button @click="emit('stylePreset', 'soft')" class="style-chip" type="button">柔和</button>
-            <button @click="emit('stylePreset', 'vivid')" class="style-chip" type="button">醒目</button>
+          <div class="style-preset-grid">
+            <button
+                v-for="preset in STYLE_PRESETS"
+                :key="preset.id"
+                @click="emit('stylePreset', preset.id)"
+                class="style-card"
+                :style="{
+                  '--style-accent': preset.accent,
+                  '--style-surface': preset.surface,
+                  '--style-radius': preset.radius + 'px',
+                  '--style-shadow': preset.elevation,
+                }"
+                type="button"
+            >
+              <span class="style-copy">
+                <strong>{{ preset.label }}</strong>
+                <small>{{ preset.tone }}</small>
+              </span>
+            </button>
           </div>
-          <button @click="emit('resetStyle')" class="menu-btn compact" type="button">
-            <PhArrowClockwise size="14" class="opacity-70"/>
-            重置外观
-          </button>
         </div>
 
         <button @click="emit('exportTile')" class="menu-btn" type="button">
@@ -498,16 +524,96 @@ const emitResizeHeight = (event: Event) => {
 }
 
 .style-panel {
-  @apply px-2 py-1.5 rounded-lg bg-black/5 dark:bg-white/5 flex flex-col gap-1.5;
+  padding: 9px;
+  border-radius: 12px;
+  border: 1px solid rgba(127, 127, 127, 0.14);
+  background:
+      linear-gradient(180deg, rgba(var(--accent-color-rgb), 0.08), transparent),
+      rgba(var(--overlay-rgb), 0.06);
+  display: grid;
+  gap: 8px;
 }
 
 .style-title {
-  @apply flex items-center gap-1.5 text-[10px] opacity-50 font-bold tracking-wider;
+  @apply flex items-center gap-1.5 text-[10px] opacity-60 font-bold tracking-wider;
 }
 
-.style-chip {
-  @apply h-7 rounded-md text-[11px] font-bold bg-black/5 dark:bg-white/10
-  hover:bg-[var(--accent-color)] hover:text-white transition-colors;
+.style-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.style-card {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 9px 8px 8px 11px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--style-accent) 24%, rgba(127, 127, 127, 0.16));
+  background:
+      linear-gradient(180deg, color-mix(in srgb, var(--style-accent) 10%, transparent), transparent 68%),
+      color-mix(in srgb, var(--style-surface) 13%, rgba(var(--overlay-rgb), 0.07));
+  text-align: center;
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 calc(var(--style-shadow) * 3px) calc(var(--style-shadow) * 8px) color-mix(in srgb, var(--style-accent) 12%, transparent);
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.style-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--style-accent);
+  opacity: 0.9;
+}
+
+.style-card::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--style-accent) 58%, transparent);
+  opacity: calc(0.22 + var(--style-shadow) * 0.18);
+}
+
+.style-card:hover,
+.style-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--style-accent) 58%, transparent);
+  background:
+      linear-gradient(180deg, color-mix(in srgb, var(--style-accent) 17%, transparent), transparent 68%),
+      color-mix(in srgb, var(--style-surface) 22%, rgba(var(--overlay-rgb), 0.09));
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--style-accent) 14%, transparent);
+  outline: none;
+}
+
+.style-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.style-copy strong {
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 900;
+}
+
+.style-copy small {
+  font-size: 10px;
+  line-height: 1.1;
+  opacity: 0.56;
 }
 
 .size-panel {

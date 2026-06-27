@@ -14,6 +14,11 @@ import {
   getWorkspaceTiles,
   removeTile,
 } from '../../../core/tiles/tileAccess.ts';
+import {
+  cleanupDeletedMusicEmbedTile,
+  restoreMusicEmbedWidgetState,
+  type MusicEmbedCleanupSnapshot,
+} from '../../widgets/builtins/music-embed/cleanup.ts';
 
 // 组件
 import ContextMenuPanel from './ContextMenuPanel.vue';
@@ -51,7 +56,7 @@ const showDeleteModal = ref(false);
 const deleteTarget = ref<DeleteTarget>(null);
 
 type DeleteSnapshot =
-    | { type: 'site' | 'widget'; groupId: string; index: number; item: any; title: string }
+    | { type: 'site' | 'widget'; groupId: string; index: number; item: any; title: string; music?: MusicEmbedCleanupSnapshot | null }
     | { type: 'group'; index: number; group: any; title: string };
 
 const restoreDeleted = (snapshot: DeleteSnapshot) => {
@@ -81,6 +86,7 @@ const restoreDeleted = (snapshot: DeleteSnapshot) => {
   }
   const index = Math.max(0, Math.min(snapshot.index, tiles.length));
   tiles.splice(index, 0, cloneRuntimeTile(cloneConfigSnapshot(snapshot.item)));
+  restoreMusicEmbedWidgetState(store.config, snapshot.music);
   void store.saveConfig();
   toast.success(`已恢复「${snapshot.title}」。`);
   ui.announce(`已恢复${snapshot.type === 'widget' ? '组件' : '网站'}${snapshot.title}`);
@@ -141,12 +147,14 @@ const confirmDelete = () => {
     const index = tiles.findIndex((item: any) => item.id === target.siteId);
     const item = index >= 0 ? tiles[index] : null;
     if (group && item) {
+      const music = cleanupDeletedMusicEmbedTile(store.config, item);
       snapshot = {
         type: target.type,
         groupId: target.groupId,
         index,
         item: cloneRuntimeTile(cloneConfigSnapshot(item)),
         title: getRuntimeItemTitle(item, target.type),
+        music,
       };
       removeTile(group, target.siteId);
       void store.saveConfig();
@@ -465,18 +473,6 @@ const handleStylePreset = (preset: 'clean' | 'soft' | 'vivid') => {
   ui.closeContextMenu();
 };
 
-const handleResetStyle = () => {
-  const {groupId, item} = ui.contextMenu;
-  if (!groupId || !item?.id) {
-    toast.warning('当前项目缺少必要信息，无法重置外观。');
-    ui.closeContextMenu();
-    return;
-  }
-  const success = store.resetTileStyleOverride(groupId, item.id);
-  toast[success ? 'success' : 'warning'](success ? '已重置这个卡片的实例外观。' : '这个卡片已经不在当前分组中。');
-  ui.closeContextMenu();
-};
-
 const handleResizeItem = (w: number, h: number) => {
   if (ui.contextMenu.item && ui.contextMenu.groupId) {
     const nextSize = normalizeRequestedSize(ui.contextMenu.item, w, h);
@@ -579,7 +575,6 @@ onUnmounted(() => {
         @importTile="handleImportTileRequest"
         @exportTile="handleExportTile"
         @stylePreset="handleStylePreset"
-        @resetStyle="handleResetStyle"
         @configWidget="handleConfigWidget"
         @openSettings="handleOpenSettings"
         @openDevTools="handleOpenDevTools"
@@ -608,4 +603,3 @@ onUnmounted(() => {
     </template>
   </ConfirmDialog>
 </template>
-

@@ -217,11 +217,11 @@ const handleSearch = () => {
   <div ref="searchContainer" class="relative w-[90%] md:w-full md:max-w-[680px] px-0 group z-30 mb-4 transition-all">
 
     <div
-        class="flex items-center rounded-full px-2 py-2 transition-all border border-white/20 shadow-lg hover:shadow-2xl hover:bg-white/20 relative z-20"
+        class="search-shell flex items-center rounded-full px-2 py-2 transition-all border shadow-lg hover:shadow-2xl relative z-20"
         :class="[
         'bg-white/10 dark:bg-black/20 backdrop-blur-xl',
         { 'effect-neon': store.config.theme.neonGlow },
-        showSuggestions ? 'rounded-b-none border-b-transparent bg-white/90 dark:bg-[#1e1e1e]/95' : ''
+        showSuggestions ? 'is-open rounded-b-none border-b-transparent bg-white/90 dark:bg-[#1e1e1e]/95' : ''
       ]"
     >
 
@@ -305,9 +305,9 @@ const handleSearch = () => {
 
     <transition name="slide">
       <div v-if="showSuggestions"
-           class="absolute top-full left-0 w-full mt-0 pt-2
+           class="search-suggestions absolute top-full left-0 w-full mt-0 pt-2
                   bg-white/90 dark:bg-[#1e1e1e]/95 backdrop-blur-xl
-                  border border-white/20 border-t-0 rounded-b-3xl shadow-2xl
+                  border border-t-0 rounded-b-3xl shadow-2xl
                   overflow-hidden z-10 flex flex-col text-[var(--text-primary)]">
 
         <div v-if="smartAction"
@@ -400,5 +400,39 @@ const handleSearch = () => {
 .effect-neon {
   box-shadow: 0 0 10px var(--accent-color), inset 0 0 5px rgba(255, 255, 255, 0.1);
   border-color: var(--accent-color);
+}
+
+.search-shell {
+  border-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
+  background:
+      linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08)),
+      rgba(var(--overlay-rgb), 0.16);
+  box-shadow:
+      0 1px 0 rgba(255,255,255,0.22) inset,
+      0 0 0 1px rgba(var(--overlay-rgb), 0.08),
+      0 16px 42px rgba(0,0,0,0.16);
+}
+
+.search-shell:hover,
+.search-shell:focus-within,
+.search-shell.is-open {
+  border-color: color-mix(in srgb, var(--accent-color) 52%, var(--text-primary) 18%);
+  box-shadow:
+      0 1px 0 rgba(255,255,255,0.24) inset,
+      0 0 0 3px rgba(var(--accent-color-rgb), 0.12),
+      0 18px 46px rgba(0,0,0,0.18);
+}
+
+.search-suggestions {
+  border-color: color-mix(in srgb, var(--accent-color) 32%, var(--text-primary) 14%);
+  box-shadow:
+      0 18px 46px rgba(0,0,0,0.20),
+      0 0 0 1px rgba(var(--accent-color-rgb), 0.08);
+}
+
+:global(.dark) .search-shell {
+  background:
+      linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04)),
+      rgba(12,12,14,0.58);
 }
 </style>

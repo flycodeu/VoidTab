@@ -8,6 +8,7 @@ import {storage} from '../core/storage';
 import {DEFAULT_MUSIC_EMBED, isBlockedMusicSource} from '../features/widgets/builtins/music-embed/providers';
 
 const STORE_KEY = 'voidtab_music_player';
+export const MUSIC_PLAYER_PLAY_REQUEST = 'voidtab:music-player:play-request';
 
 type PlayerPos = { x: number; y: number } | null;
 
@@ -15,16 +16,24 @@ type State = {
     source: MusicEmbedWidgetState | null;
     visible: boolean;
     expanded: boolean;
+    playRequestId: number;
+    lastError: string;
     /** 拖拽后的左上角坐标；null = 默认右下角 */
     pos: PlayerPos;
     hydrated: boolean;
 };
 
 type Persisted = { source: MusicEmbedWidgetState | null; visible: boolean; pos: PlayerPos };
+export type MusicPlayerPlayRequestDetail = { requestId: number; source: MusicEmbedWidgetState };
 
 function sanitizeMusicSource(source: MusicEmbedWidgetState | null): MusicEmbedWidgetState | null {
     if (!source) return null;
     return isBlockedMusicSource(source) ? {...DEFAULT_MUSIC_EMBED} : source;
+}
+
+function dispatchPlayRequest(detail: MusicPlayerPlayRequestDetail) {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent<MusicPlayerPlayRequestDetail>(MUSIC_PLAYER_PLAY_REQUEST, {detail}));
 }
 
 export const useMusicPlayer = defineStore('musicPlayer', {
@@ -32,6 +41,8 @@ export const useMusicPlayer = defineStore('musicPlayer', {
         source: null,
         visible: false,
         expanded: true,
+        playRequestId: 0,
+        lastError: '',
         pos: null,
         hydrated: false,
     }),
@@ -63,10 +74,20 @@ export const useMusicPlayer = defineStore('musicPlayer', {
             }
         },
         play(source: MusicEmbedWidgetState) {
-            this.source = sanitizeMusicSource(source) || {...DEFAULT_MUSIC_EMBED};
+            const next = sanitizeMusicSource(source) || {...DEFAULT_MUSIC_EMBED};
+            this.source = next;
             this.visible = true;
             this.expanded = true;
+            this.lastError = '';
+            this.playRequestId += 1;
             this.persist();
+            dispatchPlayRequest({requestId: this.playRequestId, source: next});
+        },
+        clearPlaybackError() {
+            this.lastError = '';
+        },
+        setPlaybackError(message: string) {
+            this.lastError = message;
         },
         toggleExpand() {
             this.expanded = !this.expanded;
@@ -78,6 +99,7 @@ export const useMusicPlayer = defineStore('musicPlayer', {
         close() {
             this.visible = false;
             this.source = null;
+            this.lastError = '';
             this.persist();
         },
     },

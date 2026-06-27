@@ -3,10 +3,11 @@ import type {
     HostCapabilities,
     JsonValue,
     SandboxTileDefinition,
+    TileSizeContext,
 } from './contracts.ts';
 
 export const SANDBOX_BRIDGE_CHANNEL = 'voidtab:sandbox:v1' as const;
-export const SANDBOX_BRIDGE_MAX_MESSAGE_BYTES = 16_384;
+export const SANDBOX_BRIDGE_MAX_MESSAGE_BYTES = 65_536;
 
 export type SandboxBridgeRequestType =
     | 'storage.get'
@@ -15,7 +16,8 @@ export type SandboxBridgeRequestType =
     | 'openUrl'
     | 'clipboard.write'
     | 'network.fetch'
-    | 'notification.show';
+    | 'notification.show'
+    | 'modal.open';
 
 export interface SandboxBridgeRequest {
     type: SandboxBridgeRequestType;
@@ -55,6 +57,7 @@ export interface SandboxBootPayload {
         title: string;
         settings: Record<string, JsonValue>;
         layouts: ComponentTile['layouts'];
+        size?: TileSizeContext;
     };
     package: {
         id: string;
@@ -113,6 +116,7 @@ export function createSandboxBootPayload(input: {
     host: HostCapabilities;
     debug?: boolean;
     theme?: SandboxThemeTokens;
+    size?: TileSizeContext;
 }): SandboxBootPayload {
     const {definition, tile, nonce, host} = input;
     return {
@@ -126,6 +130,7 @@ export function createSandboxBootPayload(input: {
             title: tile.title || definition.label,
             settings: cloneJson(tile.settings || {}),
             layouts: cloneJson(tile.layouts),
+            ...(input.size ? {size: cloneJson(input.size)} : {}),
         },
         package: {
             id: definition.id,
@@ -180,6 +185,7 @@ const bootstrapScript = `
     root,
     settings: Object.freeze(boot.tile.settings || {}),
     tile: Object.freeze({id: boot.tile.id, title: boot.tile.title, layouts: boot.tile.layouts}),
+    size: Object.freeze(boot.tile.size || {placement:{x:0,y:0,w:1,h:1},breakpoint:'mini',profile:'desktop',cols:1,unit:0,gap:0,width:0,height:0}),
     host: Object.freeze(boot.host),
     package: Object.freeze({id: boot.package.id, version: boot.package.version, label: boot.package.label}),
     storage: Object.freeze({
@@ -193,6 +199,9 @@ const bootstrapScript = `
       fetch: (url, init) => request('network.fetch', {url, init}),
     }),
     notify: (title, options) => request('notification.show', {title, options}),
+    modal: Object.freeze({
+      open: (payload) => request('modal.open', payload),
+    }),
     emit: (name, data) => post('event', {name, data}),
   });
 
@@ -314,6 +323,7 @@ export function buildSandboxSrcDoc(input: {
     host: HostCapabilities;
     debug?: boolean;
     theme?: SandboxThemeTokens;
+    size?: TileSizeContext;
 }) {
     const boot = createSandboxBootPayload(input);
     return `<!doctype html>
@@ -335,6 +345,70 @@ a{color:var(--vt-accent,#60a5fa);}
 <script id="voidtab-boot" type="application/json">${safeJsonForHtml(boot)}</script>
 <script>${bootstrapScript}</script>
 </body>
+</html>`;
+}
+
+const safeCssForHtml = (value: string) => value.replace(/<\/style/gi, '<\\/style');
+
+const safeCssToken = (value: string | undefined, fallback: string) => {
+    const next = String(value || '').trim();
+    if (!next || next.length > 140 || /[<>{};\r\n]/.test(next)) return fallback;
+    return next;
+};
+
+const sandboxThemeCssVars = (theme: SandboxThemeTokens | undefined) => {
+    const scheme = theme?.scheme === 'light' ? 'light' : 'dark';
+    const text = safeCssToken(theme?.text, scheme === 'dark' ? '#f8fafc' : '#1f2937');
+    const muted = safeCssToken(theme?.muted, scheme === 'dark' ? 'rgba(248,250,252,0.66)' : 'rgba(31,41,55,0.62)');
+    const accent = safeCssToken(theme?.accent, '#3b82f6');
+    const surface = safeCssToken(theme?.surface, scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)');
+    return `:root{--vt-text:${text};--vt-muted:${muted};--vt-accent:${accent};--vt-surface:${surface};color-scheme:${scheme};}`;
+};
+
+export function buildSandboxModalSrcDoc(input: {
+    title?: string;
+    html?: string;
+    styles?: string;
+    theme?: SandboxThemeTokens;
+    channel?: string;
+    nonce?: string;
+}) {
+    const title = String(input.title || '详情').slice(0, 80);
+    const html = String(input.html || '').slice(0, 24_000);
+    const styles = safeCssForHtml(String(input.styles || '').slice(0, 16_000));
+    const channel = input.channel === SANDBOX_BRIDGE_CHANNEL ? SANDBOX_BRIDGE_CHANNEL : '';
+    const nonce = String(input.nonce || '').slice(0, 100);
+    const scriptNonce = nonce ? `modal-${nonce}` : '';
+    const scriptNonceAttr = scriptNonce ? safeJsonForHtml(scriptNonce).slice(1, -1) : '';
+    const bridgeScript = channel && nonce ? `
+<script nonce="${scriptNonceAttr}">
+(() => {
+  const channel = ${safeJsonForHtml(channel)};
+  const nonce = ${safeJsonForHtml(nonce)};
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    window.parent.postMessage({channel, nonce, kind: 'modal.escape'}, '*');
+  });
+})();
+</script>` : '';
+    return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${scriptNonce ? `script-src 'nonce-${scriptNonceAttr}';` : ''} style-src 'unsafe-inline'; img-src https: data: blob:; font-src data:;">
+<title>${safeJsonForHtml(title).slice(1, -1)}</title>
+<style>
+${sandboxThemeCssVars(input.theme)}
+html,body{width:100%;min-height:100%;margin:0;background:transparent;color:var(--vt-text,#f8fafc);font:14px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+body{overflow:auto;}
+*,*::before,*::after{box-sizing:border-box;}
+a{color:var(--vt-accent,#60a5fa);}
+${styles}
+</style>
+</head>
+<body>${html || '<main style="padding:24px">暂无弹窗内容</main>'}${bridgeScript}</body>
 </html>`;
 }
 
@@ -391,6 +465,7 @@ export function parseSandboxFrameMessage(raw: unknown, nonce: string): SandboxFr
             && type !== 'clipboard.write'
             && type !== 'network.fetch'
             && type !== 'notification.show'
+            && type !== 'modal.open'
         ) return null;
         return {
             channel: SANDBOX_BRIDGE_CHANNEL,

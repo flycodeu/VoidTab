@@ -1220,7 +1220,9 @@ test('P4 controls tile appearance and shares sanitized instances', async () => {
   assert.match(menu, /\.voidtile-instance/);
   assert.match(panel, /导出卡片实例/);
   assert.match(panel, /导入卡片实例/);
-  assert.match(panel, /重置外观/);
+  assert.match(panel, /实例外观/);
+  assert.match(panel, /stylePreset/);
+  assert.doesNotMatch(panel, /重置外观/);
   assert.match(registry, /styleable: DEFAULT_TILE_STYLEABLE/);
   assert.match(external, /missing-builtin/);
 

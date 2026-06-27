@@ -38,7 +38,7 @@ const widgetResetKey = computed(() => [
 </script>
 <template>
   <div
-      class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 select-none bg-[#121212]"
+      class="widget-card w-full h-full relative overflow-hidden group min-w-0 min-h-0 select-none"
       :style="tileSizeVars"
       :data-tile-size-profile="tileSize.profile"
       :data-tile-size-breakpoint="tileSize.breakpoint"
@@ -94,7 +94,13 @@ const widgetResetKey = computed(() => [
   border-radius: var(--tile-radius, 18px);
   transform: scale(var(--tile-icon-scale, 1));
   transform-origin: center;
+  border: 1px solid color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 18%, var(--widget-border));
+  background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 16%, transparent), transparent 42%),
+      linear-gradient(135deg, color-mix(in srgb, var(--tile-surface) 28%, transparent), transparent),
+      var(--widget-surface);
   box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
       0 calc(var(--tile-elevation, 1) * 8px) calc(var(--tile-elevation, 1) * 18px) rgba(15, 23, 42, 0.14);
 }
 

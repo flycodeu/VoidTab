@@ -110,7 +110,28 @@ export function tileStyleOverrideToCssVars(styleOverride?: TileStyleOverride): R
 }
 
 export const tileStylePresets = {
-    clean: {radius: 14, elevation: 0, iconScale: 0.94, density: 'compact'} satisfies TileStyleOverride,
-    soft: {radius: 24, elevation: 1, iconScale: 1, density: 'normal'} satisfies TileStyleOverride,
-    vivid: {radius: 20, elevation: 2, iconScale: 1.12, density: 'comfortable'} satisfies TileStyleOverride,
+    clean: {
+        radius: 12,
+        elevation: 0,
+        iconScale: 0.94,
+        density: 'compact',
+        accent: '#2563eb',
+        surface: '#e5e7eb',
+    } satisfies TileStyleOverride,
+    soft: {
+        radius: 24,
+        elevation: 1,
+        iconScale: 1,
+        density: 'normal',
+        accent: '#14b8a6',
+        surface: '#99f6e4',
+    } satisfies TileStyleOverride,
+    vivid: {
+        radius: 18,
+        elevation: 3,
+        iconScale: 1.12,
+        density: 'comfortable',
+        accent: '#f97316',
+        surface: '#fed7aa',
+    } satisfies TileStyleOverride,
 } as const;

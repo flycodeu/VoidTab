@@ -40,7 +40,8 @@ const PREVIEW_TILE_ID = 'designer-preview';
 const PERMISSION_KEYS: SandboxRuntimePermission[] = ['storage', 'network', 'openExternal', 'clipboard.write', 'notifications'];
 const SECTIONS = [
   {id: 'basic', label: '基本'},
-  {id: 'code', label: '代码'},
+  {id: 'code', label: '封面'},
+  {id: 'modal', label: '弹窗'},
   {id: 'caps', label: '能力'},
   {id: 'advanced', label: '设置'},
 ] as const;
@@ -254,21 +255,23 @@ const deleteDesign = (install: TileInstallRecord) => {
 
 <template>
   <div class="space-y-4 animate-fade-in">
-    <!-- 顶部：标题 + 文档 -->
+    <!-- 顶部：标题 + 示例 -->
     <section class="d-card">
-      <div class="flex items-start justify-between gap-3">
+      <div class="designer-head">
         <div class="min-w-0">
           <div class="flex items-center gap-2 font-extrabold text-sm">
             <PhCode size="20" weight="duotone"/>
             组件设计（Sandbox JS）
           </div>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            选一个示例改起来最快：左侧改代码，右侧实时预览。满意后「保存」或「应用到分组」。
-          </p>
         </div>
-        <button type="button" class="btn ghost sm" @click="showDocs = !showDocs">
-          <PhBookOpen size="14" weight="bold"/>{{ showDocs ? '收起' : '文档' }}
-        </button>
+        <div class="head-actions">
+          <button type="button" class="btn ghost sm" @click="newDraft"><PhPlus size="14" weight="bold"/>空白</button>
+          <button type="button" class="btn ghost sm" @click="triggerImport"><PhUploadSimple size="14" weight="bold"/>导入</button>
+          <button type="button" class="btn ghost sm" @click="showDocs = !showDocs">
+            <PhBookOpen size="14" weight="bold"/>{{ showDocs ? '收起' : '速查' }}
+          </button>
+          <input ref="fileInput" type="file" class="hidden" accept=".json,application/json" @change="handleImportFile"/>
+        </div>
       </div>
 
       <div v-if="!sandboxEnabled" class="warn-banner mt-3">
@@ -280,16 +283,17 @@ const deleteDesign = (install: TileInstallRecord) => {
         <button type="button" class="btn primary sm shrink-0" @click="enableSandbox">启用</button>
       </div>
 
-      <!-- 快速上手：示例 + 新建 + 导入 -->
-      <div class="quick-start mt-3">
-        <span class="qs-label">从示例开始</span>
-        <button v-for="t in STARTER_TEMPLATES" :key="t.id" type="button" class="chip accent" :title="t.description" @click="loadTemplate(t.id)">
-          {{ t.label }}
+      <div class="starter-grid mt-3">
+        <button
+            v-for="t in STARTER_TEMPLATES"
+            :key="t.id"
+            type="button"
+            class="starter-card"
+            @click="loadTemplate(t.id)"
+        >
+          <span>{{ t.label }}</span>
+          <small>{{ t.description }}</small>
         </button>
-        <span class="qs-sep"></span>
-        <button type="button" class="btn ghost sm" @click="newDraft"><PhPlus size="14" weight="bold"/>空白</button>
-        <button type="button" class="btn ghost sm" @click="triggerImport"><PhUploadSimple size="14" weight="bold"/>导入</button>
-        <input ref="fileInput" type="file" class="hidden" accept=".json,application/json" @change="handleImportFile"/>
       </div>
 
       <!-- 我的设计 -->
@@ -306,27 +310,23 @@ const deleteDesign = (install: TileInstallRecord) => {
 
     <!-- 文档 -->
     <section v-if="showDocs" class="d-card docs">
-      <h3 class="doc-h">这是什么</h3>
-      <p>组件分两种来源：<b>我的设计</b>（内置/官方）与<b>用户自行设计</b>（你写的本地组件）。设计器生成后者：运行在沙箱 iframe，<b>无法</b>访问主页面 DOM、扩展 API、隐私空间、密钥。</p>
-      <h3 class="doc-h">最小示例</h3>
-      <pre class="doc-code">VoidWidget.define({
-  mount(ctx) { ctx.root.textContent = 'Hello ' + ctx.tile.title; },
+      <div class="doc-grid">
+        <div>
+          <h3 class="doc-h">入口</h3>
+          <pre class="doc-code">VoidWidget.define({
+  mount(ctx) {
+    ctx.root.textContent = 'Hello';
+  }
 });</pre>
-      <h3 class="doc-h">生命周期</h3>
-      <ul class="doc-ul">
-        <li><code>mount(ctx)</code> 首次渲染 · <code>update(ctx)</code> 数据变化 · <code>pause()/resume(ctx)</code> 暂停/恢复 · <code>unmount()</code> 卸载</li>
-      </ul>
-      <h3 class="doc-h">ctx 能力</h3>
-      <ul class="doc-ul">
-        <li><code>ctx.root</code> 根节点 · <code>ctx.settings</code> · <code>ctx.storage.get/set/remove</code>（storage）</li>
-        <li><code>ctx.network.fetch(url)</code> 仅 GET/HEAD、仅声明域名（network） · <code>ctx.openUrl/copyText/notify</code></li>
-      </ul>
-      <h3 class="doc-h">1×1 显示 / 点击展示</h3>
-      <p>「1×1 展示什么」= 你在 <code>mount</code> 里渲染进 <code>ctx.root</code> 的内容；「点击后展示什么」= 给元素加 <code>click</code> 监听切换内容，或用 <code>ctx.openUrl</code> 打开外链。</p>
-      <h3 class="doc-h">管理已放置的组件</h3>
-      <p>桌面上的自定义组件：<b>右键</b>可删除/移动/调整大小/改外观；或进入「整理桌面」用角标删除。</p>
-      <h3 class="doc-h">应用 / 分享 / 同步</h3>
-      <p>「保存」即安装；「应用到分组」放置一个实例；「导出」生成 <code>.voidtab-tile.json</code> 可分享。代码默认<b>不</b>云同步，可在「云端同步」打开开关。完整文档见仓库 <code>docs/component-designer.md</code>。</p>
+        </div>
+        <div>
+          <h3 class="doc-h">常用 API</h3>
+          <p><code>ctx.root</code> 封面根节点 · <code>ctx.size</code> 当前尺寸 · <code>ctx.settings</code> 实例设置 · <code>ctx.modal.open</code> 打开弹窗 · <code>ctx.storage</code> 本地存储 · <code>ctx.network.fetch</code> 网络代理</p>
+          <p>封面和弹窗都可使用 <code>--vt-accent</code>、<code>--vt-text</code>、<code>--vt-muted</code>、<code>--vt-surface</code> 适配当前主题。</p>
+          <h3 class="doc-h">交付</h3>
+          <p>保存后安装到本机；应用到分组会放置一个实例；导出生成可分享的组件包。</p>
+        </div>
+      </div>
     </section>
 
     <!-- 主体：左编辑 / 右预览 -->
@@ -367,22 +367,44 @@ const deleteDesign = (install: TileInstallRecord) => {
           </div>
         </div>
 
-        <!-- 代码 -->
+        <!-- 封面 -->
         <div v-show="activeSection === 'code'" class="sec">
-          <label class="field"><span>入口 JS（index.js）— 必须调用 VoidWidget.define(...)</span>
+          <div class="designer-note mb-2">
+            封面运行在卡片 iframe 中，可读取 <code>ctx.size.placement.w/h</code> 判断 1×1、2×2 或宽卡展示内容。
+            样式可直接使用 <code>--vt-accent</code> / <code>--vt-text</code> 等主题变量。
+          </div>
+          <label class="field"><span>封面 JS</span>
             <CodeEditor v-model="draft.entryCode" language="javascript" :rows="16"/>
           </label>
-          <label class="field mt-2"><span>样式 CSS（可选）</span>
+          <label class="field mt-2"><span>封面 CSS</span>
             <CodeEditor v-model="draft.styles" language="css" :rows="6"/>
           </label>
-          <label class="field mt-2"><span>HTML（可选）</span>
+          <label class="field mt-2"><span>初始 HTML（可选）</span>
             <CodeEditor v-model="draft.html" language="xml" :rows="3"/>
+          </label>
+        </div>
+
+        <!-- 弹窗 -->
+        <div v-show="activeSection === 'modal'" class="sec">
+          <div class="designer-note mb-2">
+            这里是默认弹窗模板；封面 JS 可在点击时调用 <code>VoidTabDesigner.openModal(ctx, { html, width: '900px', height: '72vh' })</code> 传入实时数据覆盖模板内容。
+            弹窗 iframe 会继承同一套主题变量，适合封面和详情保持一致视觉。
+            弹窗内容可以直接使用列表、输入框、数字框、文本域等常规布局。
+          </div>
+          <div class="field-grid mb-2">
+            <label class="field"><span>弹窗宽度</span><input v-model="draft.modalWidth" type="text" placeholder="760px / 80vw"/></label>
+            <label class="field"><span>弹窗高度</span><input v-model="draft.modalHeight" type="text" placeholder="620px / 72vh"/></label>
+          </div>
+          <label class="field"><span>弹窗 HTML</span>
+            <CodeEditor v-model="draft.modalHtml" language="xml" :rows="10"/>
+          </label>
+          <label class="field mt-2"><span>弹窗 CSS</span>
+            <CodeEditor v-model="draft.modalStyles" language="css" :rows="7"/>
           </label>
         </div>
 
         <!-- 能力 -->
         <div v-show="activeSection === 'caps'" class="sec">
-          <p class="hint">勾选组件需要的能力；每个实例首次运行仍需用户授权。</p>
           <label v-for="key in PERMISSION_KEYS" :key="key" class="cap-row">
             <input type="checkbox" :checked="draft.permissions.includes(key)" @change="togglePermission(key)"/>
             <span class="cap-text"><b>{{ DESIGNER_PERMISSION_INFO[key].label }}</b><small>{{ DESIGNER_PERMISSION_INFO[key].detail }}</small></span>
@@ -395,7 +417,6 @@ const deleteDesign = (install: TileInstallRecord) => {
 
         <!-- 设置 -->
         <div v-show="activeSection === 'advanced'" class="sec">
-          <p class="hint">可选：声明实例可配置项（JSON Schema），其默认值会作为 ctx.settings 传入。</p>
           <label class="field"><span>设置 Schema JSON</span>
             <CodeEditor v-model="draft.settingsSchemaText" language="json" :rows="8" placeholder='{"type":"object","properties":{}}'/>
           </label>
@@ -464,6 +485,69 @@ const deleteDesign = (install: TileInstallRecord) => {
 
 .d-card { padding: 16px; border-radius: 16px; border: 1px solid var(--glass-border); background: var(--modal-input-bg); }
 
+.designer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.starter-card {
+  min-width: 0;
+  min-height: 78px;
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.16);
+  background:
+      radial-gradient(circle at 90% 12%, rgba(var(--accent-color-rgb), 0.14), transparent 34%),
+      rgba(var(--overlay-rgb), 0.07);
+  text-align: left;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.starter-card:hover,
+.starter-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(var(--accent-color-rgb), 0.36);
+  background:
+      radial-gradient(circle at 90% 12%, rgba(var(--accent-color-rgb), 0.20), transparent 34%),
+      rgba(var(--accent-color-rgb), 0.08);
+  outline: none;
+}
+
+.starter-card span {
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.starter-card small {
+  display: -webkit-box;
+  min-height: 30px;
+  overflow: hidden;
+  color: var(--settings-text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .d-body { display: grid; grid-template-columns: 1fr; gap: 14px; }
 @media (min-width: 980px) { .d-body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: start; } }
 @media (min-width: 980px) { .preview-col { position: sticky; top: 8px; } }
@@ -483,7 +567,23 @@ const deleteDesign = (install: TileInstallRecord) => {
   font-size: 12px; outline: none; color: inherit;
 }
 .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-.hint { font-size: 11px; opacity: 0.6; margin-bottom: 8px; line-height: 1.5; }
+
+.designer-note {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.18);
+  background: rgba(var(--accent-color-rgb), 0.08);
+  color: var(--settings-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.designer-note code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.12);
+}
 
 .code-area {
   width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--glass-border);
@@ -528,9 +628,8 @@ const deleteDesign = (install: TileInstallRecord) => {
 .apply-group { display: flex; align-items: center; gap: 6px; }
 .group-select { width: auto; min-width: 110px; }
 
-.quick-start, .mydesigns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mydesigns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .qs-label { font-size: 11px; font-weight: 800; opacity: 0.55; }
-.qs-sep { width: 1px; height: 18px; background: var(--glass-border); margin: 0 2px; }
 
 .chip { padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid var(--glass-border); background: rgba(var(--overlay-rgb), 0.08); }
 .chip:hover { border-color: var(--accent-color); color: var(--accent-color); }
@@ -552,10 +651,16 @@ const deleteDesign = (install: TileInstallRecord) => {
 .btn.ghost:hover { border-color: var(--accent-color); }
 
 .docs { font-size: 12px; line-height: 1.6; }
+.doc-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px; }
 .docs p { opacity: 0.82; margin: 4px 0 10px; }
 .doc-h { font-size: 12px; font-weight: 900; margin: 12px 0 4px; }
 .doc-h:first-child { margin-top: 0; }
-.doc-ul { margin: 4px 0 10px; padding-left: 18px; display: grid; gap: 4px; opacity: 0.82; }
 .docs code { font-family: 'Fira Code', ui-monospace, monospace; font-size: 11px; padding: 1px 4px; border-radius: 5px; background: rgba(var(--overlay-rgb), 0.12); }
 .doc-code { font-family: 'Fira Code', ui-monospace, monospace; font-size: 11px; line-height: 1.5; padding: 10px 12px; border-radius: 10px; background: rgba(var(--overlay-rgb), 0.12); overflow: auto; margin: 4px 0 10px; }
+
+@media (max-width: 720px) {
+  .designer-head { align-items: flex-start; flex-direction: column; }
+  .head-actions { justify-content: flex-start; }
+  .starter-grid, .doc-grid { grid-template-columns: 1fr; }
+}
 </style>

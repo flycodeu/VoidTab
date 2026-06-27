@@ -16,12 +16,14 @@ import {
 } from '../../../core/tiles/sandboxRuntime.ts';
 import {
   buildSandboxSrcDoc,
+  buildSandboxModalSrcDoc,
   createSandboxNonce,
   parseSandboxFrameMessage,
   SANDBOX_BRIDGE_CHANNEL,
   type SandboxFrameMessage,
 } from '../../../core/tiles/sandboxBridge.ts';
 import {useConfigStore} from '../../../stores/useConfigStore.ts';
+import {useTileSizeContext} from '../../../core/tiles/context.ts';
 
 const props = defineProps<{
   tile: ComponentTile;
@@ -47,9 +49,18 @@ const permissionCopy: Record<SandboxRuntimePermission, {label: string; detail: s
 const store = useConfigStore();
 const rootRef = ref<HTMLElement | null>(null);
 const iframeRef = ref<HTMLIFrameElement | null>(null);
+const modalIframeRef = ref<HTMLIFrameElement | null>(null);
 const nonce = ref(createSandboxNonce());
 const status = ref<'blocked' | 'booting' | 'ready' | 'mounted' | 'error'>('booting');
 const errorMessage = ref('');
+const modalOpen = ref(false);
+const modalPayload = ref<{title: string; html: string; styles: string; width: string; height: string}>({
+  title: '详情',
+  html: '',
+  styles: '',
+  width: '760px',
+  height: '620px',
+});
 const instanceBlockedMessage = ref('');
 const documentVisible = ref(typeof document === 'undefined' ? true : !document.hidden);
 const isIntersecting = ref(true);
@@ -62,6 +73,7 @@ let instanceRegistered = false;
 let intersectionObserver: IntersectionObserver | null = null;
 
 const sandboxRuntime = computed(() => store.config.runtime?.sandbox || {enabled: false});
+const tileSize = useTileSizeContext(() => props.tile.layouts?.desktop);
 const limits = computed(() => ({
   ...DEFAULT_SANDBOX_LIMITS,
   ...(sandboxRuntime.value.limits || {}),
@@ -112,9 +124,20 @@ const srcDoc = computed(() => buildSandboxSrcDoc({
   host: hostCapabilities.value,
   debug: props.debug === true,
   theme: themeTokens.value,
+  size: tileSize.value,
+}));
+const modalSrcDoc = computed(() => buildSandboxModalSrcDoc({
+  ...modalPayload.value,
+  theme: themeTokens.value,
+  channel: SANDBOX_BRIDGE_CHANNEL,
+  nonce: nonce.value,
 }));
 const storagePrefix = computed(() => `voidtab:sandbox-storage:v1:${props.definition.id}:${props.tile.id}:`);
 const shouldPauseFrame = computed(() => !documentVisible.value || !isIntersecting.value);
+const modalPanelStyle = computed(() => ({
+  width: `min(${modalPayload.value.width}, calc(100vw - 32px))`,
+  height: `min(${modalPayload.value.height}, calc(100vh - 40px))`,
+}));
 
 const releaseInstance = () => {
   if (!instanceRegistered) return;
@@ -218,6 +241,16 @@ const normalizeStorageKey = (key: unknown) => {
   const value = key.trim();
   if (!/^[a-z0-9._:-]{1,80}$/i.test(value)) return '';
   return value;
+};
+
+const normalizeModalDimension = (value: unknown, fallback: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  if (raw.length > 24 || /[<>{};\r\n]/.test(raw)) return fallback;
+  if (/^\d{2,4}px$/i.test(raw)) return raw;
+  if (/^\d{1,3}(?:\.\d+)?(?:vw|vh|%)$/i.test(raw)) return raw;
+  if (/^\d{1,2}(?:\.\d+)?rem$/i.test(raw)) return raw;
+  return fallback;
 };
 
 const measureStorageBytes = (key: string, nextSerialized: string | null) => {
@@ -324,6 +357,30 @@ const showNotification = async (payload: Record<string, unknown>) => {
   return true;
 };
 
+const openSandboxModal = (payload: Record<string, unknown>) => {
+  modalPayload.value = {
+    title: typeof payload.title === 'string' && payload.title.trim()
+        ? payload.title.trim().slice(0, 80)
+        : props.definition.label,
+    html: typeof payload.html === 'string' ? payload.html.slice(0, 24_000) : '',
+    styles: typeof payload.styles === 'string' ? payload.styles.slice(0, 16_000) : '',
+    width: normalizeModalDimension(payload.width, '760px'),
+    height: normalizeModalDimension(payload.height, '620px'),
+  };
+  modalOpen.value = true;
+  return true;
+};
+
+const closeSandboxModal = () => {
+  modalOpen.value = false;
+};
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!modalOpen.value || event.key !== 'Escape') return;
+  event.preventDefault();
+  closeSandboxModal();
+};
+
 const handleRequest = async (message: Extract<SandboxFrameMessage, {kind: 'request'}>) => {
   const payload = message.request.payload && typeof message.request.payload === 'object'
       ? message.request.payload as Record<string, unknown>
@@ -374,6 +431,10 @@ const handleRequest = async (message: Extract<SandboxFrameMessage, {kind: 'reque
       responseToRequest(message.requestId, await showNotification(payload));
       return;
     }
+    if (message.request.type === 'modal.open') {
+      responseToRequest(message.requestId, openSandboxModal(payload));
+      return;
+    }
     responseToRequest(message.requestId, '未知请求', false);
   } catch (error) {
     responseToRequest(message.requestId, error instanceof Error ? error.message : '请求失败', false);
@@ -389,6 +450,13 @@ const syncPauseState = () => {
 };
 
 const handleMessage = (event: MessageEvent) => {
+  if (event.source === modalIframeRef.value?.contentWindow) {
+    const data = event.data || {};
+    if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.escape') {
+      closeSandboxModal();
+    }
+    return;
+  }
   if (!props.enabled || event.source !== iframeRef.value?.contentWindow || !canAcceptMessage()) return;
   const message = parseSandboxFrameMessage(event.data, nonce.value);
   if (!message) return;
@@ -471,6 +539,7 @@ watch(status, (value) => {
 
 onMounted(() => {
   window.addEventListener('message', handleMessage);
+  window.addEventListener('keydown', handleKeydown);
   document.addEventListener('visibilitychange', handleVisibilityChange);
   if (typeof IntersectionObserver !== 'undefined' && rootRef.value) {
     intersectionObserver = new IntersectionObserver((entries) => {
@@ -486,6 +555,7 @@ onBeforeUnmount(() => {
   postToFrame({kind: 'unmount'});
   releaseInstance();
   window.removeEventListener('message', handleMessage);
+  window.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   intersectionObserver?.disconnect();
   window.clearTimeout(bootTimer);
@@ -548,6 +618,31 @@ onBeforeUnmount(() => {
         <button type="button" @click="resetFrame">重载</button>
       </div>
     </template>
+
+    <Teleport to="body">
+      <div
+          v-if="modalOpen"
+          class="sandbox-modal-mask"
+          role="dialog"
+          aria-modal="true"
+          @click.self="closeSandboxModal"
+      >
+        <section class="sandbox-modal-panel" :style="modalPanelStyle">
+          <header class="sandbox-modal-head">
+            <strong>{{ modalPayload.title }}</strong>
+            <button type="button" aria-label="关闭弹窗" @click="closeSandboxModal">×</button>
+          </header>
+          <iframe
+              ref="modalIframeRef"
+              class="sandbox-modal-frame"
+              :srcdoc="modalSrcDoc"
+              :title="modalPayload.title"
+              sandbox="allow-scripts"
+              referrerpolicy="no-referrer"
+          ></iframe>
+        </section>
+      </div>
+    </Teleport>
   </article>
 </template>
 
@@ -665,5 +760,67 @@ onBeforeUnmount(() => {
   font-weight: 900;
   color: white;
   background: var(--tile-accent-color, var(--accent-color));
+}
+
+.sandbox-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(var(--overlay-rgb), 0.56);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+}
+
+.sandbox-modal-panel {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 40px);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--settings-border);
+  background: var(--settings-panel);
+  color: var(--settings-text);
+  box-shadow: var(--overlay-panel-shadow);
+}
+
+.sandbox-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--settings-border-soft);
+}
+
+.sandbox-modal-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.sandbox-modal-head button {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--settings-text);
+  background: rgba(var(--overlay-rgb), 0.08);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.sandbox-modal-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--settings-text);
 }
 </style>
