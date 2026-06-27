@@ -39,6 +39,13 @@ const syncAuto = computed({
   }
 });
 
+const syncCustomTiles = computed({
+  get: () => (store.config.sync as any)?.syncCustomTiles === true,
+  set: (v: boolean) => {
+    (store.config.sync as any).syncCustomTiles = v;
+  }
+});
+
 const intervalMinutesProxy = computed({
   get() {
     const v = (store.config.sync as any)?.intervalMinutes;
@@ -361,6 +368,14 @@ const ignoreRecoveryRecord = async (recordId: string) => {
             <option :value="60">60</option>
           </select>
         </div>
+      </div>
+
+      <div class="setting-row mt-3">
+        <div class="setting-text">
+          <div class="setting-title">同步自定义组件代码</div>
+          <div class="setting-desc">含本机设计的声明式 / 沙箱组件代码；默认关闭，仅在本设备开启时才上传</div>
+        </div>
+        <input type="checkbox" v-model="syncCustomTiles" class="toggle"/>
       </div>
 
       <!-- 冲突提示 banner -->

@@ -27,6 +27,13 @@ const props = defineProps<{
   tile: ComponentTile;
   definition: SandboxTileDefinition;
   enabled: boolean;
+  debug?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'log', payload: {level?: string; text?: string}): void;
+  (e: 'status', status: string): void;
+  (e: 'contextmenu', event: MouseEvent): void;
 }>();
 
 const permissionCopy: Record<SandboxRuntimePermission, {label: string; detail: string}> = {
@@ -79,11 +86,32 @@ const shouldRenderFrame = computed(() =>
     && !instanceBlockedMessage.value,
 );
 const hostCapabilities = computed(() => getCurrentHostCapabilities({sandboxRuntime: props.enabled}));
+const themeTokens = computed(() => {
+  const scheme: 'light' | 'dark' = store.config.theme?.mode === 'dark' ? 'dark' : 'light';
+  let text = scheme === 'dark' ? '#f8fafc' : '#1f2937';
+  let accent = '#3b82f6';
+  if (typeof document !== 'undefined' && document.documentElement) {
+    const cs = getComputedStyle(document.documentElement);
+    const resolvedText = cs.getPropertyValue('--text-primary').trim();
+    const resolvedAccent = cs.getPropertyValue('--accent-color').trim();
+    if (resolvedText) text = resolvedText;
+    if (resolvedAccent) accent = resolvedAccent;
+  }
+  return {
+    text,
+    accent,
+    muted: scheme === 'dark' ? 'rgba(248,250,252,0.66)' : 'rgba(31,41,55,0.62)',
+    surface: scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(17,24,39,0.06)',
+    scheme,
+  };
+});
 const srcDoc = computed(() => buildSandboxSrcDoc({
   definition: props.definition,
   tile: props.tile,
   nonce: nonce.value,
   host: hostCapabilities.value,
+  debug: props.debug === true,
+  theme: themeTokens.value,
 }));
 const storagePrefix = computed(() => `voidtab:sandbox-storage:v1:${props.definition.id}:${props.tile.id}:`);
 const shouldPauseFrame = computed(() => !documentVisible.value || !isIntersecting.value);
@@ -364,6 +392,25 @@ const handleMessage = (event: MessageEvent) => {
   if (!props.enabled || event.source !== iframeRef.value?.contentWindow || !canAcceptMessage()) return;
   const message = parseSandboxFrameMessage(event.data, nonce.value);
   if (!message) return;
+  if (message.kind === 'log') {
+    if (props.debug) emit('log', message.payload || {});
+    return;
+  }
+  if (message.kind === 'event') {
+    if (message.payload?.name === 'contextmenu') {
+      const data = (message.payload.data || {}) as {x?: number; y?: number};
+      const rect = iframeRef.value?.getBoundingClientRect();
+      const clientX = (rect?.left || 0) + (Number(data.x) || 0);
+      const clientY = (rect?.top || 0) + (Number(data.y) || 0);
+      emit('contextmenu', {
+        clientX,
+        clientY,
+        preventDefault() {},
+        stopPropagation() {},
+      } as unknown as MouseEvent);
+    }
+    return;
+  }
   if (message.kind === 'ready') {
     status.value = 'ready';
     return;
@@ -377,6 +424,7 @@ const handleMessage = (event: MessageEvent) => {
   if (message.kind === 'error') {
     status.value = 'error';
     errorMessage.value = message.payload?.message || 'Sandbox 运行错误';
+    if (props.debug) emit('log', {level: 'error', text: errorMessage.value});
     markSandboxCrash(errorMessage.value);
     releaseInstance();
     window.clearTimeout(bootTimer);
@@ -416,6 +464,10 @@ watch(
 );
 
 watch(shouldPauseFrame, () => syncPauseState());
+
+watch(status, (value) => {
+  if (props.debug) emit('status', value);
+});
 
 onMounted(() => {
   window.addEventListener('message', handleMessage);

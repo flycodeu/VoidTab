@@ -18,7 +18,8 @@ export const defaultConfig: ConfigV5 = {
         filename: 'voidtab-backup.json',
         lastSyncTime: 0,
         lastRemoteEtag: '',
-        lastRemoteMtime: ''
+        lastRemoteMtime: '',
+        syncCustomTiles: false,
     },
 
     ai: {
@@ -39,6 +40,14 @@ export const defaultConfig: ConfigV5 = {
         showSidebar: true,
         showTime: true,
         gridMaxWidth: 2000,
+
+        maxTileSpan: 6,
+        showTileAppearanceMenu: true,
+        showTileSizeMenu: true,
+        // 进阶 / 开发者入口默认隐藏，按需在「高级」设置中开启，降低普通用户的干扰与占用。
+        showDesignerMenu: false,
+        showImportTileMenu: false,
+        showDevToolsMenu: false,
 
         blur: 20,
         opacity: 0.6,

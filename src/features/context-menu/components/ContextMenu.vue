@@ -310,14 +310,17 @@ const uniqueSizes = (sizes: (TileSize | undefined)[]) => {
 
 const sizeEditor = computed<SizeEditor | null>(() => {
   const {type, item} = ui.contextMenu;
-  if ((type !== 'site' && type !== 'widget') || !item?.id || !item.tileType) return null;
+  // Site icons render at a fixed 1×1 cell in icon mode, so a size editor there is
+  // misleading. Only components (built-in/declarative/sandbox) expose sizing.
+  if (type !== 'widget' || !item?.id || !item.tileType) return null;
   const definition = resolveTileDefinition(item.tileType, store.config.tileInstalls);
   if (!('sizes' in definition)) return null;
   const rules = definition.sizes;
+  const cap = clampSizeValue(store.config.theme?.maxTileSpan, 6, 1, 16);
   const min = cloneSize(rules.min);
   const max = {
-    w: Math.max(min.w, rules.max.w),
-    h: Math.max(min.h, rules.max.h),
+    w: Math.max(min.w, Math.min(rules.max.w, cap)),
+    h: Math.max(min.h, Math.min(rules.max.h, cap)),
   };
   const current = getTileDesktopSize(item);
   return {
@@ -342,10 +345,11 @@ const normalizeRequestedSize = (item: any, w: number, h: number): TileSize | nul
     };
   }
   const rules = definition.sizes;
+  const cap = clampSizeValue(store.config.theme?.maxTileSpan, 6, 1, 16);
   const min = rules.min;
   const max = {
-    w: Math.max(min.w, rules.max.w),
-    h: Math.max(min.h, rules.max.h),
+    w: Math.max(min.w, Math.min(rules.max.w, cap)),
+    h: Math.max(min.h, Math.min(rules.max.h, cap)),
   };
   const requested = {
     w: clampSizeValue(w, rules.default.w, min.w, max.w),
@@ -373,6 +377,11 @@ const handleAddSite = () => {
 
 const handleAddWidgetRequest = () => {
   emit('openWidgets', ui.contextMenu.groupId);
+  ui.closeContextMenu();
+};
+
+const handleOpenDesigner = () => {
+  window.dispatchEvent(new CustomEvent('voidtab:open-designer'));
   ui.closeContextMenu();
 };
 
@@ -555,12 +564,18 @@ onUnmounted(() => {
         :currentGroupId="ui.contextMenu.groupId"
         :currentGroupName="currentGroupName"
         :sizeEditor="sizeEditor"
+        :showAppearance="store.config.theme?.showTileAppearanceMenu !== false"
+        :showSizeEditor="store.config.theme?.showTileSizeMenu !== false"
+        :showDesigner="store.config.theme?.showDesignerMenu !== false"
+        :showImportTile="store.config.theme?.showImportTileMenu !== false"
+        :showDevTools="store.config.theme?.showDevToolsMenu !== false"
         @toggleGlobalEdit="handleToggleGlobalEdit"
         @move="moveTo"
         @delete="openDeleteModal"
         @resize="handleResizeItem"
         @addSite="handleAddSite"
         @addWidget="handleAddWidgetRequest"
+        @openDesigner="handleOpenDesigner"
         @importTile="handleImportTileRequest"
         @exportTile="handleExportTile"
         @stylePreset="handleStylePreset"

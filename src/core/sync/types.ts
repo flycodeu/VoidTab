@@ -77,6 +77,13 @@ export interface SyncProfileBase {
 
     /** The confirmed write channel; v6 always writes to a sibling file. */
     syncSchemaChannel?: SyncSchemaChannel;
+
+    /**
+     * Device-local opt-in: include locally authored custom tile code (declarative
+     * / sandbox package records) in the sync payload. Default off; never copied
+     * into a remote payload (it is a per-device preference).
+     */
+    syncCustomTiles?: boolean;
 }
 
 export interface WebDavProfile extends SyncProfileBase {

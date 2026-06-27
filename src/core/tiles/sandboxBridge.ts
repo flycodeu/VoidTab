@@ -26,11 +26,29 @@ export type SandboxFrameMessage =
     | {channel: typeof SANDBOX_BRIDGE_CHANNEL; nonce: string; kind: 'ready' | 'mounted'}
     | {channel: typeof SANDBOX_BRIDGE_CHANNEL; nonce: string; kind: 'error'; payload?: {message?: string; stack?: string}}
     | {channel: typeof SANDBOX_BRIDGE_CHANNEL; nonce: string; kind: 'event'; payload?: {name?: string; data?: unknown}}
+    | {channel: typeof SANDBOX_BRIDGE_CHANNEL; nonce: string; kind: 'log'; payload?: {level?: string; text?: string}}
     | {channel: typeof SANDBOX_BRIDGE_CHANNEL; nonce: string; kind: 'request'; requestId: string; request: SandboxBridgeRequest};
+
+export interface SandboxThemeTokens {
+    /** Primary readable text color for the current theme. */
+    text: string;
+    /** Secondary / muted text color. */
+    muted: string;
+    /** Accent color matching the host theme. */
+    accent: string;
+    /** Theme-fitting translucent surface for component backgrounds. */
+    surface: string;
+    /** Color scheme so the iframe form controls render in the right mode. */
+    scheme: 'light' | 'dark';
+}
 
 export interface SandboxBootPayload {
     channel: typeof SANDBOX_BRIDGE_CHANNEL;
     nonce: string;
+    /** Designer-preview only: forward console output to the host as `log` messages. */
+    debug?: boolean;
+    /** Host theme colors, exposed to the component as CSS vars (--vt-*). */
+    theme?: SandboxThemeTokens;
     packageId: string;
     tile: {
         id: string;
@@ -93,11 +111,15 @@ export function createSandboxBootPayload(input: {
     tile: ComponentTile;
     nonce: string;
     host: HostCapabilities;
+    debug?: boolean;
+    theme?: SandboxThemeTokens;
 }): SandboxBootPayload {
     const {definition, tile, nonce, host} = input;
     return {
         channel: SANDBOX_BRIDGE_CHANNEL,
         nonce,
+        ...(input.debug ? {debug: true} : {}),
+        ...(input.theme ? {theme: cloneJson(input.theme)} : {}),
         packageId: definition.id,
         tile: {
             id: tile.id,
@@ -217,6 +239,27 @@ const bootstrapScript = `
   window.addEventListener('error', (event) => post('error', cleanError(event.error || event.message)));
   window.addEventListener('unhandledrejection', (event) => post('error', cleanError(event.reason)));
 
+  // Right-click inside the iframe never reaches the host document, so forward it
+  // up so VoidTab can open its own tile context menu (delete / move / resize…).
+  window.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    post('event', {name: 'contextmenu', data: {x: event.clientX, y: event.clientY}});
+  });
+
+  if (boot.debug) {
+    const fmt = (args) => args.map((a) => {
+      if (typeof a === 'string') return a;
+      try { return JSON.stringify(a); } catch (e) { return String(a); }
+    }).join(' ').slice(0, 500);
+    ['log', 'info', 'warn', 'error'].forEach((level) => {
+      const orig = console[level];
+      console[level] = (...args) => {
+        try { post('log', {level, text: fmt(args)}); } catch (e) {}
+        if (typeof orig === 'function') orig.apply(console, args);
+      };
+    });
+  }
+
   window.VoidWidget = Object.freeze({
     define(definition) {
       widget = definition || {};
@@ -227,6 +270,16 @@ const bootstrapScript = `
         .catch((error) => post('error', cleanError(error)));
     },
   });
+
+  if (boot.theme) {
+    const t = boot.theme;
+    const rs = document.documentElement.style;
+    if (t.text) rs.setProperty('--vt-text', t.text);
+    if (t.muted) rs.setProperty('--vt-muted', t.muted);
+    if (t.accent) rs.setProperty('--vt-accent', t.accent);
+    if (t.surface) rs.setProperty('--vt-surface', t.surface);
+    if (t.scheme) rs.setProperty('color-scheme', t.scheme);
+  }
 
   if (boot.package.html) root.innerHTML = boot.package.html;
   if (boot.package.styles) {
@@ -259,6 +312,8 @@ export function buildSandboxSrcDoc(input: {
     tile: ComponentTile;
     nonce: string;
     host: HostCapabilities;
+    debug?: boolean;
+    theme?: SandboxThemeTokens;
 }) {
     const boot = createSandboxBootPayload(input);
     return `<!doctype html>
@@ -269,8 +324,9 @@ export function buildSandboxSrcDoc(input: {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; font-src data:; connect-src 'none';">
 <style>
 html,body,#root{width:100%;height:100%;margin:0;min-width:0;min-height:0;overflow:hidden;}
-body{font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8fafc;background:transparent;}
-button,input,select,textarea{font:inherit;}
+body{font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--vt-text,#f8fafc);background:transparent;}
+button,input,select,textarea{font:inherit;color:inherit;}
+a{color:var(--vt-accent,#60a5fa);}
 *,*::before,*::after{box-sizing:border-box;}
 </style>
 </head>
@@ -298,6 +354,18 @@ export function parseSandboxFrameMessage(raw: unknown, nonce: string): SandboxFr
             payload: {
                 ...(typeof payload.message === 'string' ? {message: payload.message.slice(0, 500)} : {}),
                 ...(typeof payload.stack === 'string' ? {stack: payload.stack.slice(0, 1200)} : {}),
+            },
+        };
+    }
+    if (raw.kind === 'log') {
+        const payload = isRecord(raw.payload) ? raw.payload : {};
+        return {
+            channel: SANDBOX_BRIDGE_CHANNEL,
+            nonce,
+            kind: 'log',
+            payload: {
+                ...(typeof payload.level === 'string' ? {level: payload.level.slice(0, 16)} : {}),
+                ...(typeof payload.text === 'string' ? {text: payload.text.slice(0, 500)} : {}),
             },
         };
     }

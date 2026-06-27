@@ -33,6 +33,7 @@ const GroupDialog = defineAsyncComponent(() => import('./shared/ui/dialogs/Group
 const AiChatPanel = defineAsyncComponent(() => import('./features/ai/components/AiChatPanel.vue'));
 const TerminalPanel = defineAsyncComponent(() => import('./features/terminal/components/TerminalPanel.vue'));
 const PrivacyVaultModal = defineAsyncComponent(() => import('./features/privacy/components/PrivacyVaultModal.vue'));
+const DesignerModal = defineAsyncComponent(() => import('./features/designer/components/DesignerModal.vue'));
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -44,6 +45,7 @@ const showAiPanel = ref(false);
 const showSettings = ref(false);
 const showWidgetModal = ref(false);
 const showPrivacyVault = ref(false);
+const showDesigner = ref(false);
 const widgetPanelGroupId = ref('');
 const isGlobalEditMode = ref(false);
 const showDevtoolsTip = ref(false);
@@ -189,6 +191,10 @@ const openPrivacyVault = () => {
   showPrivacyVault.value = true;
 };
 
+const openDesigner = () => {
+  showDesigner.value = true;
+};
+
 const openPrivacyVaultFromSettings = () => {
   showSettings.value = false;
   showPrivacyVault.value = true;
@@ -208,11 +214,13 @@ onMounted(async () => {
   dragAutoScroll.mount();
   window.addEventListener('keydown', handlePrivacyShortcut);
   window.addEventListener('voidtab:open-privacy-vault', openPrivacyVault);
+  window.addEventListener('voidtab:open-designer', openDesigner);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handlePrivacyShortcut);
   window.removeEventListener('voidtab:open-privacy-vault', openPrivacyVault);
+  window.removeEventListener('voidtab:open-designer', openDesigner);
   groupNavigation.unmount();
   dragAutoScroll.unmount();
   unmountDesktopViewport();
@@ -333,6 +341,7 @@ onUnmounted(() => {
         />
         <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="widgetPanelGroupId || activeGroupId" @close="showWidgetModal = false"/>
         <PrivacyVaultModal :show="showPrivacyVault" @close="showPrivacyVault = false"/>
+        <DesignerModal :show="showDesigner" @close="showDesigner = false"/>
 
         <SiteDialog
             :show="dialogLogic.siteDialog.show"

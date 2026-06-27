@@ -3,6 +3,7 @@ import {computed, ref, watch} from 'vue';
 import {
   PhCloud,
   PhCheck,
+  PhCode,
   PhDownloadSimple,
   PhFlask,
   PhMagnifyingGlass,
@@ -205,6 +206,11 @@ const addExternalToGroup = (definition: ExternalDefinition) => {
   else toast.error(result.message || '添加外部组件失败');
 };
 
+const openDesigner = () => {
+  emit('close');
+  window.dispatchEvent(new CustomEvent('voidtab:open-designer'));
+};
+
 const triggerDeclarativeImport = () => {
   declarativeImportInput.value && (declarativeImportInput.value.value = '');
   declarativeImportInput.value?.click();
@@ -354,6 +360,11 @@ const onCategoryWheel = (event: WheelEvent) => {
             </select>
           </label>
 
+          <button type="button" class="import-btn" @click="openDesigner">
+            <PhCode size="16" weight="bold"/>
+            设计组件
+          </button>
+
           <button type="button" class="import-btn" @click="triggerDeclarativeImport">
             <PhUploadSimple size="16" weight="bold"/>
             导入 .voidtile
@@ -435,7 +446,7 @@ const onCategoryWheel = (event: WheelEvent) => {
                   </span>
                 </div>
 
-                <div class="mt-3 flex items-center gap-2">
+                <div class="mt-3 flex flex-wrap items-center gap-2 badge-row">
                   <span class="runtime-badge" :class="definition.source === 'sandbox' ? 'runtime-experimental' : 'runtime-local'">
                     <component :is="definition.source === 'sandbox' ? PhFlask : PhWifiSlash" size="13" weight="bold"/>
                     {{ externalRuntimeText(definition) }}
@@ -452,9 +463,9 @@ const onCategoryWheel = (event: WheelEvent) => {
                   {{ definition.description || definition.id }}
                 </p>
 
-                <div class="mt-4 flex items-center justify-between gap-3">
+                <div class="mt-4 external-actions">
                   <span class="size-pill">{{ definition.sizes.default.w }} x {{ definition.sizes.default.h }}</span>
-                  <div class="flex items-center gap-2">
+                  <div class="external-action-buttons">
                     <button
                         type="button"
                         class="icon-btn"
@@ -596,7 +607,7 @@ const onCategoryWheel = (event: WheelEvent) => {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 12px;
   padding: 14px 22px;
   border-bottom: 1px solid var(--settings-border);
@@ -761,8 +772,28 @@ const onCategoryWheel = (event: WheelEvent) => {
 
 .widget-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: 14px;
+}
+
+/* External (declarative / sandbox) cards carry 4 action buttons + a size pill.
+   Let the row wrap inside the card so it never spills past the card edge. */
+.external-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.external-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 
 .widget-option {
@@ -839,8 +870,13 @@ const onCategoryWheel = (event: WheelEvent) => {
   white-space: nowrap;
 }
 
+.badge-row {
+  min-width: 0;
+}
+
 .hash-pill {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

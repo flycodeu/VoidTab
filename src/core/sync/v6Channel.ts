@@ -15,7 +15,26 @@ export const V6_MIN_READER_VERSION = 6 as const;
 export type ConfigV6SyncExport = Omit<ConfigV6, 'runtime' | 'tileInstalls'> & {
     minReaderVersion: typeof V6_MIN_READER_VERSION;
     tileInstallIntents?: Record<string, TileInstallIntent>;
+    /**
+     * Full locally authored custom tile package records (declarative / sandbox
+     * code). Only present when the sending device opted in via
+     * `sync.syncCustomTiles`. Receivers merge them into their local registry.
+     */
+    customTileInstalls?: Record<string, TileInstallRecord>;
 };
+
+/** Only external (user/official package) installs carry code worth syncing. */
+function collectCustomTileInstalls(
+    installs: Record<string, TileInstallRecord>,
+): Record<string, TileInstallRecord> {
+    const out: Record<string, TileInstallRecord> = {};
+    for (const [id, install] of Object.entries(installs)) {
+        if (typeof install?.tileType === 'string' && install.tileType.startsWith('external:')) {
+            out[id] = install;
+        }
+    }
+    return out;
+}
 
 function omitDeviceLocalSyncMetadata(profile: SyncProfile): SyncProfile {
     const copy: any = {...profile};
@@ -24,6 +43,7 @@ function omitDeviceLocalSyncMetadata(profile: SyncProfile): SyncProfile {
     delete copy.conflictSnapshot;
     delete copy.syncSchemaUpgradePending;
     delete copy.syncSchemaChannel;
+    delete copy.syncCustomTiles;
     delete copy.recoveryRecords;
     return copy as SyncProfile;
 }
@@ -51,11 +71,15 @@ export function createConfigV6SyncExport(config: ConfigV6): ConfigV6SyncExport {
     const sanitized = stripSensitiveConfigForSync(config);
     const {runtime: _runtime, tileInstalls: _tileInstalls, ...portable} = sanitized;
     const tileInstallIntents = createTileInstallIntents(config.tileInstalls);
+    const customTileInstalls = config.sync.syncCustomTiles === true
+        ? collectCustomTileInstalls(config.tileInstalls)
+        : {};
     return {
         ...portable,
         version: V6_CONFIG_VERSION,
         minReaderVersion: V6_MIN_READER_VERSION,
         ...(Object.keys(tileInstallIntents).length ? {tileInstallIntents} : {}),
+        ...(Object.keys(customTileInstalls).length ? {customTileInstalls} : {}),
         sync: omitDeviceLocalSyncMetadata(portable.sync),
     };
 }
@@ -79,9 +103,17 @@ export function restoreConfigV6FromSyncExport(
     if (preflight.version !== V6_CONFIG_VERSION) {
         throw new TypeError(`v6 同步文件版本无效：${preflight.version}`);
     }
+    // Incoming custom code (if the sender opted in) seeds the base registry; local
+    // installs win on conflict so a device never loses its own package code. The
+    // records are sanitized by normalizeConfigV6 -> normalizeTileInstalls below.
+    const incomingCustom = (raw as Record<string, unknown>).customTileInstalls;
+    const baseInstalls = {
+        ...(incomingCustom && typeof incomingCustom === 'object' ? incomingCustom as Record<string, TileInstallRecord> : {}),
+        ...(options.existingInstalls || {}),
+    };
     const restoredInstalls = createRestoredTileInstallsFromIntents(
         (raw as Record<string, unknown>).tileInstallIntents,
-        options.existingInstalls || {},
+        baseInstalls,
         options.now,
     );
 
@@ -158,9 +190,13 @@ export function mergeConfigV6SyncExportWithLocal(
     }
 
     next.layout = mergedLayout;
+    const mergeIncomingCustom = (rawRemote as Record<string, unknown>).customTileInstalls;
     next.tileInstalls = createRestoredTileInstallsFromIntents(
         (rawRemote as Record<string, unknown>).tileInstallIntents,
-        options.existingInstalls || local.tileInstalls,
+        {
+            ...(mergeIncomingCustom && typeof mergeIncomingCustom === 'object' ? mergeIncomingCustom as Record<string, TileInstallRecord> : {}),
+            ...(options.existingInstalls || local.tileInstalls),
+        },
         now,
     );
     next.sync.recoveryRecords = [...records, ...createSyncRecoveryRecords(next, {now})]

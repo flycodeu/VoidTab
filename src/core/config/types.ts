@@ -146,6 +146,19 @@ export interface ThemeConfig {
     showTime: boolean;
     gridMaxWidth: number;
 
+    /** User-configurable ceiling for tile resize (w/h), 1..MAX_TILE_SPAN. Default 6. */
+    maxTileSpan: number;
+    /** Show the "实例外观" preset section in the tile right-click menu. */
+    showTileAppearanceMenu: boolean;
+    /** Show the "布局尺寸" section in the tile right-click menu. */
+    showTileSizeMenu: boolean;
+    /** Show the "设计组件" entry in the blank-area right-click menu. */
+    showDesignerMenu: boolean;
+    /** Show the "导入卡片实例" entry in the blank-area right-click menu. */
+    showImportTileMenu: boolean;
+    /** Show the "开发者工具 (F12)" entry in the right-click menus. */
+    showDevToolsMenu: boolean;
+
     blur: number;
     opacity: number;
     wallpaper: string;

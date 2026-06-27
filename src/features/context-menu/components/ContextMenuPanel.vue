@@ -34,7 +34,17 @@ const props = defineProps<{
   currentGroupId: string;
   currentGroupName: string;
   sizeEditor?: SizeEditor | null;
+  showAppearance?: boolean;
+  showSizeEditor?: boolean;
+  showDesigner?: boolean;
+  showImportTile?: boolean;
+  showDevTools?: boolean;
 }>();
+
+const appearanceVisible = computed(() => props.showAppearance !== false);
+const designerVisible = computed(() => props.showDesigner !== false);
+const importTileVisible = computed(() => props.showImportTile !== false);
+const devToolsVisible = computed(() => props.showDevTools !== false);
 
 const emit = defineEmits<{
   (e: 'toggleGlobalEdit'): void;
@@ -43,6 +53,7 @@ const emit = defineEmits<{
   (e: 'resize', w: number, h: number): void;
   (e: 'addSite'): void;
   (e: 'addWidget'): void;
+  (e: 'openDesigner'): void;
   (e: 'importTile'): void;
   (e: 'exportTile'): void;
   (e: 'stylePreset', preset: 'clean' | 'soft' | 'vivid'): void;
@@ -70,17 +81,21 @@ const uniqueSizes = (sizes: (SizeValue | undefined)[]) => {
   return result;
 };
 
+// Only two quick presets are exposed (2×2 / 3×3); any other size is set via the
+// 宽/高 inputs below. Presets are clamped into each component's [min, max] bounds.
+const QUICK_SIZES: SizeValue[] = [
+  {w: 2, h: 2}, {w: 3, h: 3},
+];
+
 const sizeShortcutOptions = computed(() => {
   const editor = props.sizeEditor;
   if (!editor) return [];
   if (editor.allowed?.length) return uniqueSizes(editor.allowed);
-  return uniqueSizes([
-    {...editor.default, label: '默认'},
-    editor.mobileFallback ? {...editor.mobileFallback, label: '手机'} : undefined,
-    {...editor.min, label: '最小'},
-    {...editor.max, label: '最大'},
-    editor.current,
-  ]);
+  const clampToBounds = (size: SizeValue): SizeValue => ({
+    w: Math.max(editor.min.w, Math.min(editor.max.w, size.w)),
+    h: Math.max(editor.min.h, Math.min(editor.max.h, size.h)),
+  });
+  return uniqueSizes(QUICK_SIZES.map(clampToBounds));
 });
 
 const getSizeOptionLabel = (size: SizeValue) => size.label || `${size.w}x${size.h}`;
@@ -123,7 +138,12 @@ const emitResizeHeight = (event: Event) => {
           添加组件
         </button>
 
-        <button @click="emit('importTile')" class="menu-btn" type="button">
+        <button v-if="designerVisible" @click="emit('openDesigner')" class="menu-btn" type="button">
+          <PhCode size="16" class="opacity-70"/>
+          设计组件
+        </button>
+
+        <button v-if="importTileVisible" @click="emit('importTile')" class="menu-btn" type="button">
           <PhUploadSimple size="16" class="opacity-70"/>
           导入卡片实例
         </button>
@@ -140,7 +160,7 @@ const emitResizeHeight = (event: Event) => {
           设置
         </button>
 
-        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+        <button v-if="devToolsVisible" @click="emit('openDevTools')" class="menu-btn" type="button">
           <PhCode size="16" class="opacity-70"/>
           开发者工具 (F12)
         </button>
@@ -160,7 +180,7 @@ const emitResizeHeight = (event: Event) => {
 
         <div class="divider"></div>
 
-        <div class="style-panel">
+        <div v-if="appearanceVisible" class="style-panel">
           <div class="style-title">
             <PhPalette size="13" aria-hidden="true"/>
             实例外观
@@ -176,7 +196,7 @@ const emitResizeHeight = (event: Event) => {
           </button>
         </div>
 
-        <div v-if="sizeEditor" class="size-panel">
+        <div v-if="showSizeEditor !== false && sizeEditor" class="size-panel">
           <div class="size-title">布局尺寸</div>
           <div class="size-option-grid">
             <button
@@ -282,7 +302,7 @@ const emitResizeHeight = (event: Event) => {
           设置
         </button>
 
-        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+        <button v-if="devToolsVisible" @click="emit('openDevTools')" class="menu-btn" type="button">
           <PhCode size="16" class="opacity-70"/>
           开发者工具 (F12)
         </button>
@@ -297,7 +317,7 @@ const emitResizeHeight = (event: Event) => {
 
         <div class="divider"></div>
 
-        <div class="style-panel">
+        <div v-if="appearanceVisible" class="style-panel">
           <div class="style-title">
             <PhPalette size="13" aria-hidden="true"/>
             实例外观
@@ -318,7 +338,7 @@ const emitResizeHeight = (event: Event) => {
           导出卡片实例
         </button>
 
-        <div v-if="sizeEditor" class="size-panel">
+        <div v-if="showSizeEditor !== false && sizeEditor" class="size-panel">
           <div class="size-title">布局尺寸</div>
           <div class="size-option-grid">
             <button
@@ -379,7 +399,7 @@ const emitResizeHeight = (event: Event) => {
           设置
         </button>
 
-        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+        <button v-if="devToolsVisible" @click="emit('openDevTools')" class="menu-btn" type="button">
           <PhCode size="16" class="opacity-70"/>
           开发者工具 (F12)
         </button>
@@ -410,7 +430,7 @@ const emitResizeHeight = (event: Event) => {
           设置
         </button>
 
-        <button @click="emit('openDevTools')" class="menu-btn" type="button">
+        <button v-if="devToolsVisible" @click="emit('openDevTools')" class="menu-btn" type="button">
           <PhCode size="16" class="opacity-70"/>
           开发者工具 (F12)
         </button>

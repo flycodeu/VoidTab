@@ -115,6 +115,7 @@ export const createSyncActions = ({
         next.sync.lastSyncedHash = config.value.sync.lastSyncedHash;
         next.sync.syncSchemaUpgradePending = config.value.sync.syncSchemaUpgradePending;
         next.sync.syncSchemaChannel = config.value.sync.syncSchemaChannel;
+        next.sync.syncCustomTiles = config.value.sync.syncCustomTiles;
         next.sync.recoveryRecords = next.sync.recoveryRecords || [];
         next.sync.conflictState = undefined;
         next.sync.conflictSnapshot = undefined;

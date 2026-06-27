@@ -119,6 +119,7 @@ function normalizeSync(inputSync: any, fallback: SyncProfile): SyncProfile {
         lastSyncTime: Number.isFinite(Number(input.lastSyncTime)) ? Number(input.lastSyncTime) : fallback.lastSyncTime,
         lastRemoteEtag: typeof input.lastRemoteEtag === 'string' ? input.lastRemoteEtag : fallback.lastRemoteEtag,
         lastRemoteMtime: typeof input.lastRemoteMtime === 'string' ? input.lastRemoteMtime : fallback.lastRemoteMtime,
+        syncCustomTiles: typeof input.syncCustomTiles === 'boolean' ? input.syncCustomTiles : ((fallback as any).syncCustomTiles ?? false),
         intervalMinutes: clampInt(input.intervalMinutes, 1, 1440, fallback.intervalMinutes ?? 10),
         // Conflict detection fields — preserved as-is when restoring from remote
         lastSyncedHash: typeof input.lastSyncedHash === 'string' ? input.lastSyncedHash : undefined,
@@ -795,6 +796,22 @@ export function normalizeConfig(raw: any): ConfigV5 {
         ...base.theme,
         ...(input.theme || {}),
         showWidgetName: base.theme.showWidgetName ?? true,
+        maxTileSpan: clampInt(input.theme?.maxTileSpan, 1, MAX_TILE_SPAN, base.theme.maxTileSpan),
+        showTileAppearanceMenu: typeof input.theme?.showTileAppearanceMenu === 'boolean'
+            ? input.theme.showTileAppearanceMenu
+            : base.theme.showTileAppearanceMenu,
+        showTileSizeMenu: typeof input.theme?.showTileSizeMenu === 'boolean'
+            ? input.theme.showTileSizeMenu
+            : base.theme.showTileSizeMenu,
+        showDesignerMenu: typeof input.theme?.showDesignerMenu === 'boolean'
+            ? input.theme.showDesignerMenu
+            : base.theme.showDesignerMenu,
+        showImportTileMenu: typeof input.theme?.showImportTileMenu === 'boolean'
+            ? input.theme.showImportTileMenu
+            : base.theme.showImportTileMenu,
+        showDevToolsMenu: typeof input.theme?.showDevToolsMenu === 'boolean'
+            ? input.theme.showDevToolsMenu
+            : base.theme.showDevToolsMenu,
         sidebarPos: normalizeSidebarPosition(input.theme?.sidebarPos, base.theme.sidebarPos),
         showSidebar: typeof input.theme?.showSidebar === 'boolean'
             ? input.theme.showSidebar

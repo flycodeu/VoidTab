@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import {PhDatabase, PhFlask, PhShieldCheck, PhTrash, PhWarning} from '@phosphor-icons/vue';
+import {PhDatabase, PhFlask, PhShieldCheck, PhTrash, PhWarning, PhSquaresFour} from '@phosphor-icons/vue';
 import type {SandboxRuntimeLimits, SandboxRuntimePermission} from '../../../../core/config/types.ts';
 import type {HostFeature} from '../../../../core/tiles/contracts.ts';
 import {DEFAULT_SANDBOX_LIMITS} from '../../../../core/tiles/sandboxRuntime.ts';
@@ -90,10 +90,112 @@ const updateLimitFromEvent = (key: keyof SandboxRuntimeLimits, event: Event, mul
   const target = event.target as HTMLInputElement | null;
   updateLimit(key, Number(target?.value) * multiplier);
 };
+
+// 桌面 / 右键菜单高级配置
+const maxTileSpan = computed({
+  get: () => store.config.theme?.maxTileSpan ?? 6,
+  set: (value: number) => {
+    const n = Math.max(2, Math.min(6, Math.round(Number(value) || 6)));
+    store.config.theme.maxTileSpan = n;
+  },
+});
+const showTileAppearanceMenu = computed({
+  get: () => store.config.theme?.showTileAppearanceMenu !== false,
+  set: (value: boolean) => { store.config.theme.showTileAppearanceMenu = value; },
+});
+const showTileSizeMenu = computed({
+  get: () => store.config.theme?.showTileSizeMenu !== false,
+  set: (value: boolean) => { store.config.theme.showTileSizeMenu = value; },
+});
+const showDesignerMenu = computed({
+  get: () => store.config.theme?.showDesignerMenu === true,
+  set: (value: boolean) => { store.config.theme.showDesignerMenu = value; },
+});
+const showImportTileMenu = computed({
+  get: () => store.config.theme?.showImportTileMenu === true,
+  set: (value: boolean) => { store.config.theme.showImportTileMenu = value; },
+});
+const showDevToolsMenu = computed({
+  get: () => store.config.theme?.showDevToolsMenu === true,
+  set: (value: boolean) => { store.config.theme.showDevToolsMenu = value; },
+});
+const tileSpanOptions = [3, 4, 5, 6];
 </script>
 
 <template>
   <div class="space-y-6 animate-fade-in">
+    <section class="advanced-section space-y-4">
+      <div class="section-title">
+        <PhSquaresFour size="20" weight="duotone"/>
+        桌面与右键菜单
+      </div>
+
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">组件最大尺寸</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            右键调整组件大小时允许的最大宽 / 高（格）。设大后可把组件拉到 {{ maxTileSpan }}×{{ maxTileSpan }}；
+            声明更小尺寸的组件仍按其自身限制。
+          </p>
+        </div>
+        <select v-model.number="maxTileSpan" class="span-select shrink-0" aria-label="组件最大尺寸">
+          <option v-for="n in tileSpanOptions" :key="n" :value="n">{{ n }}×{{ n }}</option>
+        </select>
+      </div>
+
+      <label class="toggle-row">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">右键显示「实例外观」</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            关闭后，右键菜单不再展示清爽 / 柔和 / 醒目外观预设，菜单更精简。
+          </p>
+        </div>
+        <input v-model="showTileAppearanceMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+      </label>
+
+      <label class="toggle-row">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">右键显示「布局尺寸」</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            关闭后，右键菜单不再展示尺寸预设与宽高输入，菜单更精简。
+          </p>
+        </div>
+        <input v-model="showTileSizeMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+      </label>
+
+      <div class="section-subtitle">进阶 / 开发者入口（按需开启）</div>
+
+      <label class="toggle-row">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">右键显示「设计组件」</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            面向开发者的在线组件设计器入口。普通用户可保持关闭，减少干扰与资源占用。
+          </p>
+        </div>
+        <input v-model="showDesignerMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+      </label>
+
+      <label class="toggle-row">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">右键显示「导入卡片实例」</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            从 .voidtile-instance 文件导入卡片。仅在需要迁移 / 分享卡片时开启即可。
+          </p>
+        </div>
+        <input v-model="showImportTileMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+      </label>
+
+      <label class="toggle-row">
+        <div class="min-w-0">
+          <div class="font-extrabold text-[13px]">右键显示「开发者工具 (F12)」</div>
+          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
+            在右键菜单中显示打开浏览器开发者工具的入口，便于调试。默认关闭。
+          </p>
+        </div>
+        <input v-model="showDevToolsMenu" type="checkbox" class="w-5 h-5 shrink-0 accent-[var(--accent-color)]"/>
+      </label>
+    </section>
+
     <section class="advanced-section space-y-4">
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
@@ -288,6 +390,36 @@ const updateLimitFromEvent = (key: keyof SandboxRuntimeLimits, event: Event, mul
   gap: 8px;
   font-size: 13px;
   font-weight: 900;
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--glass-border);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  opacity: 0.55;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+
+.span-select {
+  height: 36px;
+  min-width: 96px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: rgba(var(--overlay-rgb), 0.08);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
 }
 
 .limit-grid {

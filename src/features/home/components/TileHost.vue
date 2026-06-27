@@ -150,12 +150,34 @@ const compatibilityStatus = computed(() => {
 const compatibilityBlocksRender = computed(() =>
     compatibilityStatus.value.state === 'blocked' || compatibilityStatus.value.state === 'unsupported',
 );
+// A sandbox tile whose package is fine but the global "Sandbox JS 本机实验" switch
+// is still off. This is the most common cause of a freshly-created component not
+// rendering, so we surface a one-click way to turn the runtime on.
+const sandboxRuntimeMissing = computed(() =>
+    definition.value.renderer.kind === 'sandbox'
+    && !sandboxRuntimeEnabled.value
+    && compatibilityStatus.value.state === 'unsupported',
+);
 const compatibilityMessage = computed(() => {
+  if (sandboxRuntimeMissing.value) return 'Sandbox JS 运行时尚未启用，开启后即可运行此组件。';
   const status = compatibilityStatus.value;
   if (status.state === 'blocked' || status.state === 'unsupported') return status.reasons[0] || '组件当前不可用';
   if (status.state === 'degraded') return status.notices[0] || '组件正在降级运行';
   return '';
 });
+// A placed tile whose package install still exists but was disabled in 组件中心.
+// Re-enabling it is the fix, so offer that instead of a dead-end "数据已保留".
+const installRecord = computed(() => store.config.tileInstalls?.[tileType.value]);
+const disabledInstall = computed(() =>
+    isUnsupported.value
+    && !!installRecord.value
+    && installRecord.value.enabled === false
+    && (installRecord.value.runtime === 'sandbox' || installRecord.value.runtime === 'declarative'),
+);
+const enableSandboxRuntime = () => store.setSandboxRuntimeEnabled(true);
+const enableDisabledPackage = () => {
+  if (installRecord.value) store.enableTilePackage(tileType.value);
+};
 const missingCapabilityGrants = computed(() => {
   if (!componentTile.value || !('compatibility' in definition.value) || definition.value.renderer.kind === 'sandbox') return [];
   return listMissingTileCapabilityGrants(definition.value, store.config.runtime?.tileGrants?.grants, componentTile.value.id);
@@ -231,9 +253,17 @@ const restoreAuthorization = async () => {
     >
       <strong class="text-sm truncate max-w-full">{{ definition.label }}</strong>
       <span class="text-xs opacity-70">{{ compatibilityMessage }}</span>
-      <small v-if="missingCapabilityLabel" class="compatibility-missing">{{ missingCapabilityLabel }}</small>
+      <small v-if="missingCapabilityLabel && !sandboxRuntimeMissing" class="compatibility-missing">{{ missingCapabilityLabel }}</small>
       <button
-          v-if="canRestoreAuthorization"
+          v-if="sandboxRuntimeMissing"
+          type="button"
+          class="unsupported-recover-btn"
+          @click.stop="enableSandboxRuntime"
+      >
+        启用 Sandbox 运行时
+      </button>
+      <button
+          v-else-if="canRestoreAuthorization"
           type="button"
           class="unsupported-recover-btn"
           @click.stop="restoreAuthorization"
@@ -272,7 +302,12 @@ const restoreAuthorization = async () => {
         class="sandbox-host-shell w-full h-full overflow-hidden"
         @contextmenu.prevent.stop="emit('contextmenu', $event)"
     >
-      <SandboxTileHost :tile="componentTile" :definition="sandboxDefinition" :enabled="sandboxRuntimeEnabled"/>
+      <SandboxTileHost
+          :tile="componentTile"
+          :definition="sandboxDefinition"
+          :enabled="sandboxRuntimeEnabled"
+          @contextmenu="emit('contextmenu', $event)"
+      />
     </div>
 
     <div
@@ -282,8 +317,19 @@ const restoreAuthorization = async () => {
         @contextmenu.prevent.stop="emit('contextmenu', $event)"
     >
       <strong class="text-sm truncate max-w-full">{{ definition.label }}</strong>
-      <span class="text-xs opacity-70">外部组件运行时尚未启用，数据已保留。</span>
+      <span class="text-xs opacity-70">
+        {{ disabledInstall ? '此组件已被禁用，启用后即可继续使用。' : '外部组件包尚未安装，数据已保留。' }}
+      </span>
       <button
+          v-if="disabledInstall"
+          type="button"
+          class="unsupported-recover-btn"
+          @click.stop="enableDisabledPackage"
+      >
+        启用组件
+      </button>
+      <button
+          v-else
           type="button"
           class="unsupported-recover-btn"
           @click.stop="emit('recover-tile')"

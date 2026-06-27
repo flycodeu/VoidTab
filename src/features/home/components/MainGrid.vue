@@ -1102,13 +1102,41 @@ const viewOnlyGroup = (gid: string) => ({
   put: false,
 });
 
+// Track the last drag-over point so a tile dropped onto a sidebar group button
+// can be moved there even when Sortable's native drop event does not reach the
+// sidebar. moveSite is idempotent, so this never double-moves alongside the
+// sidebar's own @drop handler.
+let lastDragOverX = 0;
+let lastDragOverY = 0;
+const trackDragOverPoint = (event: DragEvent) => {
+  lastDragOverX = event.clientX;
+  lastDragOverY = event.clientY;
+};
+
+const moveToSidebarGroupIfDropped = () => {
+  const ds = ui.dragState;
+  if (!ds?.isDragging || !ds.item?.id || !ds.fromGroupId) return;
+  if (!lastDragOverX && !lastDragOverY) return;
+  const el = document.elementFromPoint(lastDragOverX, lastDragOverY) as Element | null;
+  const groupEl = el?.closest?.('[data-group-id]') as HTMLElement | null;
+  const toGroupId = groupEl?.dataset.groupId;
+  if (toGroupId && toGroupId !== ds.fromGroupId) {
+    store.moveSite(ds.fromGroupId, toGroupId, ds.item.id);
+  }
+};
+
 const onDragStart = (event: any, group: LayoutGroup) => {
   const arr = modelValueOf(group);
   const item = arr?.[event.oldIndex];
   if (item) ui.setDragState(true, group.id, item);
+  lastDragOverX = 0;
+  lastDragOverY = 0;
+  window.addEventListener('dragover', trackDragOverPoint, true);
 };
 
 const onDragEnd = () => {
+  window.removeEventListener('dragover', trackDragOverPoint, true);
+  moveToSidebarGroupIfDropped();
   requestAnimationFrame(() => {
     setTimeout(() => ui.setDragState(false), 200);
   });
