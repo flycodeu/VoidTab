@@ -4,6 +4,7 @@ import type {
     ComponentTile,
     DeclarativeTileDefinition,
     ExternalTileType,
+    HostFeature,
     JsonValue,
     SandboxTileDefinition,
     SiteTile,
@@ -21,9 +22,25 @@ import {
     createDeclarativeTilePackageExport,
 } from '../../core/tiles/declarativePackage.ts';
 import {createSandboxTilePackageExport} from '../../core/tiles/sandboxPackage.ts';
-import {installDeclarativePackageAtomically, installTilePackageAtomically} from '../../core/tiles/packageStore.ts';
+import {
+    disableTilePackageInstall,
+    enableTilePackageInstall,
+    installDeclarativePackageAtomically,
+    installTilePackageAtomically,
+    recoverMissingTilePackagesFromTrustIndex,
+    uninstallTilePackageInstall,
+} from '../../core/tiles/packageStore.ts';
+import {fetchOfficialTileTrustIndex} from '../../core/tiles/officialSource.ts';
 import {upsertTilePackageRepositoryRecord} from '../../core/tiles/packageRepository.ts';
-import {normalizeTileSettingsWithSchema} from '../../core/tiles/settingsSchema.ts';
+import {createSyncRecoveryRecords} from '../../core/sync/recovery.ts';
+import {migrateTileSettingsAcrossSchemaVersions, normalizeTileSettingsWithSchema} from '../../core/tiles/settingsSchema.ts';
+import {
+    createTileCapabilityGrantRecord,
+    describeExpandedHostCapabilities,
+    getTileCapabilityGrantKey,
+    listRequiredTileHostFeatures,
+    requestOptionalExtensionHostPermission,
+} from '../../core/tiles/capabilityGrants.ts';
 import {
     clearSandboxCrash as clearSandboxCrashRecord,
     createSandboxGrantRecord,
@@ -241,6 +258,135 @@ export const createSiteActions = (
         };
     };
 
+    const migrateComponentTileSettings = (tileId: string, previousSchema?: unknown) => {
+        for (const group of config.value.layout) {
+            const tile = findTile(group, tileId);
+            if (!tile || !isComponentTile(tile)) continue;
+
+            const definition = resolveTileDefinition(tile.tileType, config.value.tileInstalls);
+            const defaults = 'defaultSettings' in definition ? definition.defaultSettings : undefined;
+            const schema = 'settingsSchema' in definition ? definition.settingsSchema : undefined;
+            const result = migrateTileSettingsAcrossSchemaVersions(tile.settings, previousSchema, schema, {defaults});
+            if (result.migrated || result.changed) {
+                updateCanonicalTile(tile, {settings: result.settings} as Partial<ComponentTile>);
+                void saveConfig();
+            }
+            return {success: true, ...result};
+        }
+
+        return {
+            success: false,
+            settings: {},
+            issues: [{path: '', message: '未找到组件实例', severity: 'error' as const}],
+            changed: false,
+            migrated: false,
+            renamed: [],
+            removed: [],
+            added: [],
+        };
+    };
+
+    const migrateSettingsForTileType = (tileType: string, previousSchema?: unknown) => {
+        let migratedCount = 0;
+        for (const group of config.value.layout) {
+            for (const tile of group.tiles) {
+                if (!isComponentTile(tile) || tile.tileType !== tileType) continue;
+                const definition = resolveTileDefinition(tile.tileType, config.value.tileInstalls);
+                const defaults = 'defaultSettings' in definition ? definition.defaultSettings : undefined;
+                const schema = 'settingsSchema' in definition ? definition.settingsSchema : undefined;
+                const result = migrateTileSettingsAcrossSchemaVersions(tile.settings, previousSchema, schema, {defaults});
+                if (!result.migrated && !result.changed) continue;
+                updateCanonicalTile(tile, {settings: result.settings} as Partial<ComponentTile>);
+                migratedCount += 1;
+            }
+        }
+        return migratedCount;
+    };
+
+    const resolveCapabilityTile = (tileId: string) => {
+        for (const group of config.value.layout) {
+            const tile = findTile(group, tileId);
+            if (!tile || !isComponentTile(tile)) continue;
+            const definition = resolveTileDefinition(tile.tileType, config.value.tileInstalls);
+            if (definition.renderer.kind === 'unsupported') return null;
+            return {tile, definition};
+        }
+        return null;
+    };
+
+    const grantTileCapabilities = (
+        tileId: string,
+        features?: HostFeature[],
+    ) => {
+        const resolved = resolveCapabilityTile(tileId);
+        if (!resolved) return false;
+        if (!('compatibility' in resolved.definition)) return false;
+        if (resolved.definition.renderer.kind === 'sandbox') return false;
+
+        const required = listRequiredTileHostFeatures(resolved.definition);
+        const selected = features?.length ? features : required;
+        if (!selected.length) return true;
+        const runtime = config.value.runtime.tileGrants || {grants: {}, revoked: {}};
+        const key = getTileCapabilityGrantKey(tileId);
+        const revoked = {...(runtime.revoked || {})};
+        delete revoked[key];
+        config.value.runtime.tileGrants = {
+            ...runtime,
+            grants: {
+                ...(runtime.grants || {}),
+                [key]: createTileCapabilityGrantRecord(resolved.tile, resolved.definition, selected),
+            },
+            revoked,
+        };
+        void saveConfig();
+        return true;
+    };
+
+    const revokeTileCapabilities = (tileId: string) => {
+        const runtime = config.value.runtime.tileGrants || {grants: {}, revoked: {}};
+        const key = getTileCapabilityGrantKey(tileId);
+        const current = runtime.grants?.[key];
+        if (!current) return false;
+
+        const grants = {...(runtime.grants || {})};
+        delete grants[key];
+        config.value.runtime.tileGrants = {
+            ...runtime,
+            grants,
+            revoked: {
+                ...(runtime.revoked || {}),
+                [key]: {
+                    ...current,
+                    updatedAt: Date.now(),
+                },
+            },
+        };
+        void saveConfig();
+        return true;
+    };
+
+    const requestOptionalHostPermission = (origin: string) => requestOptionalExtensionHostPermission(origin);
+
+    const invalidateTileCapabilityGrantsForTileType = (tileType: string) => {
+        const runtime = config.value.runtime.tileGrants || {grants: {}, revoked: {}};
+        const grants = {...(runtime.grants || {})};
+        const revoked = {...(runtime.revoked || {})};
+        let invalidated = 0;
+        for (const group of config.value.layout) {
+            for (const tile of group.tiles) {
+                if (!isComponentTile(tile) || tile.tileType !== tileType) continue;
+                const key = getTileCapabilityGrantKey(tile.id);
+                const current = grants[key];
+                if (!current) continue;
+                delete grants[key];
+                revoked[key] = {...current, updatedAt: Date.now()};
+                invalidated += 1;
+            }
+        }
+        if (invalidated > 0) config.value.runtime.tileGrants = {...runtime, grants, revoked};
+        return invalidated;
+    };
+
     const exportTileInstanceForShare = (groupId: string, tileId: string) => {
         const group = findWorkspace(config.value, groupId);
         const tile = findTile(group, tileId);
@@ -265,9 +411,23 @@ export const createSiteActions = (
     };
 
     const importDeclarativeTilePackage = (raw: unknown) => {
+        const previousInstall = (() => {
+            const candidate = installDeclarativePackageAtomically(config.value.tileInstalls, raw);
+            return candidate.ok ? config.value.tileInstalls[candidate.tileType] : undefined;
+        })();
         const transaction = installDeclarativePackageAtomically(config.value.tileInstalls, raw);
         if (transaction.ok) {
             config.value.tileInstalls = transaction.nextInstalls;
+            const reauthorization = previousInstall && transaction.install.manifest
+                ? describeExpandedHostCapabilities(previousInstall, {manifest: transaction.install.manifest})
+                : {needsReauthorization: false, expandedFeatures: [], expandedHosts: []};
+            const invalidatedGrantCount = reauthorization.needsReauthorization
+                ? invalidateTileCapabilityGrantsForTileType(transaction.tileType)
+                : 0;
+            const migratedSettingsCount = migrateSettingsForTileType(
+                transaction.tileType,
+                previousInstall?.manifest?.settingsSchema,
+            );
             void upsertTilePackageRepositoryRecord(transaction.install);
             void saveConfig();
             return {
@@ -275,6 +435,11 @@ export const createSiteActions = (
                 tileType: transaction.tileType,
                 label: transaction.install.manifest?.metadata.label || transaction.tileType,
                 auditStatus: transaction.audit.status,
+                reauthorization: {
+                    ...reauthorization,
+                    invalidatedGrantCount,
+                },
+                migratedSettingsCount,
             };
         }
         try {
@@ -288,9 +453,23 @@ export const createSiteActions = (
     };
 
     const importTilePackage = (raw: unknown) => {
+        const previousInstall = (() => {
+            const candidate = installTilePackageAtomically(config.value.tileInstalls, raw);
+            return candidate.ok ? config.value.tileInstalls[candidate.tileType] : undefined;
+        })();
         const transaction = installTilePackageAtomically(config.value.tileInstalls, raw);
         if (transaction.ok) {
             config.value.tileInstalls = transaction.nextInstalls;
+            const reauthorization = previousInstall && transaction.install.manifest
+                ? describeExpandedHostCapabilities(previousInstall, {manifest: transaction.install.manifest})
+                : {needsReauthorization: false, expandedFeatures: [], expandedHosts: []};
+            const invalidatedGrantCount = reauthorization.needsReauthorization
+                ? invalidateTileCapabilityGrantsForTileType(transaction.tileType)
+                : 0;
+            const migratedSettingsCount = migrateSettingsForTileType(
+                transaction.tileType,
+                previousInstall?.manifest?.settingsSchema,
+            );
             void upsertTilePackageRepositoryRecord(transaction.install);
             void saveConfig();
             return {
@@ -299,12 +478,57 @@ export const createSiteActions = (
                 runtime: transaction.install.runtime,
                 label: transaction.install.manifest?.metadata.label || transaction.tileType,
                 auditStatus: transaction.audit.status,
+                reauthorization: {
+                    ...reauthorization,
+                    invalidatedGrantCount,
+                },
+                migratedSettingsCount,
             };
         }
         return {
             success: false,
             message: transaction.message,
         };
+    };
+
+    const recoverOfficialTilePackages = async (trustIndexUrl?: string) => {
+        try {
+            const trustIndex = await fetchOfficialTileTrustIndex({url: trustIndexUrl});
+            const recovery = await recoverMissingTilePackagesFromTrustIndex(config.value.tileInstalls, undefined, {
+                trustIndex,
+                now: Date.now(),
+            });
+            const recovered = recovery.attempts.filter((attempt) => attempt.status === 'recovered');
+            if (!recovered.length) {
+                return {
+                    success: false,
+                    recoveredCount: 0,
+                    attempts: recovery.attempts,
+                    message: '没有可从受信索引自动取回的缺失组件包',
+                };
+            }
+
+            config.value.tileInstalls = recovery.nextInstalls;
+            await Promise.all(recovered.map(async (attempt) => {
+                const install = config.value.tileInstalls[attempt.tileType];
+                if (install) await upsertTilePackageRepositoryRecord(install);
+            }));
+            config.value.sync.recoveryRecords = createSyncRecoveryRecords(config.value, {now: Date.now()});
+            await saveConfig();
+            return {
+                success: true,
+                recoveredCount: recovered.length,
+                attempts: recovery.attempts,
+                message: `已从受信索引取回 ${recovered.length} 个组件包`,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                recoveredCount: 0,
+                attempts: [],
+                message: error instanceof Error ? error.message : '可信源组件包恢复失败',
+            };
+        }
     };
 
     const exportDeclarativeTilePackage = (tileType: string) => {
@@ -318,6 +542,30 @@ export const createSiteActions = (
             ? createDeclarativeTilePackageExport(install) || createSandboxTilePackageExport(install)
             : null;
     };
+
+    const disableTilePackage = (tileType: string) => {
+        if (!config.value.tileInstalls[tileType]) return false;
+        config.value.tileInstalls = disableTilePackageInstall(config.value.tileInstalls, tileType);
+        void saveConfig();
+        return true;
+    };
+
+    const enableTilePackage = (tileType: string) => {
+        if (!config.value.tileInstalls[tileType]) return false;
+        config.value.tileInstalls = enableTilePackageInstall(config.value.tileInstalls, tileType);
+        void saveConfig();
+        return true;
+    };
+
+    const uninstallTilePackage = (tileType: string) => {
+        if (!config.value.tileInstalls[tileType]) return false;
+        config.value.tileInstalls = uninstallTilePackageInstall(config.value.tileInstalls, tileType);
+        invalidateTileCapabilityGrantsForTileType(tileType);
+        void saveConfig();
+        return true;
+    };
+
+    const downgradeTilePackage = (raw: unknown) => importTilePackage(raw);
 
     const addExternalTile = (groupId: string, tileType: ExternalTileType) => {
         const group = findWorkspace(config.value, groupId);
@@ -612,14 +860,23 @@ export const createSiteActions = (
         updateTileStyleOverride,
         resetTileStyleOverride,
         updateComponentTileSettings,
+        migrateComponentTileSettings,
         exportTileInstanceForShare,
         importTileInstanceToGroup,
         importDeclarativeTilePackage,
         importTilePackage,
+        recoverOfficialTilePackages,
         exportDeclarativeTilePackage,
         exportTilePackage,
+        disableTilePackage,
+        enableTilePackage,
+        uninstallTilePackage,
+        downgradeTilePackage,
         addDeclarativeTile,
         addExternalTile,
+        grantTileCapabilities,
+        revokeTileCapabilities,
+        requestOptionalHostPermission,
         setSandboxRuntimeEnabled,
         updateSandboxRuntimeLimits,
         grantSandboxPermissions,

@@ -2,6 +2,7 @@
 import {computed} from 'vue';
 import {PhDatabase, PhFlask, PhShieldCheck, PhTrash, PhWarning} from '@phosphor-icons/vue';
 import type {SandboxRuntimeLimits, SandboxRuntimePermission} from '../../../../core/config/types.ts';
+import type {HostFeature} from '../../../../core/tiles/contracts.ts';
 import {DEFAULT_SANDBOX_LIMITS} from '../../../../core/tiles/sandboxRuntime.ts';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 
@@ -13,6 +14,18 @@ const permissionLabels: Record<SandboxRuntimePermission, string> = {
   openExternal: '打开外链',
   'clipboard.write': '写入剪贴板',
   notifications: '系统通知',
+};
+
+const hostFeatureLabels: Record<HostFeature, string> = {
+  indexedStorage: '本地存储',
+  syncStorage: '同步存储',
+  networkProxy: '网络访问',
+  clipboardWrite: '写入剪贴板',
+  notifications: '系统通知',
+  openExternal: '打开外链',
+  contextMenus: '右键菜单',
+  localFileImport: '本地文件导入',
+  sandboxRuntime: 'Sandbox 运行时',
 };
 
 const sandboxRuntime = computed(() => store.config.runtime?.sandbox || {enabled: false});
@@ -39,6 +52,24 @@ const revokedEntries = computed(() => Object.entries(sandboxRuntime.value.revoke
       key,
       ...record,
       permissionText: record.permissions.map((permission) => permissionLabels[permission] || permission).join('、'),
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 8));
+
+const tileGrantRuntime = computed(() => store.config.runtime?.tileGrants || {grants: {}, revoked: {}});
+const tileGrantEntries = computed(() => Object.entries(tileGrantRuntime.value.grants || {})
+    .map(([key, record]) => ({
+      key,
+      ...record,
+      featureText: record.features.map((feature) => hostFeatureLabels[feature] || feature).join('、'),
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt));
+
+const tileRevokedEntries = computed(() => Object.entries(tileGrantRuntime.value.revoked || {})
+    .map(([key, record]) => ({
+      key,
+      ...record,
+      featureText: record.features.map((feature) => hostFeatureLabels[feature] || feature).join('、'),
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 8));
@@ -164,7 +195,35 @@ const updateLimitFromEvent = (key: keyof SandboxRuntimeLimits, event: Event, mul
     <section class="advanced-section space-y-4">
       <div class="section-title">
         <PhShieldCheck size="20" weight="duotone"/>
-        实例授权
+        组件能力授权
+      </div>
+      <div v-if="tileGrantEntries.length" class="record-list">
+        <article v-for="record in tileGrantEntries" :key="record.key" class="record-row">
+          <div class="min-w-0">
+            <strong>{{ record.tileType || record.packageId }}</strong>
+            <span>{{ record.featureText || '无能力' }}</span>
+            <small>{{ formatTime(record.updatedAt || record.grantedAt) }}</small>
+          </div>
+          <button type="button" class="danger-btn" title="撤销授权" @click="store.revokeTileCapabilities(record.tileId)">
+            <PhTrash size="15" weight="bold"/>
+          </button>
+        </article>
+      </div>
+      <p v-else class="empty-copy">暂无已授权的声明式或内置组件实例。</p>
+
+      <div v-if="tileRevokedEntries.length" class="revoked-box">
+        <div class="text-[11px] font-extrabold opacity-70">最近撤销</div>
+        <div v-for="record in tileRevokedEntries" :key="record.key" class="revoked-row">
+          <span>{{ record.tileType || record.packageId }}</span>
+          <small>{{ record.featureText }}</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="advanced-section space-y-4">
+      <div class="section-title">
+        <PhShieldCheck size="20" weight="duotone"/>
+        Sandbox 实例授权
       </div>
       <div v-if="grantEntries.length" class="record-list">
         <article v-for="record in grantEntries" :key="record.key" class="record-row">

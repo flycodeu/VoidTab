@@ -5,6 +5,7 @@ import type {
     DeclarativeViewNode,
     JsonValue,
     PackageSignature,
+    TilePackageResources,
     TileCompatibility,
     TileInstallRecord,
     TileManifestWire,
@@ -14,9 +15,11 @@ import type {
 import {MAX_TILE_SPAN} from './gridMetrics.ts';
 import {extractDefaultSettingsFromSchema} from './settingsSchema.ts';
 import {toExternalTileType} from './tileType.ts';
+import {assertTileImageAssetBudget} from './performancePolicy.ts';
 
 export const DECLARATIVE_TILE_PACKAGE_KIND = 'voidtab.tile-package' as const;
 export const DECLARATIVE_TILE_PACKAGE_VERSION = 1 as const;
+export const TILE_PACKAGE_DIRECTORY_KIND = 'voidtab.tile-package-directory' as const;
 
 type ParseResult = {
     tileType: ReturnType<typeof toExternalTileType>;
@@ -55,6 +58,9 @@ const HOST_FEATURES = new Set([
 ]);
 const SENSITIVE_KEY_RE = /(?:password|passwd|pwd|token|secret|api[_-]?key|apikey|authorization|bearer|cookie|credential|jwt|private[_-]?key|access[_-]?key|refresh[_-]?token)/i;
 const SENSITIVE_QUERY_KEY_RE = /(?:token|secret|api[_-]?key|apikey|authorization|bearer|cookie|credential|jwt|password|passwd|pwd|access[_-]?key|refresh[_-]?token)/i;
+const MAX_RESOURCE_TEXT_BYTES = 80_000;
+const MAX_README_BYTES = 40_000;
+const MAX_ASSET_COUNT = 64;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -70,6 +76,8 @@ const clampInt = (value: unknown, min: number, max: number, fallback: number) =>
 const cleanString = (value: unknown, fallback = '') =>
     typeof value === 'string' ? value.trim() : fallback;
 
+const textBytes = (value: string) => new TextEncoder().encode(value).byteLength;
+
 function sanitizeUrl(raw: string) {
     const value = raw.trim();
     if (!/^https?:\/\//i.test(value)) return value;
@@ -84,6 +92,81 @@ function sanitizeUrl(raw: string) {
     } catch {
         return value.replace(/([?&](?:token|secret|api[_-]?key|apikey|authorization|password|passwd|pwd)=)[^&#\s]+/gi, '$1[redacted]');
     }
+}
+
+function normalizeAssetPath(raw: string) {
+    const value = raw.trim().replace(/\\/g, '/');
+    if (!/^assets\/[A-Za-z0-9._/-]{1,180}$/.test(value)) return '';
+    if (value.includes('..') || value.endsWith('/')) return '';
+    return value;
+}
+
+function sanitizeThemeCss(raw: unknown): string | undefined {
+    if (typeof raw !== 'string') return undefined;
+    const value = raw.trim();
+    if (!value || textBytes(value) > MAX_RESOURCE_TEXT_BYTES) return undefined;
+    if (/@import|url\s*\(|expression\s*\(|javascript:/i.test(value)) return undefined;
+    return value;
+}
+
+function sanitizeReadme(raw: unknown): string | undefined {
+    if (typeof raw !== 'string') return undefined;
+    const value = raw.trim();
+    if (!value || textBytes(value) > MAX_README_BYTES) return undefined;
+    return value;
+}
+
+function sanitizeAssetValue(path: string, raw: unknown): string | undefined {
+    if (typeof raw !== 'string' || !raw.trim()) return undefined;
+    const value = raw.trim();
+    if (!/^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,/i.test(value)) return undefined;
+    const budget = assertTileImageAssetBudget(value, {label: path});
+    return budget.ok ? value : undefined;
+}
+
+function normalizePackageResources(raw: unknown): TilePackageResources | undefined {
+    if (!isRecord(raw)) return undefined;
+    const themeCss = sanitizeThemeCss(raw.themeCss ?? raw['theme.css']);
+    const readme = sanitizeReadme(raw.readme ?? raw['README.md']);
+    const assetsInput = isRecord(raw.assets) ? raw.assets : {};
+    const assets: Record<string, string> = {};
+    for (const [key, value] of Object.entries(assetsInput).slice(0, MAX_ASSET_COUNT)) {
+        const path = normalizeAssetPath(key);
+        if (!path) continue;
+        const asset = sanitizeAssetValue(path, value);
+        if (asset) assets[path] = asset;
+    }
+    const resources: TilePackageResources = {
+        ...(themeCss ? {themeCss} : {}),
+        ...(readme ? {readme} : {}),
+        ...(Object.keys(assets).length ? {assets} : {}),
+    };
+    return Object.keys(resources).length ? resources : undefined;
+}
+
+function normalizeDirectoryPackage(raw: Record<string, unknown>): Record<string, unknown> {
+    if (raw.kind !== TILE_PACKAGE_DIRECTORY_KIND || !isRecord(raw.files)) return raw;
+    const files = raw.files;
+    const assets: Record<string, string> = {};
+    for (const [path, value] of Object.entries(files)) {
+        const normalizedPath = normalizeAssetPath(path);
+        if (!normalizedPath) continue;
+        const asset = sanitizeAssetValue(normalizedPath, value);
+        if (asset) assets[normalizedPath] = asset;
+    }
+    return {
+        kind: DECLARATIVE_TILE_PACKAGE_KIND,
+        packageVersion: raw.packageVersion,
+        manifest: files['manifest.json'],
+        views: files['views.json'],
+        providers: files['providers.json'],
+        defaultSettings: files['defaultSettings.json'],
+        resources: {
+            themeCss: files['theme.css'],
+            readme: files['README.md'],
+            assets,
+        },
+    };
 }
 
 const isJsonSafe = (value: unknown): value is JsonValue => {
@@ -326,6 +409,20 @@ function normalizeNode(raw: unknown, depth = 0): DeclarativeViewNode {
     };
 }
 
+function inlineAssetReferences(node: DeclarativeViewNode, resources?: TilePackageResources): DeclarativeViewNode {
+    if (!resources?.assets) return node;
+    const next = cloneJson(node);
+    const visit = (item: DeclarativeViewNode) => {
+        if (item.type === 'image' && typeof item.src === 'string') {
+            const path = normalizeAssetPath(item.src);
+            if (path && resources.assets?.[path]) item.src = resources.assets[path];
+        }
+        if ('children' in item && Array.isArray(item.children)) item.children.forEach(visit);
+    };
+    visit(next);
+    return next;
+}
+
 function normalizeProviders(raw: unknown): Record<string, import('./contracts.ts').DeclarativeProvider> | undefined {
     if (!isRecord(raw)) return undefined;
     const out: Record<string, import('./contracts.ts').DeclarativeProvider> = {};
@@ -345,6 +442,19 @@ function normalizeProviders(raw: unknown): Record<string, import('./contracts.ts
                 type: 'countdown',
                 target: normalizeDeclarativeValue(entry.target) as any,
                 ...(granularity ? {granularity} : {}),
+            };
+            continue;
+        }
+        if (entry.type === 'fetch') {
+            out[key.trim()] = {
+                type: 'fetch',
+                url: normalizeDeclarativeValue(entry.url) as any,
+                method: entry.method === 'HEAD' ? 'HEAD' : 'GET',
+                responseType: entry.responseType === 'text' ? 'text' : 'json',
+                refreshMs: clampInt(entry.refreshMs, 60_000, 86_400_000, 300_000),
+                cacheTtlMs: clampInt(entry.cacheTtlMs, 0, 86_400_000, 300_000),
+                timeoutMs: clampInt(entry.timeoutMs, 1000, 15_000, 5000),
+                maxBytes: clampInt(entry.maxBytes, 1024, 1_000_000, 64_000),
             };
         }
     }
@@ -410,6 +520,8 @@ function normalizeSignature(raw: unknown): PackageSignature | undefined {
 
 export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): ParseResult {
     if (!isRecord(raw)) throw new TypeError('声明式组件包必须是 JSON 对象');
+    raw = normalizeDirectoryPackage(raw);
+    if (!isRecord(raw)) throw new TypeError('声明式组件包必须是 JSON 对象');
     if (raw.kind !== DECLARATIVE_TILE_PACKAGE_KIND) throw new TypeError('不是有效的 VoidTab 声明式组件包');
     if (raw.packageVersion !== DECLARATIVE_TILE_PACKAGE_VERSION) throw new TypeError('声明式组件包版本不受支持');
     if (!isRecord(raw.manifest)) throw new TypeError('声明式组件包缺少 manifest');
@@ -443,6 +555,8 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
         views[viewId] = normalizeNode(node);
     }
     if (!views[rendererInput.coverView]) throw new TypeError(`声明式组件缺少视图：${rendererInput.coverView}`);
+    const resources = normalizePackageResources(raw.resources);
+    for (const viewId of Object.keys(views)) views[viewId] = inlineAssetReferences(views[viewId], resources);
     const providers = normalizeProviders(raw.providers);
 
     const sanitizedSettingsSchema = sanitizeSettingsSchema(manifestInput.settingsSchema);
@@ -502,6 +616,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
         views,
         ...(providers ? {providers} : {}),
         ...(Object.keys(defaultSettings).length ? {defaultSettings} : {}),
+        ...(resources ? {resources} : {}),
     };
 
     return {
@@ -519,6 +634,7 @@ export function parseDeclarativeTilePackage(raw: unknown, now = Date.now()): Par
             views,
             ...(providers ? {providers} : {}),
             defaultSettings,
+            ...(resources ? {resources} : {}),
         },
         package: pack,
     };
@@ -534,6 +650,7 @@ export function normalizeDeclarativeTileInstallRecord(raw: unknown): TileInstall
             views: raw.views,
             providers: raw.providers,
             defaultSettings: raw.defaultSettings,
+            resources: raw.resources,
         }, Number(raw.updatedAt) || Date.now());
         return {
             ...parsed.install,
@@ -541,14 +658,19 @@ export function normalizeDeclarativeTileInstallRecord(raw: unknown): TileInstall
             updatedAt: clampInt(raw.updatedAt, 0, Number.MAX_SAFE_INTEGER, parsed.install.updatedAt),
             enabled: raw.enabled !== false,
             pinnedVersion: raw.pinnedVersion === true,
+            ...(parsed.install.resources ? {resources: parsed.install.resources} : {}),
         };
     } catch {
         return null;
     }
 }
 
-export function createDeclarativeTileDefinitionFromInstall(install: TileInstallRecord): DeclarativeTileDefinition | null {
-    if (install.runtime !== 'declarative' || !install.manifest || !install.views || install.enabled === false) return null;
+export function createDeclarativeTileDefinitionFromInstall(
+    install: TileInstallRecord,
+    options: {includeDisabled?: boolean} = {},
+): DeclarativeTileDefinition | null {
+    if (install.runtime !== 'declarative' || !install.manifest || !install.views) return null;
+    if (install.enabled === false && !options.includeDisabled) return null;
     const tileType = toExternalTileType(install.manifest.id);
     return {
         id: tileType,
@@ -571,6 +693,7 @@ export function createDeclarativeTileDefinitionFromInstall(install: TileInstallR
         defaultSettings: install.defaultSettings || {},
         packageHash: install.sha256,
         ...(install.audit ? {audit: install.audit} : {}),
+        ...(install.resources ? {resources: cloneJson(install.resources)} : {}),
     };
 }
 
@@ -583,5 +706,6 @@ export function createDeclarativeTilePackageExport(install: TileInstallRecord): 
         views: cloneJson(install.views),
         ...(install.providers ? {providers: cloneJson(install.providers)} : {}),
         ...(install.defaultSettings ? {defaultSettings: cloneJson(install.defaultSettings)} : {}),
+        ...(install.resources ? {resources: cloneJson(install.resources)} : {}),
     };
 }

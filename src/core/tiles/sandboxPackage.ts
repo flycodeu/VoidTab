@@ -5,6 +5,7 @@ import type {
     SandboxTileDefinition,
     SandboxTilePackageWire,
     SandboxTileSource,
+    TilePackageResources,
     TileCompatibility,
     TileInstallRecord,
     TileManifestWire,
@@ -16,7 +17,9 @@ import {toExternalTileType} from './tileType.ts';
 import {
     DECLARATIVE_TILE_PACKAGE_KIND,
     DECLARATIVE_TILE_PACKAGE_VERSION,
+    TILE_PACKAGE_DIRECTORY_KIND,
 } from './declarativePackage.ts';
+import {assertTileImageAssetBudget} from './performancePolicy.ts';
 
 type ParseResult = {
     tileType: ReturnType<typeof toExternalTileType>;
@@ -51,6 +54,9 @@ const MAX_SCRIPT_COUNT = 16;
 const MAX_SCRIPT_BYTES = 250_000;
 const MAX_STYLE_BYTES = 40_000;
 const MAX_HTML_BYTES = 40_000;
+const MAX_RESOURCE_TEXT_BYTES = 80_000;
+const MAX_README_BYTES = 40_000;
+const MAX_ASSET_COUNT = 64;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -67,6 +73,65 @@ const cleanString = (value: unknown, fallback = '') =>
     typeof value === 'string' ? value.trim() : fallback;
 
 const textBytes = (value: string) => new TextEncoder().encode(value).byteLength;
+
+function normalizeAssetPath(raw: string) {
+    const value = raw.trim().replace(/\\/g, '/');
+    if (!/^assets\/[A-Za-z0-9._/-]{1,180}$/.test(value)) return '';
+    if (value.includes('..') || value.endsWith('/')) return '';
+    return value;
+}
+
+function sanitizePackageResources(raw: unknown): TilePackageResources | undefined {
+    if (!isRecord(raw)) return undefined;
+    const themeCss = typeof (raw.themeCss ?? raw['theme.css']) === 'string'
+    && textBytes(String(raw.themeCss ?? raw['theme.css'])) <= MAX_RESOURCE_TEXT_BYTES
+    && !/@import|url\s*\(|expression\s*\(|javascript:/i.test(String(raw.themeCss ?? raw['theme.css']))
+        ? String(raw.themeCss ?? raw['theme.css']).trim()
+        : '';
+    const readme = typeof (raw.readme ?? raw['README.md']) === 'string'
+    && textBytes(String(raw.readme ?? raw['README.md'])) <= MAX_README_BYTES
+        ? String(raw.readme ?? raw['README.md']).trim()
+        : '';
+    const assetsInput = isRecord(raw.assets) ? raw.assets : {};
+    const assets: Record<string, string> = {};
+    for (const [key, value] of Object.entries(assetsInput).slice(0, MAX_ASSET_COUNT)) {
+        const path = normalizeAssetPath(key);
+        if (!path || typeof value !== 'string') continue;
+        const asset = value.trim();
+        if (!/^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,/i.test(asset)) continue;
+        if (assertTileImageAssetBudget(asset, {label: path}).ok) assets[path] = asset;
+    }
+    const resources = {
+        ...(themeCss ? {themeCss} : {}),
+        ...(readme ? {readme} : {}),
+        ...(Object.keys(assets).length ? {assets} : {}),
+    };
+    return Object.keys(resources).length ? resources : undefined;
+}
+
+function normalizeDirectoryPackage(raw: Record<string, unknown>): Record<string, unknown> {
+    if (raw.kind !== TILE_PACKAGE_DIRECTORY_KIND || !isRecord(raw.files)) return raw;
+    const files = raw.files;
+    const assets: Record<string, string> = {};
+    for (const [path, value] of Object.entries(files)) {
+        const normalizedPath = normalizeAssetPath(path);
+        if (!normalizedPath || typeof value !== 'string') continue;
+        const asset = value.trim();
+        if (/^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,/i.test(asset)) assets[normalizedPath] = asset;
+    }
+    return {
+        kind: DECLARATIVE_TILE_PACKAGE_KIND,
+        packageVersion: raw.packageVersion,
+        manifest: files['manifest.json'],
+        sandbox: files['sandbox.json'],
+        defaultSettings: files['defaultSettings.json'],
+        resources: {
+            themeCss: files['theme.css'],
+            readme: files['README.md'],
+            assets,
+        },
+    };
+}
 
 function sanitizeUrl(raw: string) {
     const value = raw.trim();
@@ -276,6 +341,8 @@ function normalizeSandboxSource(raw: unknown, entryFromManifest: string): Sandbo
 
 export function parseSandboxTilePackage(raw: unknown, now = Date.now()): ParseResult {
     if (!isRecord(raw)) throw new TypeError('sandbox 组件包必须是 JSON 对象');
+    raw = normalizeDirectoryPackage(raw);
+    if (!isRecord(raw)) throw new TypeError('sandbox 组件包必须是 JSON 对象');
     if (raw.kind !== DECLARATIVE_TILE_PACKAGE_KIND) throw new TypeError('不是有效的 VoidTab 组件包');
     if (raw.packageVersion !== DECLARATIVE_TILE_PACKAGE_VERSION) throw new TypeError('组件包版本不受支持');
     if (!isRecord(raw.manifest)) throw new TypeError('sandbox 组件包缺少 manifest');
@@ -298,6 +365,7 @@ export function parseSandboxTilePackage(raw: unknown, now = Date.now()): ParseRe
     }
     const entry = normalizePackagePath(rendererInput.entry, 'entry');
     const sandbox = normalizeSandboxSource(raw.sandbox, entry);
+    const resources = sanitizePackageResources(raw.resources);
     const tileType = toExternalTileType(packageId);
     const metadataInput = isRecord(manifestInput.metadata) ? manifestInput.metadata : {};
     const sizesInput = isRecord(manifestInput.sizes) ? manifestInput.sizes : {};
@@ -361,6 +429,7 @@ export function parseSandboxTilePackage(raw: unknown, now = Date.now()): ParseRe
         manifest: manifest as SandboxTilePackageWire['manifest'],
         sandbox,
         ...(Object.keys(defaultSettings).length ? {defaultSettings} : {}),
+        ...(resources ? {resources} : {}),
     };
 
     return {
@@ -377,6 +446,7 @@ export function parseSandboxTilePackage(raw: unknown, now = Date.now()): ParseRe
             manifest,
             sandbox,
             defaultSettings,
+            ...(resources ? {resources} : {}),
         },
         package: pack,
     };
@@ -391,6 +461,7 @@ export function normalizeSandboxTileInstallRecord(raw: unknown): TileInstallReco
             manifest: raw.manifest,
             sandbox: raw.sandbox,
             defaultSettings: raw.defaultSettings,
+            resources: raw.resources,
         }, Number(raw.updatedAt) || Date.now());
         return {
             ...parsed.install,
@@ -398,14 +469,19 @@ export function normalizeSandboxTileInstallRecord(raw: unknown): TileInstallReco
             updatedAt: clampInt(raw.updatedAt, 0, Number.MAX_SAFE_INTEGER, parsed.install.updatedAt),
             enabled: raw.enabled !== false,
             pinnedVersion: raw.pinnedVersion === true,
+            ...(parsed.install.resources ? {resources: parsed.install.resources} : {}),
         };
     } catch {
         return null;
     }
 }
 
-export function createSandboxTileDefinitionFromInstall(install: TileInstallRecord): SandboxTileDefinition | null {
-    if (install.runtime !== 'sandbox' || !install.manifest || !install.sandbox || install.enabled === false) return null;
+export function createSandboxTileDefinitionFromInstall(
+    install: TileInstallRecord,
+    options: {includeDisabled?: boolean} = {},
+): SandboxTileDefinition | null {
+    if (install.runtime !== 'sandbox' || !install.manifest || !install.sandbox) return null;
+    if (install.enabled === false && !options.includeDisabled) return null;
     const tileType = toExternalTileType(install.manifest.id);
     return {
         id: tileType,
@@ -427,6 +503,7 @@ export function createSandboxTileDefinitionFromInstall(install: TileInstallRecor
         defaultSettings: install.defaultSettings || {},
         packageHash: install.sha256,
         ...(install.audit ? {audit: install.audit} : {}),
+        ...(install.resources ? {resources: cloneJson(install.resources)} : {}),
     };
 }
 
@@ -438,5 +515,6 @@ export function createSandboxTilePackageExport(install: TileInstallRecord): Sand
         manifest: cloneJson(install.manifest) as SandboxTilePackageWire['manifest'],
         sandbox: cloneJson(install.sandbox),
         ...(install.defaultSettings ? {defaultSettings: cloneJson(install.defaultSettings)} : {}),
+        ...(install.resources ? {resources: cloneJson(install.resources)} : {}),
     };
 }

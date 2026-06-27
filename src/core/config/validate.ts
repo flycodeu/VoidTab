@@ -490,6 +490,17 @@ const validateRuntimeForSave = (runtime: RecordLike, errors: string[]) => {
         .forEach((key) => {
             if (!isRecord(runtime[key])) addLimited(errors, `runtime.${key} 必须是对象`);
         });
+    if ('tileGrants' in runtime && !isRecord(runtime.tileGrants)) {
+        addLimited(errors, 'runtime.tileGrants 必须是对象');
+    }
+    if (isRecord(runtime.tileGrants)) {
+        if ('grants' in runtime.tileGrants && !isRecord(runtime.tileGrants.grants)) {
+            addLimited(errors, 'runtime.tileGrants.grants 必须是对象');
+        }
+        if ('revoked' in runtime.tileGrants && !isRecord(runtime.tileGrants.revoked)) {
+            addLimited(errors, 'runtime.tileGrants.revoked 必须是对象');
+        }
+    }
 
     if (isRecord(runtime.auth)) requireStringField(runtime.auth, 'jwtToken', 'runtime.auth.jwtToken', errors);
 

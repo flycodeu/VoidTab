@@ -152,6 +152,10 @@ export const defaultConfig: ConfigV5 = {
                 fuseDurationMs: 30 * 60 * 1000,
             },
         },
+        tileGrants: {
+            grants: {},
+            revoked: {},
+        },
         siteList: {
             groups: {},
             widgets: {}

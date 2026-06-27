@@ -110,12 +110,12 @@ export function listBuiltinTileDefinitions() {
 
 export function listDeclarativeTileDefinitions(installs: Record<string, TileInstallRecord> = {}) {
     return Object.values(installs)
-        .map(createDeclarativeTileDefinitionFromInstall)
+        .map((install) => createDeclarativeTileDefinitionFromInstall(install, {includeDisabled: true}))
         .filter((definition): definition is NonNullable<ReturnType<typeof createDeclarativeTileDefinitionFromInstall>> => !!definition);
 }
 
 export function listSandboxTileDefinitions(installs: Record<string, TileInstallRecord> = {}) {
     return Object.values(installs)
-        .map(createSandboxTileDefinitionFromInstall)
+        .map((install) => createSandboxTileDefinitionFromInstall(install, {includeDisabled: true}))
         .filter((definition): definition is NonNullable<ReturnType<typeof createSandboxTileDefinitionFromInstall>> => !!definition);
 }

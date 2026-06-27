@@ -501,9 +501,22 @@ function normalizeRuntimeMusicEmbed(input: any): RuntimeConfig['musicEmbed'] {
 }
 
 const SANDBOX_PERMISSION_SET = new Set(['storage', 'network', 'openExternal', 'clipboard.write', 'notifications']);
+const TILE_HOST_FEATURE_SET = new Set([
+    'indexedStorage',
+    'syncStorage',
+    'networkProxy',
+    'clipboardWrite',
+    'notifications',
+    'openExternal',
+    'contextMenus',
+    'localFileImport',
+    'sandboxRuntime',
+]);
 type RuntimeSandboxGrantMap = NonNullable<RuntimeConfig['sandbox']['grants']>;
 type RuntimeSandboxGrant = RuntimeSandboxGrantMap[string];
 type RuntimeSandboxCrashMap = NonNullable<RuntimeConfig['sandbox']['crashes']>;
+type RuntimeTileGrantMap = NonNullable<NonNullable<RuntimeConfig['tileGrants']>['grants']>;
+type RuntimeTileGrant = RuntimeTileGrantMap[string];
 
 function normalizeSandboxGrantRecord(raw: any, key: string): RuntimeSandboxGrant | null {
     if (!isRecordLike(raw)) return null;
@@ -530,6 +543,41 @@ function normalizeSandboxGrantMap(raw: any): RuntimeSandboxGrantMap {
         if (record) out[key] = record;
     }
     return out;
+}
+
+function normalizeTileCapabilityGrantRecord(raw: any, key: string): RuntimeTileGrant | null {
+    if (!isRecordLike(raw)) return null;
+    const features = Array.isArray(raw.features)
+        ? [...new Set(raw.features.filter((item: any) => TILE_HOST_FEATURE_SET.has(item)))]
+        : [];
+    if (!features.length) return null;
+    const tileId = typeof raw.tileId === 'string' && raw.tileId.trim() ? raw.tileId.trim() : key;
+    return {
+        tileId,
+        tileType: typeof raw.tileType === 'string' ? raw.tileType : '',
+        packageId: typeof raw.packageId === 'string' ? raw.packageId : '',
+        features: features as RuntimeTileGrant['features'],
+        grantedAt: Number.isFinite(Number(raw.grantedAt)) ? Number(raw.grantedAt) : 0,
+        updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : 0,
+    };
+}
+
+function normalizeTileCapabilityGrantMap(raw: any): RuntimeTileGrantMap {
+    const out: RuntimeTileGrantMap = {};
+    if (!isRecordLike(raw)) return out;
+    for (const [key, value] of Object.entries(raw)) {
+        const record = normalizeTileCapabilityGrantRecord(value, key);
+        if (record) out[key] = record;
+    }
+    return out;
+}
+
+function normalizeRuntimeTileGrants(input: any): NonNullable<RuntimeConfig['tileGrants']> {
+    const base = isRecordLike(input) ? input : {};
+    return {
+        grants: normalizeTileCapabilityGrantMap(base.grants),
+        revoked: normalizeTileCapabilityGrantMap(base.revoked),
+    };
 }
 
 function normalizeSandboxCrashMap(raw: any): RuntimeSandboxCrashMap {
@@ -727,6 +775,7 @@ function normalizeRuntime(input: any): RuntimeConfig {
         photo: normalizeRuntimePhoto(base.photo),
         musicEmbed: normalizeRuntimeMusicEmbed(base.musicEmbed),
         sandbox: normalizeRuntimeSandbox(base.sandbox),
+        tileGrants: normalizeRuntimeTileGrants(base.tileGrants),
 
         siteList: normalizeRuntimeSiteList(base.siteList)
     };

@@ -18,6 +18,23 @@ export const DEFAULT_SANDBOX_LIMITS: SandboxRuntimeLimits = {
     fuseDurationMs: 30 * 60 * 1000,
 };
 
+export function getSandboxResourceIsolationReport() {
+    return {
+        hardCpuLimit: false,
+        hardMemoryLimit: false,
+        enforcedByHost: [
+            'maxActiveInstances',
+            'maxRequestsPerMinute',
+            'maxNetworkBytesPerRequest',
+            'maxStorageBytes',
+            'bootTimeout',
+            'crashFuse',
+            'offscreenPause',
+        ],
+        reason: '普通浏览器 iframe 无法可靠施加硬 CPU/内存上限；当前以宿主侧限额、超时和熔断治理替代。',
+    };
+}
+
 const permissionOrder: SandboxRuntimePermission[] = [
     'storage',
     'network',
@@ -213,4 +230,3 @@ export function evaluateSandboxMarketReview(definition: Pick<SandboxTileDefiniti
         reasons: ['P7 仅允许本地高级实验，不进入默认组件市场'],
     };
 }
-

@@ -6,6 +6,7 @@ import type {
     JsonValue,
 } from './contracts.ts';
 import {isExtensionContext, getBrowserInfo} from '../../shared/utils/browser.ts';
+import {scheduleDeclarativeDataRequest} from './performancePolicy.ts';
 
 export interface DeclarativeDataContext {
     settings: Record<string, JsonValue>;
@@ -22,6 +23,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const NETWORK_PROVIDER_MIN_REFRESH_MS = 60_000;
+const NETWORK_PROVIDER_DEFAULT_REFRESH_MS = 300_000;
+const NETWORK_PROVIDER_MAX_BYTES = 64_000;
+const NETWORK_PROVIDER_TIMEOUT_MS = 5000;
+
+type NetworkProviderResult = Record<string, JsonValue>;
+const networkProviderCache = new Map<string, {expiresAt: number; value: NetworkProviderResult}>();
 
 const isJsonSafe = (value: unknown): value is JsonValue => {
     try {
@@ -120,6 +128,44 @@ const countdownOutput = (remainingMs: number): JsonValue => {
     };
 };
 
+const clampNetworkNumber = (value: unknown, min: number, max: number, fallback: number) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.max(min, Math.min(max, Math.round(numeric)));
+};
+
+const networkRefreshMs = (provider: Extract<DeclarativeProvider, {type: 'fetch'}>) =>
+    clampNetworkNumber(provider.refreshMs, NETWORK_PROVIDER_MIN_REFRESH_MS, 86_400_000, NETWORK_PROVIDER_DEFAULT_REFRESH_MS);
+
+const normalizeNetworkProviderUrl = (raw: string): string => {
+    try {
+        const url = new URL(raw.trim());
+        if (url.protocol !== 'https:') return '';
+        url.username = '';
+        url.password = '';
+        return url.toString();
+    } catch {
+        return '';
+    }
+};
+
+const networkOutput = (patch: Record<string, JsonValue>): NetworkProviderResult => ({
+    status: 'ready',
+    ok: false,
+    fetchedAt: Date.now(),
+    ...patch,
+});
+
+function jsonSafeNetworkBody(value: unknown): JsonValue {
+    if (isJsonSafe(value)) return cloneJson(value);
+    if (value === undefined) return null;
+    return String(value);
+}
+
+export function hasDeclarativeNetworkProviders(providers: Record<string, DeclarativeProvider> | undefined): boolean {
+    return isRecord(providers) && Object.values(providers).some((provider) => isRecord(provider) && provider.type === 'fetch');
+}
+
 /**
  * Pure evaluation of declarative providers into the `data.<key>` namespace.
  * No DOM, no network, no global clock access other than the injected `now`.
@@ -167,6 +213,119 @@ export function evaluateDeclarativeProviders(
     return out;
 }
 
+export async function evaluateDeclarativeNetworkProviders(
+    providers: Record<string, DeclarativeProvider> | undefined,
+    options: {
+        settings?: Record<string, JsonValue>;
+        host?: DeclarativeDataContext['host'];
+        now?: number;
+        cacheKeyPrefix?: string;
+        fetcher?: typeof fetch;
+        signal?: AbortSignal;
+        networkAllowed?: boolean;
+        allowedOrigins?: string[];
+    } = {},
+): Promise<Record<string, JsonValue>> {
+    if (!isRecord(providers)) return {};
+    const now = Number.isFinite(options.now) ? Number(options.now) : Date.now();
+    const resolveContext: DeclarativeDataContext = {
+        settings: options.settings || {},
+        data: {},
+        host: options.host || {
+            target: isExtensionContext() ? 'extension' : 'web',
+            now: Math.round(now),
+            locale: typeof navigator !== 'undefined' ? navigator.language : 'zh-CN',
+            browser: typeof navigator !== 'undefined' ? getBrowserInfo().name : 'unknown',
+        },
+    };
+    const out: Record<string, JsonValue> = {};
+    if (options.networkAllowed === false) {
+        for (const [key, provider] of Object.entries(providers)) {
+            if (isRecord(provider) && provider.type === 'fetch') {
+                out[key] = networkOutput({
+                    status: 'error',
+                    error: 'networkProxy capability is not available or not declared',
+                });
+            }
+        }
+        return out;
+    }
+
+    const fetcher = options.fetcher || (typeof fetch !== 'undefined' ? fetch : undefined);
+    if (!fetcher) {
+        for (const [key, provider] of Object.entries(providers)) {
+            if (isRecord(provider) && provider.type === 'fetch') {
+                out[key] = networkOutput({status: 'error', error: 'fetch is not available'});
+            }
+        }
+        return out;
+    }
+    for (const [key, provider] of Object.entries(providers)) {
+        if (!key.trim() || !isRecord(provider) || provider.type !== 'fetch') continue;
+        const url = normalizeNetworkProviderUrl(resolveDeclarativeText(provider.url, resolveContext));
+        if (!url) {
+            out[key] = networkOutput({status: 'error', error: 'invalid https url'});
+            continue;
+        }
+        if (options.allowedOrigins && !options.allowedOrigins.includes(new URL(url).origin)) {
+            out[key] = networkOutput({status: 'error', error: 'network origin is not declared in manifest capabilities', url});
+            continue;
+        }
+        const cacheTtlMs = clampNetworkNumber(provider.cacheTtlMs, 0, 86_400_000, networkRefreshMs(provider));
+        const cacheKey = `${options.cacheKeyPrefix || 'global'}:${key}:${url}`;
+        const cached = networkProviderCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            out[key] = cloneJson(cached.value) as JsonValue;
+            continue;
+        }
+
+        try {
+            const value = await scheduleDeclarativeDataRequest(cacheKey, async () => {
+                const controller = new AbortController();
+                const timeoutMs = clampNetworkNumber(provider.timeoutMs, 1000, 15_000, NETWORK_PROVIDER_TIMEOUT_MS);
+                const timeout = setTimeout(() => controller.abort(), timeoutMs);
+                const signal = options.signal || controller.signal;
+                try {
+                    const response = await fetcher(url, {
+                        method: provider.method === 'HEAD' ? 'HEAD' : 'GET',
+                        credentials: 'omit',
+                        cache: 'no-store',
+                        redirect: 'follow',
+                        headers: {Accept: provider.responseType === 'text' ? 'text/plain,*/*' : 'application/json,text/plain,*/*'},
+                        signal,
+                    });
+                    const maxBytes = clampNetworkNumber(provider.maxBytes, 1024, 1_000_000, NETWORK_PROVIDER_MAX_BYTES);
+                    const text = provider.method === 'HEAD' ? '' : await response.text();
+                    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+                        throw new Error(`response exceeds ${maxBytes} bytes`);
+                    }
+                    let body: JsonValue = text;
+                    if (provider.responseType !== 'text' && text) {
+                        body = jsonSafeNetworkBody(JSON.parse(text));
+                    }
+                    return networkOutput({
+                        ok: response.ok,
+                        statusCode: response.status,
+                        url: response.url || url,
+                        body,
+                    });
+                } finally {
+                    clearTimeout(timeout);
+                }
+            }, {minIntervalMs: cacheTtlMs});
+            networkProviderCache.set(cacheKey, {expiresAt: now + cacheTtlMs, value});
+            out[key] = value;
+        } catch (error) {
+            out[key] = networkOutput({
+                status: 'error',
+                error: error instanceof Error ? error.message : 'network provider failed',
+                url,
+            });
+        }
+    }
+    return out;
+}
+
 /**
  * Smallest refresh interval (ms) required by the providers, or 0 when none are
  * time-based. The host uses this to drive a single throttled tick that pauses
@@ -181,7 +340,9 @@ export function declarativeProvidersRefreshMs(providers: Record<string, Declarat
             ? granularityMs(provider.granularity, 'minute')
             : provider.type === 'countdown'
                 ? granularityMs(provider.granularity, 'second')
-                : 0;
+                : provider.type === 'fetch'
+                    ? networkRefreshMs(provider)
+                    : 0;
         if (step <= 0) continue;
         min = min === 0 ? step : Math.min(min, step);
     }

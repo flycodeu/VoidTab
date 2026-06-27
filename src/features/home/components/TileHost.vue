@@ -13,6 +13,13 @@ import type {
   TileSizeContext,
 } from '../../../core/tiles/contracts.ts';
 import {provideTileRuntimeContext} from '../../../core/tiles/context.ts';
+import {evaluateTileCompatibility} from '../../../core/tiles/compatibility.ts';
+import {
+  getGrantedTileHostFeatures,
+  listMissingTileCapabilityGrants,
+  listRequiredTileHostFeatures,
+} from '../../../core/tiles/capabilityGrants.ts';
+import {getCurrentHostCapabilities} from '../../../core/tiles/hostCapabilities.ts';
 import {resolveTileDefinition} from '../../../core/tiles/registry.ts';
 import {tileStyleOverrideToCssVars} from '../../../core/tiles/style.ts';
 import {toLegacyTileHostItem} from '../../../core/tiles/tileHostAdapter.ts';
@@ -64,6 +71,7 @@ const sandboxDefinition = computed<SandboxTileDefinition | null>(() =>
     definition.value.renderer.kind === 'sandbox' ? definition.value as SandboxTileDefinition : null,
 );
 const sandboxRuntimeEnabled = computed(() => store.config.runtime?.sandbox?.enabled === true);
+const hostCapabilities = computed(() => getCurrentHostCapabilities({sandboxRuntime: sandboxRuntimeEnabled.value}));
 const tileStyleVars = computed(() => tileStyleOverrideToCssVars(props.tile.styleOverride));
 const normalizePositiveInt = (value: unknown, fallback: number) => {
   const numeric = Number(value);
@@ -123,6 +131,78 @@ const widgetNameMode = computed(() => {
   if (!props.showWidgetName || !isWidget.value) return 'none';
   return Math.max(1, Number(renderItem.value.h || 1)) === 1 ? 'overlay' : 'below';
 });
+const grantedHostFeatures = computed(() => {
+  if (!('compatibility' in definition.value)) return [];
+  if (definition.value.renderer.kind === 'sandbox') {
+    return listRequiredTileHostFeatures(definition.value);
+  }
+  if (!componentTile.value) return [];
+  return getGrantedTileHostFeatures(store.config.runtime?.tileGrants?.grants, componentTile.value.id);
+});
+const compatibilityStatus = computed(() => {
+  if (!('compatibility' in definition.value)) return {state: 'supported' as const};
+  return evaluateTileCompatibility({
+    compatibility: definition.value.compatibility,
+    host: hostCapabilities.value,
+    grantedRequiredFeatures: grantedHostFeatures.value,
+  });
+});
+const compatibilityBlocksRender = computed(() =>
+    compatibilityStatus.value.state === 'blocked' || compatibilityStatus.value.state === 'unsupported',
+);
+const compatibilityMessage = computed(() => {
+  const status = compatibilityStatus.value;
+  if (status.state === 'blocked' || status.state === 'unsupported') return status.reasons[0] || '组件当前不可用';
+  if (status.state === 'degraded') return status.notices[0] || '组件正在降级运行';
+  return '';
+});
+const missingCapabilityGrants = computed(() => {
+  if (!componentTile.value || !('compatibility' in definition.value) || definition.value.renderer.kind === 'sandbox') return [];
+  return listMissingTileCapabilityGrants(definition.value, store.config.runtime?.tileGrants?.grants, componentTile.value.id);
+});
+const canRestoreAuthorization = computed(() =>
+    compatibilityStatus.value.state === 'blocked' && missingCapabilityGrants.value.length > 0,
+);
+const capabilityLabels: Record<string, string> = {
+  indexedStorage: '本地存储',
+  syncStorage: '同步存储',
+  networkProxy: '网络访问',
+  clipboardWrite: '写入剪贴板',
+  notifications: '系统通知',
+  openExternal: '打开外链',
+  contextMenus: '右键菜单',
+  localFileImport: '本地文件导入',
+  sandboxRuntime: 'Sandbox 运行时',
+};
+const missingCapabilityLabel = computed(() =>
+    missingCapabilityGrants.value.map((feature) => capabilityLabels[feature] || feature).join('、'),
+);
+const optionalHostOrigins = computed(() => {
+  if (!('capabilities' in definition.value)) return [];
+  const origins = new Set<string>();
+  for (const capability of definition.value.capabilities || []) {
+    if (capability.type !== 'network') continue;
+    for (const host of capability.hosts || []) {
+      try {
+        const url = new URL(host.includes('://') ? host : `https://${host}`);
+        if (url.protocol === 'https:') origins.add(`${url.protocol}//${url.host}/*`);
+      } catch {
+        // Invalid host declarations are ignored here; package parsing and fetch gating handle rejection.
+      }
+    }
+  }
+  return [...origins];
+});
+const restoreAuthorization = async () => {
+  if (!componentTile.value) return;
+  let features = [...missingCapabilityGrants.value];
+  if (hostCapabilities.value.target === 'extension' && missingCapabilityGrants.value.includes('networkProxy')) {
+    const results = await Promise.all(optionalHostOrigins.value.map((origin) => store.requestOptionalHostPermission(origin)));
+    const granted = results.length > 0 && results.every((result) => result.ok && result.granted);
+    if (!granted) features = features.filter((feature) => feature !== 'networkProxy');
+  }
+  if (features.length) store.grantTileCapabilities(componentTile.value.id, features);
+};
 </script>
 
 <template>
@@ -136,7 +216,34 @@ const widgetNameMode = computed(() => {
       :data-tile-breakpoint="tileSizeContext.breakpoint"
   >
     <div
-        v-if="isWidget"
+        v-if="compatibilityStatus.state === 'degraded'"
+        class="compatibility-notice"
+        role="status"
+    >
+      {{ compatibilityMessage }}
+    </div>
+
+    <div
+        v-if="compatibilityBlocksRender"
+        class="unsupported-tile w-full h-full flex flex-col items-center justify-center gap-2 px-4 text-center"
+        role="status"
+        @contextmenu.prevent.stop="emit('contextmenu', $event)"
+    >
+      <strong class="text-sm truncate max-w-full">{{ definition.label }}</strong>
+      <span class="text-xs opacity-70">{{ compatibilityMessage }}</span>
+      <small v-if="missingCapabilityLabel" class="compatibility-missing">{{ missingCapabilityLabel }}</small>
+      <button
+          v-if="canRestoreAuthorization"
+          type="button"
+          class="unsupported-recover-btn"
+          @click.stop="restoreAuthorization"
+      >
+        恢复授权
+      </button>
+    </div>
+
+    <div
+        v-else-if="isWidget"
         class="widget-host-shell w-full h-full overflow-hidden"
         @contextmenu.prevent.stop="emit('contextmenu', $event)"
     >
@@ -223,12 +330,33 @@ const widgetNameMode = computed(() => {
 }
 
 .tile-host {
+  position: relative;
   --tile-radius: 18px;
   --tile-icon-scale: 1;
   --tile-elevation: 1;
   --tile-accent: var(--accent-color);
   --tile-accent-color: var(--accent-color);
   --tile-surface: transparent;
+}
+
+.compatibility-notice {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 10px;
+  z-index: 35;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 6px 9px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.13);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  color: rgb(217 119 6);
+  font-size: 10px;
+  line-height: 1.25;
+  font-weight: 800;
+  pointer-events: none;
 }
 
 .widget-host-shell {
@@ -250,6 +378,15 @@ const widgetNameMode = computed(() => {
 
 .unsupported-tile strong {
   color: var(--tile-accent-color);
+}
+
+.compatibility-missing {
+  max-width: 100%;
+  color: var(--text-secondary, var(--text-primary));
+  font-size: 10px;
+  line-height: 1.35;
+  opacity: 0.72;
+  overflow-wrap: anywhere;
 }
 
 .unsupported-recover-btn {

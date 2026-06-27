@@ -28,6 +28,13 @@ export interface TileSettingsNormalizationResult {
     changed: boolean;
 }
 
+export interface TileSettingsMigrationResult extends TileSettingsNormalizationResult {
+    migrated: boolean;
+    renamed: Array<{from: string; to: string}>;
+    removed: string[];
+    added: string[];
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -229,3 +236,59 @@ export function normalizeTileSettingsWithSchema(
     return {settings, issues, changed};
 }
 
+export function migrateTileSettingsAcrossSchemaVersions(
+    rawSettings: unknown,
+    previousSchema: unknown,
+    nextSchema: unknown,
+    options: {
+        defaults?: Record<string, JsonValue>;
+        preserveUnknown?: boolean;
+    } = {},
+): TileSettingsMigrationResult {
+    const previousProperties = schemaProperties(previousSchema);
+    const next = isRecord(nextSchema) ? nextSchema : {};
+    const nextProperties = schemaProperties(next);
+    const input = isRecord(rawSettings) ? rawSettings : {};
+    const working: Record<string, unknown> = {};
+    const renamed: Array<{from: string; to: string}> = [];
+
+    for (const [key, value] of Object.entries(input)) working[key] = value;
+
+    const aliases = isRecord(next['x-voidtab-aliases']) ? next['x-voidtab-aliases'] : {};
+    for (const [from, to] of Object.entries(aliases)) {
+        if (typeof to !== 'string' || !nextProperties[to]) continue;
+        if (!Object.prototype.hasOwnProperty.call(input, from)) continue;
+        if (Object.prototype.hasOwnProperty.call(working, to)) continue;
+        working[to] = input[from];
+        renamed.push({from, to});
+    }
+
+    for (const [to, propertySchema] of Object.entries(nextProperties)) {
+        const fromList = Array.isArray(propertySchema['x-voidtab-from'])
+            ? propertySchema['x-voidtab-from']
+            : typeof propertySchema['x-voidtab-from'] === 'string'
+                ? [propertySchema['x-voidtab-from']]
+                : [];
+        for (const from of fromList) {
+            if (typeof from !== 'string' || !Object.prototype.hasOwnProperty.call(input, from)) continue;
+            if (Object.prototype.hasOwnProperty.call(working, to)) continue;
+            working[to] = input[from];
+            renamed.push({from, to});
+            break;
+        }
+    }
+
+    const normalized = normalizeTileSettingsWithSchema(working, nextSchema, options);
+    const outputKeys = new Set(Object.keys(normalized.settings));
+    const inputKeys = new Set(Object.keys(input));
+    const previousKeys = new Set(Object.keys(previousProperties));
+    const removed = [...inputKeys].filter((key) => !outputKeys.has(key) && (previousKeys.has(key) || !(options.preserveUnknown ?? next.additionalProperties !== false)));
+    const added = [...outputKeys].filter((key) => !inputKeys.has(key));
+    return {
+        ...normalized,
+        migrated: normalized.changed || renamed.length > 0 || removed.length > 0 || added.length > 0,
+        renamed,
+        removed,
+        added,
+    };
+}

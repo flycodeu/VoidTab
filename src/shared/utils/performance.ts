@@ -46,6 +46,8 @@ const DEFAULT_PERFORMANCE_BUDGETS: Record<string, number> = {
     'config.postBoot': 2200,
     'config.save': 900,
     'config.icons.refreshBatch': 3500,
+    'tile.drag.frame': 16,
+    'tile.declarative.providerFetch': 5000,
 };
 
 const entries: VoidTabPerformanceEntry[] = [];

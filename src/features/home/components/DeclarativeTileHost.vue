@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onUnmounted, ref, watch} from 'vue';
+import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useDocumentVisibility} from '@vueuse/core';
 import {PhGear, PhSpinner, PhWarning, PhX} from '@phosphor-icons/vue';
 import type {
@@ -14,12 +14,15 @@ import {useTileSizeContext} from '../../../core/tiles/context.ts';
 import {
   createDeclarativeDataContext,
   declarativeProvidersRefreshMs,
+  evaluateDeclarativeNetworkProviders,
   evaluateDeclarativeProviders,
+  hasDeclarativeNetworkProviders,
   normalizeDeclarativeUrl,
   resolveDeclarativeText,
   resolveDeclarativeValue,
   toggleDeclarativeSettingPath,
 } from '../../../core/tiles/declarativeData.ts';
+import {getCurrentHostCapabilities} from '../../../core/tiles/hostCapabilities.ts';
 import {
   listSettingsSchemaFields,
   normalizeTileSettingsWithSchema,
@@ -37,6 +40,7 @@ type RuntimeStatus = 'ready' | 'loading' | 'error';
 const store = useConfigStore();
 const toast = useToast();
 const sizeContext = useTileSizeContext();
+const rootRef = ref<HTMLElement | null>(null);
 const activeDialogView = ref('');
 const settingsOpen = ref(false);
 const draftSettings = ref<Record<string, JsonValue>>({});
@@ -44,6 +48,7 @@ const runtimeStatus = ref<RuntimeStatus>('ready');
 const runtimeMessage = ref('');
 const lastRefreshAt = ref(Date.now());
 const nowTick = ref(Date.now());
+const networkProviderData = ref<Record<string, JsonValue>>({});
 
 const settingsFields = computed(() => listSettingsSchemaFields(props.definition.settingsSchema));
 const normalizedSettings = computed(() => normalizeTileSettingsWithSchema(
@@ -57,7 +62,7 @@ const effectiveTile = computed(() => ({
   settings: normalizedSettings.value.settings,
 }));
 const dataContext = computed(() => {
-  const base = createDeclarativeDataContext(effectiveTile.value, {}, nowTick.value);
+  const base = createDeclarativeDataContext(effectiveTile.value, networkProviderData.value, nowTick.value);
   const providerData = evaluateDeclarativeProviders(props.definition.providers, {
     settings: base.settings,
     host: base.host,
@@ -67,34 +72,105 @@ const dataContext = computed(() => {
     ...base,
     data: {
       ...providerData,
+      ...networkProviderData.value,
       status: runtimeStatus.value,
       refreshedAt: lastRefreshAt.value,
     },
   };
 });
+const hasNetworkProviders = computed(() => hasDeclarativeNetworkProviders(props.definition.providers));
+const networkCapabilityDeclared = computed(() =>
+    (props.definition.compatibility.capabilities || []).some((item) => item.feature === 'networkProxy'),
+);
+const declaredNetworkOrigins = computed(() =>
+    (props.definition.capabilities || [])
+        .filter((item) => item.type === 'network')
+        .flatMap((item) => item.hosts)
+        .map((host) => {
+          try {
+            return new URL(host).origin;
+          } catch {
+            return '';
+          }
+        })
+        .filter(Boolean),
+);
+const networkAllowed = computed(() =>
+    getCurrentHostCapabilities().features.networkProxy
+    && networkCapabilityDeclared.value
+    && declaredNetworkOrigins.value.length > 0,
+);
 
 // Single throttled tick driven by the slowest-allowed provider granularity;
-// paused while the page is hidden so offline clocks/countdowns don't burn cycles.
+// paused while the page or this tile instance is hidden.
 const visibility = useDocumentVisibility();
+const isIntersecting = ref(typeof IntersectionObserver === 'undefined');
 const refreshIntervalMs = computed(() => declarativeProvidersRefreshMs(props.definition.providers));
 let providerTimer: number | null = null;
+let intersectionObserver: IntersectionObserver | null = null;
+let networkAbortController: AbortController | null = null;
+let networkRefreshSerial = 0;
 const stopProviderTick = () => {
   if (providerTimer != null) {
     window.clearInterval(providerTimer);
     providerTimer = null;
   }
 };
+const refreshNetworkProviders = async () => {
+  if (!hasNetworkProviders.value || visibility.value === 'hidden' || !isIntersecting.value) return;
+  const serial = ++networkRefreshSerial;
+  networkAbortController?.abort();
+  networkAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const base = createDeclarativeDataContext(effectiveTile.value, networkProviderData.value, nowTick.value);
+  const next = await evaluateDeclarativeNetworkProviders(props.definition.providers, {
+    settings: base.settings,
+    host: base.host,
+    now: nowTick.value,
+    cacheKeyPrefix: `${props.definition.id}:${props.tile.id}`,
+    networkAllowed: networkAllowed.value,
+    allowedOrigins: declaredNetworkOrigins.value,
+    ...(networkAbortController ? {signal: networkAbortController.signal} : {}),
+  });
+  if (serial !== networkRefreshSerial) return;
+  networkProviderData.value = next;
+  lastRefreshAt.value = Date.now();
+};
 const startProviderTick = () => {
   stopProviderTick();
   const interval = refreshIntervalMs.value;
-  if (interval <= 0 || visibility.value === 'hidden') return;
+  if (interval <= 0 || visibility.value === 'hidden' || !isIntersecting.value) return;
   nowTick.value = Date.now();
+  void refreshNetworkProviders();
   providerTimer = window.setInterval(() => {
     nowTick.value = Date.now();
+    void refreshNetworkProviders();
   }, interval);
 };
-watch([visibility, refreshIntervalMs], startProviderTick, {immediate: true});
-onUnmounted(stopProviderTick);
+watch([visibility, refreshIntervalMs, isIntersecting], startProviderTick, {immediate: true});
+watch(
+    () => [props.definition.id, props.definition.packageHash, props.tile.id, JSON.stringify(normalizedSettings.value.settings)],
+    () => {
+      networkProviderData.value = {};
+      void refreshNetworkProviders();
+    },
+);
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined' || !rootRef.value) {
+    isIntersecting.value = true;
+    return;
+  }
+  intersectionObserver = new IntersectionObserver((entries) => {
+    isIntersecting.value = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio > 0);
+  }, {threshold: 0.01});
+  intersectionObserver.observe(rootRef.value);
+});
+onUnmounted(() => {
+  stopProviderTick();
+  networkRefreshSerial += 1;
+  networkAbortController?.abort();
+  intersectionObserver?.disconnect();
+  intersectionObserver = null;
+});
 const coverNode = computed(() => props.definition.views[props.definition.renderer.coverView]);
 const dialogNode = computed(() => {
   const view = activeDialogView.value || props.definition.renderer.dialogView || '';
@@ -174,6 +250,7 @@ const handleAction = async (action: DeclarativeAction) => {
       runtimeMessage.value = '';
       lastRefreshAt.value = Date.now();
       nowTick.value = lastRefreshAt.value;
+      await refreshNetworkProviders();
       window.setTimeout(() => {
         runtimeStatus.value = 'ready';
       }, 180);
@@ -238,10 +315,22 @@ const saveDraftSettings = () => {
   settingsOpen.value = false;
   runtimeStatus.value = 'ready';
 };
+
+const repairSettings = () => {
+  const result = store.migrateComponentTileSettings(props.tile.id);
+  if (!result.success) {
+    toast.error(result.issues[0]?.message || '设置修复失败');
+    return;
+  }
+  if (result.issues.length) toast.warning(result.issues[0].message);
+  else toast.success('设置已修复');
+  runtimeStatus.value = 'ready';
+};
 </script>
 
 <template>
   <article
+      ref="rootRef"
       class="decl-tile w-full h-full min-w-0 min-h-0"
       :class="[`decl-status-${runtimeStatus}`, mobileState.blocked ? 'decl-mobile-blocked' : '']"
       :data-package="definition.id"
@@ -274,6 +363,7 @@ const saveDraftSettings = () => {
     <div v-if="settingsIssues.length" class="decl-schema-warning" role="status">
       <PhWarning size="14" weight="fill"/>
       <span>{{ settingsIssues[0].message }}</span>
+      <button type="button" @click.stop="repairSettings">修复</button>
     </div>
 
     <div v-if="mobileState.blocked" class="decl-empty">
@@ -456,6 +546,18 @@ const saveDraftSettings = () => {
   top: auto;
   right: 10px;
   bottom: 10px;
+  pointer-events: auto;
+}
+
+.decl-schema-warning button {
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: white;
+  background: rgb(217 119 6);
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .decl-state {

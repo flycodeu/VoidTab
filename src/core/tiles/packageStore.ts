@@ -45,6 +45,20 @@ export type PackageInstallTransaction =
     nextInstalls: Record<string, TileInstallRecord>;
 };
 
+export interface TrustedPackageRecoveryAttempt {
+    tileType: ExternalTileType;
+    packageId: string;
+    status: 'recovered' | 'skipped' | 'failed';
+    message: string;
+    packageUrl?: string;
+    audit?: PackageAuditRecord;
+}
+
+export interface TrustedPackageRecoveryResult {
+    nextInstalls: Record<string, TileInstallRecord>;
+    attempts: TrustedPackageRecoveryAttempt[];
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -54,6 +68,20 @@ const finiteTime = (value: unknown, fallback: number) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0
         ? Math.round(value)
         : fallback;
+
+function normalizeHttpsUrl(raw: unknown): string | undefined {
+    if (typeof raw !== 'string' || !raw.trim()) return undefined;
+    try {
+        const url = new URL(raw.trim());
+        if (url.protocol !== 'https:') return undefined;
+        url.username = '';
+        url.password = '';
+        url.hash = '';
+        return url.toString();
+    } catch {
+        return undefined;
+    }
+}
 
 function normalizeSignature(raw: unknown): PackageSignature | undefined {
     if (!isRecord(raw)) return undefined;
@@ -139,6 +167,7 @@ export function normalizePackageTrustIndex(raw: unknown): PackageTrustIndex {
                     ...(typeof entry.version === 'string' && entry.version.trim() ? {version: entry.version.trim()} : {}),
                     sha256: entry.sha256.trim(),
                     trustedBy: entry.trustedBy.trim(),
+                    ...(normalizeHttpsUrl(entry.packageUrl) ? {packageUrl: normalizeHttpsUrl(entry.packageUrl)} : {}),
                     ...(signature ? {signature} : {}),
                     ...(publicKey ? {publicKey} : {}),
                 };
@@ -178,6 +207,27 @@ export async function fetchPackageTrustIndex(url: string, options: {signal?: Abo
     });
     if (!response.ok) throw new TypeError(`信任索引获取失败：${response.status}`);
     return normalizePackageTrustIndex(await response.json());
+}
+
+export async function fetchTrustedTilePackage(
+    url: string,
+    options: {signal?: AbortSignal; maxBytes?: number} = {},
+): Promise<unknown> {
+    const endpoint = normalizeHttpsUrl(url);
+    if (!endpoint) throw new TypeError('组件包必须通过 HTTPS 获取');
+    const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {'Accept': 'application/json'},
+        credentials: 'omit',
+        signal: options.signal,
+    });
+    if (!response.ok) throw new TypeError(`组件包获取失败：${response.status}`);
+    const text = await response.text();
+    const maxBytes = Math.max(1024, Math.min(2_000_000, options.maxBytes || 512_000));
+    if (textEncoder().encode(text).byteLength > maxBytes) {
+        throw new TypeError('组件包超过可信源自动恢复大小上限');
+    }
+    return JSON.parse(text) as unknown;
 }
 
 export function createTileInstallIntent(install: TileInstallRecord): TileInstallIntent | null {
@@ -257,6 +307,20 @@ function signatureMatches(expected: PackageSignature | undefined, actual: Packag
         && actual.value === expected.value;
 }
 
+function intentMatchesTrustedEntry(intent: TileInstallIntent, entry: PackageTrustIndexEntry) {
+    return entry.packageId === intent.packageId
+        && (!entry.version || entry.version === intent.version)
+        && entry.sha256 === intent.sha256
+        && signatureMatches(entry.signature, intent.signature);
+}
+
+function hasRenderablePackageBody(install: TileInstallRecord | undefined) {
+    if (!install || install.enabled === false) return false;
+    return install.runtime === 'sandbox'
+        ? !!install.manifest && !!install.sandbox
+        : !!install.manifest && !!install.views;
+}
+
 const canonicalize = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(canonicalize);
     if (!isRecord(value)) return value;
@@ -285,6 +349,7 @@ export function createPackageSignaturePayload(install: TileInstallRecord): strin
     return JSON.stringify(canonicalize({
         manifest: install.manifest,
         runtime: install.runtime,
+        resources: install.resources,
         sha256: install.sha256,
         sandbox: install.sandbox,
         views: install.views,
@@ -402,18 +467,22 @@ export async function auditTileInstallRecordWithSignature(
 export function installDeclarativePackageAtomically(
     currentInstalls: Record<string, TileInstallRecord>,
     rawPackage: unknown,
-    options: {trustIndex?: PackageTrustIndex; now?: number} = {},
+    options: {trustIndex?: PackageTrustIndex; now?: number; source?: 'official' | 'local'} = {},
 ): PackageInstallTransaction {
     const now = Math.round(options.now ?? Date.now());
     const nextInstalls = cloneJson(currentInstalls);
     try {
         const parsed = parseDeclarativeTilePackage(rawPackage, now);
-        const intent = createTileInstallIntent(parsed.install);
         const install: TileInstallRecord = {
             ...parsed.install,
+            source: options.source === 'official' ? 'official' : parsed.install.source,
+        };
+        const intent = createTileInstallIntent(install);
+        const installWithIntent: TileInstallRecord = {
+            ...install,
             ...(intent ? {installIntent: intent} : {}),
         };
-        const audit = auditTileInstallRecord(install, options.trustIndex || EMPTY_PACKAGE_TRUST_INDEX, now);
+        const audit = auditTileInstallRecord(installWithIntent, options.trustIndex || EMPTY_PACKAGE_TRUST_INDEX, now);
         if (audit.status === 'revoked' || audit.status === 'hash-mismatch') {
             return {
                 ok: false,
@@ -423,16 +492,16 @@ export function installDeclarativePackageAtomically(
             };
         }
 
-        install.audit = audit;
+        installWithIntent.audit = audit;
         const rollback: PackageInstallRollback = {
             tileType: parsed.tileType,
             ...(currentInstalls[parsed.tileType] ? {previous: cloneJson(currentInstalls[parsed.tileType])} : {}),
         };
-        nextInstalls[parsed.tileType] = install;
+        nextInstalls[parsed.tileType] = installWithIntent;
         return {
             ok: true,
             tileType: parsed.tileType,
-            install,
+            install: installWithIntent,
             audit,
             nextInstalls,
             rollback,
@@ -449,7 +518,7 @@ export function installDeclarativePackageAtomically(
 export function installTilePackageAtomically(
     currentInstalls: Record<string, TileInstallRecord>,
     rawPackage: unknown,
-    options: {trustIndex?: PackageTrustIndex; now?: number} = {},
+    options: {trustIndex?: PackageTrustIndex; now?: number; source?: 'official' | 'local'} = {},
 ): PackageInstallTransaction {
     const now = Math.round(options.now ?? Date.now());
     const nextInstalls = cloneJson(currentInstalls);
@@ -459,12 +528,16 @@ export function installTilePackageAtomically(
         && rawPackage.manifest.source === 'sandbox'
             ? parseSandboxTilePackage(rawPackage, now)
             : parseDeclarativeTilePackage(rawPackage, now);
-        const intent = createTileInstallIntent(parsed.install);
         const install: TileInstallRecord = {
             ...parsed.install,
+            source: options.source === 'official' ? 'official' : parsed.install.source,
+        };
+        const intent = createTileInstallIntent(install);
+        const installWithIntent: TileInstallRecord = {
+            ...install,
             ...(intent ? {installIntent: intent} : {}),
         };
-        const audit = auditTileInstallRecord(install, options.trustIndex || EMPTY_PACKAGE_TRUST_INDEX, now);
+        const audit = auditTileInstallRecord(installWithIntent, options.trustIndex || EMPTY_PACKAGE_TRUST_INDEX, now);
         if (audit.status === 'revoked' || audit.status === 'hash-mismatch') {
             return {
                 ok: false,
@@ -474,16 +547,16 @@ export function installTilePackageAtomically(
             };
         }
 
-        install.audit = audit;
+        installWithIntent.audit = audit;
         const rollback: PackageInstallRollback = {
             tileType: parsed.tileType,
             ...(currentInstalls[parsed.tileType] ? {previous: cloneJson(currentInstalls[parsed.tileType])} : {}),
         };
-        nextInstalls[parsed.tileType] = install;
+        nextInstalls[parsed.tileType] = installWithIntent;
         return {
             ok: true,
             tileType: parsed.tileType,
-            install,
+            install: installWithIntent,
             audit,
             nextInstalls,
             rollback,
@@ -507,6 +580,47 @@ export function rollbackTilePackageInstall(
     return next;
 }
 
+export function disableTilePackageInstall(
+    currentInstalls: Record<string, TileInstallRecord>,
+    tileType: string,
+    now = Date.now(),
+): Record<string, TileInstallRecord> {
+    const next = cloneJson(currentInstalls);
+    const install = next[tileType];
+    if (!install) return next;
+    next[tileType] = {
+        ...install,
+        enabled: false,
+        updatedAt: Math.round(now),
+    };
+    return next;
+}
+
+export function enableTilePackageInstall(
+    currentInstalls: Record<string, TileInstallRecord>,
+    tileType: string,
+    now = Date.now(),
+): Record<string, TileInstallRecord> {
+    const next = cloneJson(currentInstalls);
+    const install = next[tileType];
+    if (!install) return next;
+    next[tileType] = {
+        ...install,
+        enabled: true,
+        updatedAt: Math.round(now),
+    };
+    return next;
+}
+
+export function uninstallTilePackageInstall(
+    currentInstalls: Record<string, TileInstallRecord>,
+    tileType: string,
+): Record<string, TileInstallRecord> {
+    const next = cloneJson(currentInstalls);
+    delete next[tileType];
+    return next;
+}
+
 export function createRestoredTileInstallsFromIntents(
     rawIntents: unknown,
     existingInstalls: Record<string, TileInstallRecord> = {},
@@ -520,6 +634,107 @@ export function createRestoredTileInstallsFromIntents(
         if (!next[stub.tileType]) next[stub.tileType] = stub;
     }
     return next;
+}
+
+export async function recoverMissingTilePackagesFromTrustIndex(
+    currentInstalls: Record<string, TileInstallRecord>,
+    rawIntents: unknown,
+    options: {
+        trustIndex: PackageTrustIndex;
+        now?: number;
+        signal?: AbortSignal;
+        fetchPackage?: (url: string, options: {signal?: AbortSignal}) => Promise<unknown>;
+    },
+): Promise<TrustedPackageRecoveryResult> {
+    const now = Math.round(options.now ?? Date.now());
+    const trustIndex = normalizePackageTrustIndex(options.trustIndex);
+    const fetchPackage = options.fetchPackage || ((url: string, fetchOptions: {signal?: AbortSignal}) =>
+        fetchTrustedTilePackage(url, fetchOptions));
+    const nextInstalls = cloneJson(currentInstalls);
+    const attempts: TrustedPackageRecoveryAttempt[] = [];
+    const pushAttempt = (intent: TileInstallIntent, attempt: Omit<TrustedPackageRecoveryAttempt, 'tileType' | 'packageId'>) => {
+        attempts.push({
+            tileType: intent.tileType,
+            packageId: intent.packageId,
+            ...attempt,
+        });
+    };
+
+    const intentValues = isRecord(rawIntents)
+        ? Object.values(rawIntents)
+        : Object.values(currentInstalls)
+            .map((install) => install.installIntent)
+            .filter(Boolean);
+
+    for (const rawIntent of intentValues) {
+        const intent = normalizeTileInstallIntent(rawIntent);
+        if (!intent) continue;
+        const current = nextInstalls[intent.tileType];
+        if (hasRenderablePackageBody(current)) {
+            pushAttempt(intent, {status: 'skipped', message: '本机已存在可渲染组件包'});
+            continue;
+        }
+        if (intent.source !== 'official') {
+            pushAttempt(intent, {status: 'skipped', message: '非官方来源安装意图不自动联网取回'});
+            continue;
+        }
+        const trusted = trustIndex.trustedPackages.find((entry) => intentMatchesTrustedEntry(intent, entry));
+        if (!trusted?.packageUrl) {
+            pushAttempt(intent, {status: 'skipped', message: '受信索引未提供 HTTPS 组件包地址'});
+            continue;
+        }
+
+        try {
+            const rawPackage = await fetchPackage(trusted.packageUrl, {signal: options.signal});
+            const transaction = installTilePackageAtomically(nextInstalls, rawPackage, {
+                trustIndex,
+                now,
+                source: 'official',
+            });
+            if (!transaction.ok) {
+                pushAttempt(intent, {
+                    status: 'failed',
+                    message: transaction.message,
+                    packageUrl: trusted.packageUrl,
+                    ...(transaction.audit ? {audit: transaction.audit} : {}),
+                });
+                continue;
+            }
+            if (transaction.tileType !== intent.tileType) {
+                pushAttempt(intent, {
+                    status: 'failed',
+                    message: '可信源返回的组件类型与同步安装意图不一致',
+                    packageUrl: trusted.packageUrl,
+                    audit: transaction.audit,
+                });
+                continue;
+            }
+            if (transaction.install.sha256 !== intent.sha256 || transaction.install.version !== intent.version) {
+                pushAttempt(intent, {
+                    status: 'failed',
+                    message: '可信源返回的组件版本或 hash 与同步安装意图不一致',
+                    packageUrl: trusted.packageUrl,
+                    audit: transaction.audit,
+                });
+                continue;
+            }
+            nextInstalls[transaction.tileType] = transaction.install;
+            pushAttempt(intent, {
+                status: 'recovered',
+                message: '已从受信索引自动取回组件包',
+                packageUrl: trusted.packageUrl,
+                audit: transaction.audit,
+            });
+        } catch (error) {
+            pushAttempt(intent, {
+                status: 'failed',
+                message: error instanceof Error ? error.message : '可信源组件包取回失败',
+                packageUrl: trusted.packageUrl,
+            });
+        }
+    }
+
+    return {nextInstalls, attempts};
 }
 
 export function exportInstalledPackageForAudit(install: TileInstallRecord) {

@@ -37,6 +37,9 @@
     "https://api.moonshot.cn/*",
     "https://*.jianguoyun.com/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; frame-src https:;"
   },

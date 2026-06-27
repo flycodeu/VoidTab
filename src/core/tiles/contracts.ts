@@ -214,6 +214,7 @@ export interface PackageTrustIndexEntry {
     version?: string;
     sha256: string;
     trustedBy: string;
+    packageUrl?: string;
     signature?: PackageSignature;
     publicKey?: {
         algorithm: 'ed25519';
@@ -234,6 +235,12 @@ export interface PackageTrustIndex {
     version: 1;
     trustedPackages: PackageTrustIndexEntry[];
     revokedPackages: PackageRevocationEntry[];
+}
+
+export interface TilePackageResources {
+    themeCss?: string;
+    readme?: string;
+    assets?: Record<string, string>;
 }
 
 export interface TileInstallIntent {
@@ -358,7 +365,17 @@ export type DeclarativeGranularity = 'second' | 'minute' | 'hour' | 'day';
 export type DeclarativeProvider =
     | {type: 'static'; value: JsonValue}
     | {type: 'clock'; granularity?: DeclarativeGranularity}
-    | {type: 'countdown'; target: DeclarativeValue; granularity?: DeclarativeGranularity};
+    | {type: 'countdown'; target: DeclarativeValue; granularity?: DeclarativeGranularity}
+    | {
+    type: 'fetch';
+    url: DeclarativeValue;
+    method?: 'GET' | 'HEAD';
+    responseType?: 'json' | 'text';
+    refreshMs?: number;
+    cacheTtlMs?: number;
+    timeoutMs?: number;
+    maxBytes?: number;
+};
 
 export interface DeclarativeTilePackageWire {
     kind: 'voidtab.tile-package';
@@ -367,6 +384,7 @@ export interface DeclarativeTilePackageWire {
     views: Record<string, DeclarativeViewNode>;
     providers?: Record<string, DeclarativeProvider>;
     defaultSettings?: Record<string, JsonValue>;
+    resources?: TilePackageResources;
 }
 
 export interface SandboxTileSource {
@@ -385,6 +403,7 @@ export interface SandboxTilePackageWire {
     };
     sandbox: SandboxTileSource;
     defaultSettings?: Record<string, JsonValue>;
+    resources?: TilePackageResources;
 }
 
 export interface BuiltinTileRegistration {
@@ -450,6 +469,7 @@ export interface DeclarativeTileDefinition {
     defaultSettings: Record<string, JsonValue>;
     packageHash: string;
     audit?: PackageAuditRecord;
+    resources?: TilePackageResources;
 }
 
 export interface SandboxTileDefinition {
@@ -470,6 +490,7 @@ export interface SandboxTileDefinition {
     defaultSettings: Record<string, JsonValue>;
     packageHash: string;
     audit?: PackageAuditRecord;
+    resources?: TilePackageResources;
 }
 
 export type TileDefinition =
@@ -511,6 +532,7 @@ export interface TileInstallRecord {
     defaultSettings?: Record<string, JsonValue>;
     installIntent?: TileInstallIntent;
     audit?: PackageAuditRecord;
+    resources?: TilePackageResources;
 }
 
 /** The P0 target shape; not wired into the existing v5 store until P3. */

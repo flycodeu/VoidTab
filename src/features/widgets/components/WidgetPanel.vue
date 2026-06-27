@@ -6,8 +6,10 @@ import {
   PhDownloadSimple,
   PhFlask,
   PhMagnifyingGlass,
+  PhPower,
   PhPlus,
   PhSquaresFour,
+  PhTrash,
   PhUploadSimple,
   PhWarning,
   PhWifiSlash,
@@ -219,6 +221,16 @@ const handleDeclarativeImport = async (event: Event) => {
     if (result.success) {
       activeCategory.value = result.runtime === 'sandbox' ? 'sandbox' : 'declarative';
       toast.success(`已导入${result.runtime === 'sandbox' ? '沙箱 JS' : '声明式'}组件「${result.label}」`);
+      if (result.reauthorization?.needsReauthorization) {
+        const hostText = result.reauthorization.expandedHosts.length
+            ? `新增域名：${result.reauthorization.expandedHosts.join('、')}`
+            : '';
+        const featureText = result.reauthorization.expandedFeatures.length
+            ? `新增能力：${result.reauthorization.expandedFeatures.join('、')}`
+            : '';
+        toast.warning([featureText, hostText].filter(Boolean).join('；') || '组件包新增能力，已要求重新授权');
+      }
+      if ((result.migratedSettingsCount || 0) > 0) toast.success(`已迁移 ${result.migratedSettingsCount} 个实例设置`);
       return;
     }
     toast.error(result.message || '组件导入失败');
@@ -245,6 +257,26 @@ const exportExternalPackage = (definition: ExternalDefinition) => {
   anchor.remove();
   URL.revokeObjectURL(url);
   toast.success(`已导出${externalRuntimeText(definition)}组件「${definition.label}」`);
+};
+
+const packageEnabled = (definition: ExternalDefinition) =>
+    store.config.tileInstalls[definition.id]?.enabled !== false;
+
+const toggleExternalPackage = (definition: ExternalDefinition) => {
+  const ok = packageEnabled(definition)
+      ? store.disableTilePackage(definition.id)
+      : store.enableTilePackage(definition.id);
+  if (!ok) {
+    toast.error('组件包状态更新失败');
+    return;
+  }
+  toast.success(packageEnabled(definition) ? '组件包已启用' : '组件包已禁用');
+};
+
+const uninstallExternalPackage = (definition: ExternalDefinition) => {
+  const ok = store.uninstallTilePackage(definition.id);
+  if (ok) toast.success(`已卸载组件包「${definition.label}」`);
+  else toast.error('组件包卸载失败');
 };
 
 const resolveWidgetIcon = (name: string) => resolvePhosphorIcon(name, 'SquaresFour');
@@ -380,7 +412,7 @@ const onCategoryWheel = (event: WheelEvent) => {
                   v-for="definition in activeExternalDefinitions"
                   :key="definition.id"
                   class="widget-option external-option"
-                  :class="definition.source === 'sandbox' ? 'sandbox-option' : 'declarative-option'"
+                  :class="[definition.source === 'sandbox' ? 'sandbox-option' : 'declarative-option', packageEnabled(definition) ? '' : 'disabled-option']"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div
@@ -411,6 +443,7 @@ const onCategoryWheel = (event: WheelEvent) => {
                   <span class="audit-badge" :class="`audit-${auditStateLabel(definition)}`">
                     {{ auditStateText(definition) }}
                   </span>
+                  <span v-if="!packageEnabled(definition)" class="audit-badge audit-disabled">已禁用</span>
                   <span class="hash-pill">{{ definition.packageHash }}</span>
                 </div>
 
@@ -432,8 +465,24 @@ const onCategoryWheel = (event: WheelEvent) => {
                     </button>
                     <button
                         type="button"
+                        class="icon-btn"
+                        :title="packageEnabled(definition) ? '禁用组件包' : '启用组件包'"
+                        @click="toggleExternalPackage(definition)"
+                    >
+                      <PhPower size="15" weight="bold"/>
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-btn danger-icon-btn"
+                        title="卸载组件包"
+                        @click="uninstallExternalPackage(definition)"
+                    >
+                      <PhTrash size="15" weight="bold"/>
+                    </button>
+                    <button
+                        type="button"
                         class="add-btn"
-                        :disabled="!canAddDeclarative(compatibilityStatus(definition))"
+                        :disabled="!packageEnabled(definition) || !canAddDeclarative(compatibilityStatus(definition))"
                         @click="addExternalToGroup(definition)"
                     >
                       <PhPlus size="15" weight="bold"/>
@@ -743,6 +792,11 @@ const onCategoryWheel = (event: WheelEvent) => {
       var(--settings-panel);
 }
 
+.disabled-option {
+  opacity: 0.72;
+  border-style: dashed;
+}
+
 .widget-icon {
   width: 48px;
   height: 48px;
@@ -798,6 +852,11 @@ const onCategoryWheel = (event: WheelEvent) => {
 .audit-trusted {
   color: rgb(22 163 74);
   background: rgba(22, 163, 74, 0.10);
+}
+
+.audit-disabled {
+  color: rgb(100 116 139);
+  background: rgba(100, 116, 139, 0.12);
 }
 
 .audit-untrusted,
@@ -889,6 +948,11 @@ const onCategoryWheel = (event: WheelEvent) => {
 .icon-btn:hover {
   color: var(--accent-color);
   border-color: rgba(var(--accent-color-rgb), 0.42);
+}
+
+.danger-icon-btn:hover {
+  color: rgb(220 38 38);
+  border-color: rgba(220, 38, 38, 0.36);
 }
 
 .icon-btn:active {

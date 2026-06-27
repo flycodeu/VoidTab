@@ -44,6 +44,7 @@ test('manifest enables favicon fallbacks without broad host permissions', async 
   assert.ok(manifest.host_permissions.includes('https://icons.duckduckgo.com/*'));
   assert.ok(manifest.host_permissions.includes('https://favicon.im/*'));
   assert.ok(manifest.host_permissions.includes('https://unavatar.io/*'));
+  assert.ok(manifest.optional_host_permissions.includes('https://*/*'));
 });
 
 test('favicon probing avoids extension fetch false negatives', async () => {
@@ -1501,18 +1502,21 @@ test('P6 audits package repository installs and preserves sync restore intent', 
   const contracts = await read('src/core/tiles/contracts.ts');
   const packageStore = await read('src/core/tiles/packageStore.ts');
   const packageRepository = await read('src/core/tiles/packageRepository.ts');
+  const packageReleaseGate = await read('src/core/tiles/packageReleaseGate.ts');
   const v6Channel = await read('src/core/sync/v6Channel.ts');
   const recovery = await read('src/core/sync/recovery.ts');
   const revisionMerge = await read('src/core/sync/revisionMerge.ts');
   const scheduler = await read('src/core/sync/scheduler.ts');
   const syncTypes = await read('src/core/sync/types.ts');
   const syncActions = await read('src/stores/config/syncActions.ts');
+  const siteActions = await read('src/stores/config/siteActions.ts');
   const dataTab = await read('src/features/settings/components/tabs/DataTab.vue');
   const syncTab = await read('src/features/settings/components/tabs/SyncTab.vue');
   const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
   const v6 = await read('src/core/config/v6.ts');
 
   assert.match(contracts, /interface PackageTrustIndex/);
+  assert.match(contracts, /packageUrl\?: string/);
   assert.match(contracts, /interface TileInstallIntent/);
   assert.match(contracts, /interface PackageAuditRecord/);
   assert.match(packageStore, /installDeclarativePackageAtomically/);
@@ -1521,9 +1525,13 @@ test('P6 audits package repository installs and preserves sync restore intent', 
   assert.match(packageStore, /hash-mismatch/);
   assert.match(packageStore, /createTileInstallStubFromIntent/);
   assert.match(packageStore, /fetchPackageTrustIndex/);
+  assert.match(packageStore, /recoverMissingTilePackagesFromTrustIndex/);
   assert.match(packageStore, /verifyEd25519PackageSignature/);
   assert.match(packageRepository, /TILE_PACKAGE_REPOSITORY_KEY/);
   assert.match(packageRepository, /hydrateTileInstallsFromRepository/);
+  assert.match(packageReleaseGate, /evaluatePackageReleaseGate/);
+  assert.match(packageReleaseGate, /evaluateTileInstallReleaseGate/);
+  assert.match(packageReleaseGate, /permissionMode/);
   assert.match(v6Channel, /tileInstallIntents/);
   assert.match(v6Channel, /restoreConfigV6FromSyncExportWithReport/);
   assert.match(v6Channel, /mergeConfigV6SyncExportWithLocal/);
@@ -1537,6 +1545,7 @@ test('P6 audits package repository installs and preserves sync restore intent', 
   assert.match(syncActions, /existingInstalls/);
   assert.match(syncActions, /tryApplyRevisionMerge/);
   assert.match(syncActions, /ignoreSyncRecoveryRecord/);
+  assert.match(siteActions, /recoverOfficialTilePackages/);
   assert.match(dataTab, /restoreConfigV6FromSyncExportWithReport/);
   assert.match(dataTab, /hydrateTileInstallsFromRepository/);
   assert.match(syncTab, /recoveryRecords/);
@@ -1551,9 +1560,12 @@ test('P6 audits package repository installs and preserves sync restore intent', 
       createPackageSignaturePayload,
       createTileInstallIntents,
       installDeclarativePackageAtomically,
+      installTilePackageAtomically,
       normalizePackageTrustIndex,
+      recoverMissingTilePackagesFromTrustIndex,
       rollbackTilePackageInstall,
     } from '../../../src/core/tiles/packageStore.ts';
+    import {evaluatePackageReleaseGate, evaluateTileInstallReleaseGate} from '../../../src/core/tiles/packageReleaseGate.ts';
     import {createTilePackageRepositoryRecord, normalizeTilePackageRepository} from '../../../src/core/tiles/packageRepository.ts';
     import {createConfigV6SyncExport, mergeConfigV6SyncExportWithLocal, restoreConfigV6FromSyncExportWithReport} from '../../../src/core/sync/v6Channel.ts';
     import {createSyncRecoveryRecords, ignoreSyncRecoveryRecord, resolveSyncRecoveryRecord} from '../../../src/core/sync/recovery.ts';
@@ -1600,6 +1612,7 @@ test('P6 audits package repository installs and preserves sync restore intent', 
         version: '1.0.0',
         sha256: 'sha256-audit-card',
         trustedBy: 'VoidTab Local Index',
+        packageUrl: 'https://packages.example.test/demo/audit-card.voidtile#ignored',
         signature,
       }],
       revokedPackages: [],
@@ -1610,6 +1623,7 @@ test('P6 audits package repository installs and preserves sync restore intent', 
     });
     if (!normalizedIndex.trustedPackages[0].publicKey) throw new Error('missing normalized public key');
     assert.equal(normalizedIndex.trustedPackages[0].publicKey.keyId, 'voidtab-demo');
+    assert.equal(normalizedIndex.trustedPackages[0].packageUrl, 'https://packages.example.test/demo/audit-card.voidtile');
     const tx = installDeclarativePackageAtomically({}, pack, {trustIndex, now: 100});
     assert.equal(tx.ok, true);
     assert.equal(tx.audit.status, 'trusted');
@@ -1650,8 +1664,24 @@ test('P6 audits package repository installs and preserves sync restore intent', 
     assert.equal(localOnly.ok, true);
     assert.equal(localOnly.audit.status, 'untrusted');
 
+    const releaseGate = evaluatePackageReleaseGate({
+      targets: ['web', 'extension'],
+      minHostVersion: '1.2.0',
+      mobileSupport: 'fallback-layout',
+      capabilities: [{feature: 'networkProxy', level: 'required'}],
+    });
+    assert.equal(releaseGate.ok, true);
+    assert.ok(releaseGate.cases.some((item) => item.target === 'web' && item.permissionMode === 'denied' && item.compatibilityState === 'blocked'));
+    assert.ok(releaseGate.cases.some((item) => item.profile === 'mobile' && item.mobileState === 'fallback-layout'));
+    assert.ok(releaseGate.cases.some((item) => item.hostVersion === '1.1.0' && item.compatibilityState === 'unsupported'));
+    assert.equal(evaluateTileInstallReleaseGate(tx.install).ok, true);
+
     const config = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId: 'p6', migratedAt: 1}).config);
-    config.tileInstalls = tx.nextInstalls;
+    const officialTx = installTilePackageAtomically({}, pack, {trustIndex, now: 104, source: 'official'});
+    assert.equal(officialTx.ok, true);
+    assert.equal(officialTx.install.source, 'official');
+    assert.equal(officialTx.install.installIntent.source, 'official');
+    config.tileInstalls = officialTx.nextInstalls;
     config.layout[0].tiles.push({
       id: 'external-tile-1',
       tileType: 'external:demo/audit-card',
@@ -1670,11 +1700,30 @@ test('P6 audits package repository installs and preserves sync restore intent', 
     const restoredMissing = restoreConfigV6FromSyncExportWithReport(exported, {now: 200});
     assert.equal(restoredMissing.config.tileInstalls['external:demo/audit-card'].enabled, false);
     assert.equal(restoredMissing.config.tileInstalls['external:demo/audit-card'].audit.status, 'missing-package');
+    assert.equal(restoredMissing.config.tileInstalls['external:demo/audit-card'].installIntent.source, 'official');
     assert.ok(restoredMissing.recoveryRecords.some((record) => record.kind === 'missing-package'));
     assert.equal(restoredMissing.config.layout[0].tiles.at(-1).layouts.desktop.w, 2);
 
+    const recoveredFromTrust = await recoverMissingTilePackagesFromTrustIndex(
+      restoredMissing.config.tileInstalls,
+      exported.tileInstallIntents,
+      {
+        trustIndex,
+        now: 205,
+        fetchPackage: async (url) => {
+          assert.equal(url, 'https://packages.example.test/demo/audit-card.voidtile');
+          return pack;
+        },
+      },
+    );
+    assert.equal(recoveredFromTrust.attempts[0].status, 'recovered');
+    assert.equal(recoveredFromTrust.nextInstalls['external:demo/audit-card'].source, 'official');
+    assert.equal(recoveredFromTrust.nextInstalls['external:demo/audit-card'].audit.status, 'trusted');
+    assert.equal(recoveredFromTrust.nextInstalls['external:demo/audit-card'].views.cover.type, 'stack');
+    assert.equal(createSyncRecoveryRecords({...restoredMissing.config, tileInstalls: recoveredFromTrust.nextInstalls}, {now: 206}).some((record) => record.kind === 'missing-package'), false);
+
     const restoredWithLocalPackage = restoreConfigV6FromSyncExportWithReport(exported, {
-      existingInstalls: tx.nextInstalls,
+      existingInstalls: officialTx.nextInstalls,
       now: 201,
     });
     assert.equal(restoredWithLocalPackage.config.tileInstalls['external:demo/audit-card'].views.cover.type, 'stack');
@@ -2726,6 +2775,9 @@ test('runtime config normalizes dirty extension storage before schema validation
     assert.ok(normalized.runtime.siteList.groups.default_group);
     assert.deepEqual(normalized.runtime.photo.widgets, {});
     assert.deepEqual(normalized.runtime.widgetState, {});
+    if (!normalized.runtime.tileGrants) throw new Error('missing tileGrants');
+    assert.deepEqual(normalized.runtime.tileGrants.grants, {});
+    assert.deepEqual(normalized.runtime.tileGrants.revoked, {});
   `);
 });
 
@@ -2781,6 +2833,9 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
   const contracts = await read('src/core/tiles/contracts.ts');
   const solver = await read('src/core/tiles/layoutSolver.ts');
   const compatibility = await read('src/core/tiles/compatibility.ts');
+  const capabilityGrants = await read('src/core/tiles/capabilityGrants.ts');
+  const tileHost = await read('src/features/home/components/TileHost.vue');
+  const advanced = await read('src/features/settings/components/tabs/AdvancedTab.vue');
 
   assert.equal(manifestSchema.properties.manifestVersion.const, 1);
   assert.ok(manifestSchema.properties.id.pattern.includes('/'));
@@ -2791,11 +2846,27 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
   assert.match(contracts, /interface TileConfigV6Draft/);
   assert.match(solver, /export function solveCanvasLayout/);
   assert.match(compatibility, /export function evaluateTileCompatibility/);
+  assert.match(capabilityGrants, /createTileCapabilityGrantRecord/);
+  assert.match(capabilityGrants, /describeExpandedHostCapabilities/);
+  assert.match(capabilityGrants, /requestOptionalExtensionHostPermission/);
+  assert.match(tileHost, /compatibilityStatus/);
+  assert.match(tileHost, /compatibilityBlocksRender/);
+  assert.match(tileHost, /restoreAuthorization/);
+  assert.match(tileHost, /requestOptionalHostPermission/);
+  assert.match(advanced, /组件能力授权/);
+  assert.match(advanced, /revokeTileCapabilities/);
 
   await runBundledTypeScript('p0-tile-contracts', `
     import assert from 'node:assert/strict';
     import {findFirstAvailablePlacement, solveCanvasLayout} from '../../../src/core/tiles/layoutSolver.ts';
     import {compareVersions, evaluateTileCompatibility} from '../../../src/core/tiles/compatibility.ts';
+    import {
+      createTileCapabilityGrantRecord,
+      describeExpandedHostCapabilities,
+      getGrantedTileHostFeatures,
+      listMissingTileCapabilityGrants,
+      requestOptionalExtensionHostPermission,
+    } from '../../../src/core/tiles/capabilityGrants.ts';
     import type {HostCapabilities, TileCompatibility} from '../../../src/core/tiles/contracts.ts';
 
     const base = {
@@ -2869,6 +2940,35 @@ test('P0 tile contracts freeze schemas, deterministic layout behavior, and compa
     const enabledHost = {...host, features: {...host.features, networkProxy: true}};
     assert.equal(evaluateTileCompatibility({compatibility: requiredNetwork, host: enabledHost}).state, 'blocked');
     assert.equal(evaluateTileCompatibility({compatibility: requiredNetwork, host: enabledHost, grantedRequiredFeatures: ['networkProxy']}).state, 'supported');
+    const grantDefinition = {
+      id: 'external:demo/card',
+      compatibility: requiredNetwork,
+    };
+    const grant = createTileCapabilityGrantRecord(
+      {id:'tile-1', tileType:'external:demo/card'},
+      grantDefinition,
+      ['networkProxy'],
+      123,
+    );
+    assert.deepEqual(grant.features, ['networkProxy']);
+    assert.deepEqual(getGrantedTileHostFeatures({'tile:tile-1': grant}, 'tile-1'), ['networkProxy']);
+    assert.deepEqual(listMissingTileCapabilityGrants(grantDefinition, {'tile:tile-1': grant}, 'tile-1'), []);
+    assert.equal(
+      evaluateTileCompatibility({
+        compatibility: requiredNetwork,
+        host: enabledHost,
+        grantedRequiredFeatures: getGrantedTileHostFeatures({'tile:tile-1': grant}, 'tile-1'),
+      }).state,
+      'supported',
+    );
+    const expanded = describeExpandedHostCapabilities(
+      {manifest: {compatibility: requiredNetwork, capabilities: [{type:'network', hosts:['https://api.old.test']}]} as any},
+      {manifest: {compatibility: requiredNetwork, capabilities: [{type:'network', hosts:['https://api.old.test'],}, {type:'network', hosts:['https://api.new.test']}]} as any},
+    );
+    assert.equal(expanded.needsReauthorization, true);
+    assert.deepEqual(expanded.expandedHosts, ['https://api.new.test/*']);
+    const optional = await requestOptionalExtensionHostPermission('https://api.example.test');
+    assert.equal(optional.ok, false);
     const optionalClipboard: TileCompatibility = {
       ...requiredNetwork,
       capabilities: [{feature: 'clipboardWrite', level: 'optional'}],
@@ -2884,33 +2984,73 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
   const dataProvider = await read('src/core/tiles/declarativeData.ts');
   const declarativeHost = await read('src/features/home/components/DeclarativeTileHost.vue');
   const declarativeNode = await read('src/features/home/components/DeclarativeViewNode.vue');
+  const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
+  const adaptationMatrix = await read('src/core/tiles/adaptationMatrix.ts');
+  const performancePolicy = await read('src/core/tiles/performancePolicy.ts');
+  const officialSource = await read('src/core/tiles/officialSource.ts');
+  const sandboxRuntime = await read('src/core/tiles/sandboxRuntime.ts');
+  const settingsSchema = await read('src/core/tiles/settingsSchema.ts');
+  const packageStore = await read('src/core/tiles/packageStore.ts');
   const v6 = await read('src/core/config/v6.ts');
 
   assert.match(contracts, /type DeclarativeProvider/);
   assert.match(contracts, /type: 'countdown'/);
+  assert.match(contracts, /type: 'fetch'/);
+  assert.match(contracts, /interface TilePackageResources/);
   assert.match(contracts, /type: 'relative-time'/);
   assert.match(parser, /normalizeProviders/);
+  assert.match(parser, /TILE_PACKAGE_DIRECTORY_KIND/);
   assert.match(dataProvider, /evaluateDeclarativeProviders/);
+  assert.match(dataProvider, /evaluateDeclarativeNetworkProviders/);
+  assert.match(dataProvider, /hasDeclarativeNetworkProviders/);
   assert.match(dataProvider, /declarativeProvidersRefreshMs/);
   assert.match(dataProvider, /formatDeclarativeRelativeTime/);
   assert.match(declarativeHost, /declarativeProvidersRefreshMs/);
+  assert.match(declarativeHost, /evaluateDeclarativeNetworkProviders/);
   assert.match(declarativeHost, /useDocumentVisibility/);
+  assert.match(declarativeHost, /IntersectionObserver/);
+  assert.match(declarativeHost, /isIntersecting/);
+  assert.match(declarativeHost, /intersectionObserver\.observe\(rootRef\.value\)/);
+  assert.match(declarativeHost, /visibility\.value === 'hidden' \|\| !isIntersecting\.value/);
+  assert.match(declarativeHost, /repairSettings/);
+  assert.match(declarativeHost, /migrateComponentTileSettings/);
   assert.match(declarativeNode, /node\.type === 'spacer'/);
   assert.match(declarativeNode, /node\.type === 'divider'/);
   assert.match(declarativeNode, /formattedValue/);
+  assert.match(widgetPanel, /reauthorization/);
+  assert.match(widgetPanel, /disableTilePackage/);
+  assert.match(widgetPanel, /uninstallTilePackage/);
+  assert.match(adaptationMatrix, /evaluateTileAdaptationMatrix/);
+  assert.match(performancePolicy, /DEFAULT_TILE_PERFORMANCE_POLICY/);
+  assert.match(performancePolicy, /scheduleDeclarativeDataRequest/);
+  assert.match(officialSource, /fetchOfficialTileTrustIndex/);
+  assert.match(sandboxRuntime, /getSandboxResourceIsolationReport/);
+  assert.match(sandboxRuntime, /evaluateSandboxMarketReview/);
+  assert.match(settingsSchema, /migrateTileSettingsAcrossSchemaVersions/);
+  assert.match(packageStore, /disableTilePackageInstall/);
+  assert.match(packageStore, /uninstallTilePackageInstall/);
   assert.match(v6, /validateComponentSettingsAgainstSchema/);
 
   await runBundledTypeScript('declarative-providers-nodes', `
     import assert from 'node:assert/strict';
     import {parseDeclarativeTilePackage, createDeclarativeTileDefinitionFromInstall} from '../../../src/core/tiles/declarativePackage.ts';
+    import {createSandboxTileDefinitionFromInstall} from '../../../src/core/tiles/sandboxPackage.ts';
     import {
       createDeclarativeDataContext,
       evaluateDeclarativeProviders,
       declarativeProvidersRefreshMs,
+      evaluateDeclarativeNetworkProviders,
       formatDeclarativeNumber,
       formatDeclarativeDate,
       formatDeclarativeRelativeTime,
+      hasDeclarativeNetworkProviders,
     } from '../../../src/core/tiles/declarativeData.ts';
+    import {evaluateTileAdaptationMatrix} from '../../../src/core/tiles/adaptationMatrix.ts';
+    import {getOfficialTileTrustIndexUrl, fetchOfficialTileTrustIndex} from '../../../src/core/tiles/officialSource.ts';
+    import {assertTileImageAssetBudget, resetTilePerformanceSchedulersForTest, scheduleDeclarativeDataRequest, shouldThrottleTileDragFrame} from '../../../src/core/tiles/performancePolicy.ts';
+    import {evaluateSandboxMarketReview, getSandboxResourceIsolationReport} from '../../../src/core/tiles/sandboxRuntime.ts';
+    import {disableTilePackageInstall, enableTilePackageInstall, uninstallTilePackageInstall} from '../../../src/core/tiles/packageStore.ts';
+    import {migrateTileSettingsAcrossSchemaVersions} from '../../../src/core/tiles/settingsSchema.ts';
     import {normalizeConfigV6, validateConfigForSaveV6} from '../../../src/core/config/v6.ts';
     import {defaultConfig} from '../../../src/core/config/default.ts';
     import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
@@ -2921,9 +3061,10 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
         sizes:{default:{w:2,h:2}, min:{w:1,h:1}, max:{w:4,h:4}},
         renderer:{kind:'declarative', coverView:'cover'},
         settingsSchema:{type:'object', required:['targetAt'], properties:{ targetAt:{type:'string', default:'2030-01-01T00:00:00Z'}, count:{type:'number', default:0}, enabled:{type:'boolean', default:false} }},
-        compatibility:{targets:['web','extension'], minHostVersion:'1.0.0', mobileSupport:'full'},
+        capabilities:[{type:'network', hosts:['https://api.example.test']}],
+        compatibility:{targets:['web','extension'], minHostVersion:'1.0.0', mobileSupport:'full', capabilities:[{feature:'networkProxy', level:'required'}]},
         integrity:{sha256:'sha256-cd', assets:{}} },
-      providers: { now:{type:'clock', granularity:'second'}, deadline:{type:'countdown', target:{from:'settings', path:'targetAt'}, granularity:'minute'}, label:{type:'static', value:'hi'} },
+      providers: { now:{type:'clock', granularity:'second'}, deadline:{type:'countdown', target:{from:'settings', path:'targetAt'}, granularity:'minute'}, label:{type:'static', value:'hi'}, remote:{type:'fetch', url:'https://api.example.test/quote', responseType:'json', refreshMs:60000, cacheTtlMs:60000} },
       views: { cover: { type:'column', gap:6, children:[
         {type:'row', children:[{type:'icon', name:'Clock'}, {type:'spacer', size:6}, {type:'text', text:'t'}]},
         {type:'divider'},
@@ -2937,6 +3078,8 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
     assert.equal(parsed.install.providers.now.type, 'clock');
     assert.equal(parsed.install.providers.deadline.type, 'countdown');
     assert.equal(parsed.install.providers.label.value, 'hi');
+    assert.equal(parsed.install.providers.remote.type, 'fetch');
+    assert.equal(hasDeclarativeNetworkProviders(parsed.install.providers), true);
     const cover = parsed.install.views.cover;
     assert.equal(cover.type, 'column');
     assert.equal(cover.children[0].type, 'row');
@@ -2959,6 +3102,64 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
     assert.deepEqual(evaluateDeclarativeProviders(parsed.install.providers, {settings, now: fixedNow}), data);
     assert.equal(declarativeProvidersRefreshMs(parsed.install.providers), 1000);
     assert.equal(declarativeProvidersRefreshMs({a:{type:'static', value:1}}), 0);
+    assert.equal(declarativeProvidersRefreshMs({remote:{type:'fetch', url:'https://api.example.test', refreshMs:60000}}), 60000);
+    resetTilePerformanceSchedulersForTest();
+    let fetchCount = 0;
+    const remoteData = await evaluateDeclarativeNetworkProviders(parsed.install.providers, {
+      settings,
+      now: fixedNow,
+      cacheKeyPrefix: 'network-provider-test',
+      networkAllowed: true,
+      allowedOrigins: ['https://api.example.test'],
+      fetcher: (async () => {
+        fetchCount += 1;
+        return {ok:true, status:200, url:'https://api.example.test/quote', text: async () => '{"quote":"ok"}'} as any;
+      }) as any,
+    });
+    const remote = remoteData.remote as any;
+    assert.equal(fetchCount, 1);
+    assert.equal(remote.ok, true);
+    assert.deepEqual(remote.body, {quote:'ok'});
+    const blockedRemote = await evaluateDeclarativeNetworkProviders(parsed.install.providers, {networkAllowed:false});
+    assert.equal((blockedRemote.remote as any).status, 'error');
+
+    const dataPng = 'data:image/png;base64,aGVsbG8=';
+    const directoryPack = {
+      kind:'voidtab.tile-package-directory', packageVersion:1,
+      files:{
+        'manifest.json': {...pack.manifest, id:'demo/resource-card', integrity:{sha256:'sha256-resource', assets:{'assets/icon.png':'hash'}}},
+        'views.json': {cover:{type:'column', children:[{type:'image', src:'assets/icon.png', alt:'icon'}]}},
+        'providers.json': {label:{type:'static', value:'resource'}},
+        'theme.css': ':root { --tile-accent-color: #0ea5e9; }',
+        'README.md': '# Resource Card',
+        'assets/icon.png': dataPng,
+      },
+    };
+    const resourceParsed = parseDeclarativeTilePackage(directoryPack, 1001);
+    if (!resourceParsed.install.resources) throw new Error('missing resources');
+    assert.equal(resourceParsed.install.resources.readme, '# Resource Card');
+    if (!resourceParsed.install.resources.assets) throw new Error('missing resource assets');
+    assert.equal(resourceParsed.install.resources.assets['assets/icon.png'], dataPng);
+    assert.equal((resourceParsed.install.views.cover as any).children[0].src, dataPng);
+
+    const resourceDefinition = createDeclarativeTileDefinitionFromInstall(resourceParsed.install);
+    if (!resourceDefinition) throw new Error('missing resource definition');
+    const adaptation = evaluateTileAdaptationMatrix([resourceDefinition]);
+    assert.equal(adaptation.ok, true);
+    assert.equal(adaptation.checks.length, 4);
+    assert.equal(getOfficialTileTrustIndexUrl('https://packages.example.test/index.json#hash'), 'https://packages.example.test/index.json');
+    const fallbackIndex = await fetchOfficialTileTrustIndex({fallbackIndex:{version:1, trustedPackages:[], revokedPackages:[]}});
+    assert.equal(fallbackIndex.version, 1);
+    assert.equal(assertTileImageAssetBudget(dataPng).ok, true);
+    assert.equal(shouldThrottleTileDragFrame(100, {now: 110}), true);
+    resetTilePerformanceSchedulersForTest();
+    assert.equal(await scheduleDeclarativeDataRequest('unit-request', async () => 'ok'), 'ok');
+    await assert.rejects(() => scheduleDeclarativeDataRequest('unit-request', async () => 'blocked'), /throttled/);
+    const isolation = getSandboxResourceIsolationReport();
+    assert.equal(isolation.hardCpuLimit, false);
+    assert.equal(isolation.hardMemoryLimit, false);
+    const sandboxReview = evaluateSandboxMarketReview({source:'sandbox', capabilities:[{type:'network', hosts:['https://api.example.test']}]} as any);
+    assert.equal(sandboxReview.allowed, false);
 
     const ctx = createDeclarativeDataContext({settings:{}}, {}, fixedNow);
     ctx.host.locale = 'en-US';
@@ -2966,6 +3167,16 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
     assert.equal(formatDeclarativeNumber('x', ctx), '');
     assert.match(formatDeclarativeDate('2020-01-01T00:00:00Z', ctx, {dateStyle:'short', timeStyle:'none'}), /20/);
     assert.equal(typeof formatDeclarativeRelativeTime(fixedNow + 3600000, ctx), 'string');
+
+    const migrated = migrateTileSettingsAcrossSchemaVersions(
+      {oldName:'Ada', stale:true},
+      {type:'object', properties:{oldName:{type:'string'}}},
+      {type:'object', additionalProperties:false, properties:{name:{type:'string', default:'Guest', 'x-voidtab-from':'oldName'}, enabled:{type:'boolean', default:true}}},
+    );
+    assert.equal(migrated.migrated, true);
+    assert.equal(migrated.settings.name, 'Ada');
+    assert.equal(migrated.settings.enabled, true);
+    assert.deepEqual(migrated.renamed, [{from:'oldName', to:'name'}]);
 
     const base = normalizeConfigV6(migrateV5ToV6(defaultConfig, {deviceId:'t', migratedAt:1}).config);
     assert.ok(base.layout.length > 0);
@@ -2979,6 +3190,25 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
     const okResult = validateConfigForSaveV6(base);
     assert.equal(okResult.ok, true);
     assert.ok(okResult.warnings.some((w) => w.includes('enabled')));
+
+    const disabledInstalls = disableTilePackageInstall(base.tileInstalls, parsed.tileType, 2000);
+    assert.equal(disabledInstalls[parsed.tileType].enabled, false);
+    assert.equal(disabledInstalls[parsed.tileType].updatedAt, 2000);
+    assert.equal(createDeclarativeTileDefinitionFromInstall(disabledInstalls[parsed.tileType]), null);
+    assert.ok(createDeclarativeTileDefinitionFromInstall(disabledInstalls[parsed.tileType], {includeDisabled:true}));
+    const enabledInstalls = enableTilePackageInstall(disabledInstalls, parsed.tileType, 3000);
+    assert.equal(enabledInstalls[parsed.tileType].enabled, true);
+    const removedInstalls = uninstallTilePackageInstall(enabledInstalls, parsed.tileType);
+    assert.equal(removedInstalls[parsed.tileType], undefined);
+
+    const sandboxInstall = {
+      tileType:'external:demo/sandbox', runtime:'sandbox', source:'local', version:'1.0.0', sha256:'hash-sandbox',
+      enabled:false, installedAt:1, updatedAt:1, defaultSettings:{},
+      manifest:{...pack.manifest, id:'demo/sandbox', source:'sandbox', renderer:{kind:'sandbox', entry:'main.js'}},
+      sandbox:{entry:'main.js', scripts:{'main.js':'console.log(1);'}},
+    };
+    assert.equal(createSandboxTileDefinitionFromInstall(sandboxInstall as any), null);
+    assert.ok(createSandboxTileDefinitionFromInstall(sandboxInstall as any, {includeDisabled:true}));
 
     const bad = JSON.parse(JSON.stringify(base));
     bad.tileInstalls[parsed.tileType].defaultSettings = {count:0};

@@ -1,5 +1,5 @@
 import type {SyncProfile} from '../sync/types';
-import type {TileInstallRecord, TileInstance, TileLayouts, Workspace, WorkspaceLayout} from '../tiles/contracts';
+import type {HostFeature, TileInstallRecord, TileInstance, TileLayouts, Workspace, WorkspaceLayout} from '../tiles/contracts';
 
 /** The canonical persisted/runtime configuration schema. */
 export const CURRENT_CONFIG_VERSION = 6 as const;
@@ -428,6 +428,10 @@ export type RuntimeConfig = {
         crashes?: Record<string, SandboxCrashRecord>;
         limits?: SandboxRuntimeLimits;
     };
+    tileGrants?: {
+        grants?: Record<string, TileCapabilityGrantRecord>;
+        revoked?: Record<string, TileCapabilityGrantRecord>;
+    };
     siteList: {
         groups: Record<string, SiteListGroup>;
         widgets: Record<string, SiteListWidgetRef>;
@@ -473,6 +477,15 @@ export interface SandboxRuntimeLimits {
     maxCrashCount: number;
     crashWindowMs: number;
     fuseDurationMs: number;
+}
+
+export interface TileCapabilityGrantRecord {
+    tileId: string;
+    tileType: string;
+    packageId: string;
+    features: HostFeature[];
+    grantedAt: number;
+    updatedAt: number;
 }
 
 
