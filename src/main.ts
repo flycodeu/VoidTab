@@ -56,6 +56,7 @@ requestAnimationFrame(() => {
  */
 function loadWebFontsDeferred() {
     if (typeof document === 'undefined') return;
+    if (typeof chrome !== 'undefined' && !!chrome.runtime?.id) return;
     const inject = () => {
         if (document.querySelector('link[data-voidtab-fonts]')) return;
         const preconnect = document.createElement('link');

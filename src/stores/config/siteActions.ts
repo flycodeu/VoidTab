@@ -916,6 +916,13 @@ export const createSiteActions = (
         let mergedGroups = 0;
         let newGroups = 0;
         let skipped = 0;
+        const existingKeys = new Set(
+            config.value.layout
+                .flatMap((group) => group.tiles)
+                .filter(isSiteTile)
+                .map((tile) => createBookmarkUrlKey(tile.url))
+                .filter(Boolean),
+        );
 
         const buildTile = (item: {title: string; url: string}) => createCanonicalSiteTile({
             id: createUniqueTileId(),
@@ -941,26 +948,22 @@ export const createSiteActions = (
             );
 
             if (existing) {
-                const have = new Set(
-                    existing.tiles.filter(isSiteTile).map((tile) => createBookmarkUrlKey(tile.url)),
-                );
                 let groupAdded = 0;
                 for (const item of items) {
                     const key = createBookmarkUrlKey(item.url);
-                    if (have.has(key)) { skipped += 1; continue; }
-                    have.add(key);
+                    if (existingKeys.has(key)) { skipped += 1; continue; }
+                    existingKeys.add(key);
                     existing.tiles.push(buildTile(item));
                     added += 1;
                     groupAdded += 1;
                 }
                 if (groupAdded) mergedGroups += 1;
             } else {
-                const have = new Set<string>();
                 const tiles = [];
                 for (const item of items) {
                     const key = createBookmarkUrlKey(item.url);
-                    if (have.has(key)) { skipped += 1; continue; }
-                    have.add(key);
+                    if (existingKeys.has(key)) { skipped += 1; continue; }
+                    existingKeys.add(key);
                     tiles.push(buildTile(item));
                     added += 1;
                 }

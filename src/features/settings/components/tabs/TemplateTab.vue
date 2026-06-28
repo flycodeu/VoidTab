@@ -27,19 +27,6 @@ import {
 const store = useConfigStore();
 const toast = useToast();
 
-const sidebarLabels = {
-  left: '左侧',
-  right: '右侧',
-  top: '顶部',
-  bottom: '底部',
-} as const;
-
-const densityLabels = {
-  compact: '紧凑',
-  normal: '常规',
-  comfortable: '舒适',
-} as const;
-
 const previewItems: Array<{ id: string; icon: Component; rgb: string }> = [
   {id: 'web', icon: PhGlobeSimple, rgb: '37, 99, 235'},
   {id: 'chat', icon: PhChatCircleDots, rgb: '14, 165, 233'},
@@ -54,29 +41,6 @@ const previewNavItems: Array<{ id: string; icon: Component }> = [
   {id: 'work', icon: PhBriefcase},
   {id: 'code', icon: PhCode},
   {id: 'more', icon: PhFolder},
-];
-
-const modeLabel = (preset: TemplatePreset) => {
-  if (preset.layout.siteLayoutMode === 'icon') return '图标';
-  const {w, h} = preset.layout.siteCard;
-  if (w === 1 && h === 1) return '方块';
-  return `${w}x${h} 卡片`;
-};
-
-const groupModeLabel = (preset: TemplatePreset) => {
-  return preset.layout.showAllGroupsInMain ? '连续分组' : '当前分组';
-};
-
-const templateMeta = (preset: TemplatePreset) => [
-  modeLabel(preset),
-  preset.layout.showSidebar ? sidebarLabels[preset.layout.sidebarPos] : '隐藏分组',
-  groupModeLabel(preset),
-  densityLabels[preset.layout.density],
-];
-
-const templateNumbers = (preset: TemplatePreset) => [
-  `图标 ${preset.layout.iconSize}px`,
-  `间距 ${preset.layout.gap}px`,
 ];
 
 const previewSidebar = (preset: TemplatePreset) => preset.layout.showSidebar ? preset.layout.sidebarPos : 'hidden';
@@ -199,16 +163,11 @@ const applyPreset = async (preset: TemplatePreset) => {
             </span>
           </div>
 
-          <p class="template-summary">{{ preset.summary }}</p>
-
           <div class="template-subline">
-            <span v-for="item in templateMeta(preset)" :key="item">{{ item }}</span>
+            <span v-for="item in preset.highlights" :key="item">{{ item }}</span>
           </div>
 
           <div class="template-footer">
-            <div class="template-numbers">
-              <span v-for="item in templateNumbers(preset)" :key="item">{{ item }}</span>
-            </div>
             <button
                 type="button"
                 class="apply-action"
@@ -265,16 +224,16 @@ const applyPreset = async (preset: TemplatePreset) => {
 .template-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 14px;
 }
 
 .template-option {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 13px;
-  min-height: 344px;
-  padding: 14px;
+  gap: 11px;
+  min-height: 286px;
+  padding: 12px;
   border-radius: 12px;
   border: 1px solid rgba(var(--overlay-rgb), 0.30);
   background:
@@ -322,10 +281,10 @@ const applyPreset = async (preset: TemplatePreset) => {
   position: relative;
   display: grid;
   gap: 10px;
-  min-height: 156px;
+  min-height: 138px;
   aspect-ratio: 16 / 8.2;
   border-radius: 10px;
-  padding: 13px;
+  padding: 11px;
   overflow: hidden;
   border: 1px solid rgba(var(--overlay-rgb), 0.22);
   background:
@@ -589,7 +548,7 @@ const applyPreset = async (preset: TemplatePreset) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .template-title-row {
@@ -624,27 +583,13 @@ const applyPreset = async (preset: TemplatePreset) => {
   text-overflow: ellipsis;
 }
 
-.template-summary {
-  display: -webkit-box;
-  min-height: 38px;
-  margin: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.58;
-  font-weight: 650;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .template-subline {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.template-subline span,
-.template-numbers span {
+.template-subline span {
   display: inline-flex;
   align-items: center;
   min-height: 22px;
@@ -673,19 +618,11 @@ const applyPreset = async (preset: TemplatePreset) => {
 
 .template-footer {
   margin-top: auto;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid rgba(var(--overlay-rgb), 0.10);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.template-numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
+  justify-content: flex-end;
 }
 
 .apply-action {

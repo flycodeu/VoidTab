@@ -60,7 +60,7 @@ export const templatePresets: TemplatePreset[] = [
         id: 'regular',
         name: '常规布局',
         audience: '默认习惯',
-        summary: '左侧分组、常规间距、图标入口，连续浏览所有分组。',
+        summary: '左侧分组，连续浏览。',
         accent: '#007AFF',
         layout: {
             sidebarPos: 'left',
@@ -83,13 +83,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: true,
             },
         },
-        highlights: ['左侧分组', '常规图标', '连续分组'],
+        highlights: ['左侧分组', '常规密度', '连续分组'],
     },
     {
         id: 'compact',
         name: '紧凑布局',
         audience: '入口较多',
-        summary: '缩小图标、间距和文字尺寸，保留左侧分组，适合在一屏内放下更多网站。',
+        summary: '左侧分组，高密度。',
         accent: '#64748B',
         layout: {
             sidebarPos: 'left',
@@ -112,13 +112,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: true,
             },
         },
-        highlights: ['小图标', '低间距', '当前分组'],
+        highlights: ['左侧分组', '高密度', '当前分组'],
     },
     {
         id: 'classic',
         name: '历史常规',
         audience: '旧版默认',
-        summary: '保留未提交前的旧默认分组思路：常用工具、游戏和 AI，作为独立布局类型存在。',
+        summary: '旧版默认分组。',
         accent: '#0EA5E9',
         layout: {
             sidebarPos: 'left',
@@ -141,13 +141,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: true,
             },
         },
-        highlights: ['旧默认分组', '单分组视图', '左侧导航'],
+        highlights: ['旧默认', '左侧分组', '当前分组'],
     },
     {
         id: 'google',
         name: 'Google 风格',
         audience: '搜索优先',
-        summary: '保留单个当前分组和轻量图标区，分组导航默认收起，更接近搜索页式新标签。',
+        summary: '搜索优先。',
         accent: '#4285F4',
         layout: {
             sidebarPos: 'bottom',
@@ -170,13 +170,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: false,
             },
         },
-        highlights: ['当前分组', '轻量图标', '隐藏分组栏'],
+        highlights: ['搜索优先', '隐藏分组', '当前分组'],
     },
     {
         id: 'firefox',
         name: 'Firefox 磁贴',
         audience: '方块入口',
-        summary: '把站点呈现为方块磁贴，分组导航默认收起，首屏更像 Firefox 常用站点区域。',
+        summary: '方块磁贴。',
         accent: '#FF7139',
         layout: {
             sidebarPos: 'bottom',
@@ -199,13 +199,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: false,
             },
         },
-        highlights: ['1x1 磁贴', '标题内收', '隐藏分组栏'],
+        highlights: ['1x1 磁贴', '隐藏分组', '当前分组'],
     },
     {
         id: 'edge',
         name: 'Edge 卡片',
         audience: '信息密度',
-        summary: '使用更宽的横向卡片、清晰边界和域名备注，适合办公入口和资料管理。',
+        summary: '横向卡片。',
         accent: '#0078D4',
         layout: {
             sidebarPos: 'left',
@@ -228,13 +228,13 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: true,
             },
         },
-        highlights: ['3x1 卡片', '域名备注', '连续分组'],
+        highlights: ['3x1 卡片', '左侧分组', '连续分组'],
     },
     {
         id: 'itab',
         name: 'iTab 桌面',
         audience: '自定义桌面',
-        summary: '更大的自由图标和宽松间距，保留所有分组连续浏览，适合把新标签页当桌面使用。',
+        summary: '桌面图标。',
         accent: '#10B981',
         layout: {
             sidebarPos: 'left',
@@ -257,7 +257,7 @@ export const templatePresets: TemplatePreset[] = [
                 showDomain: true,
             },
         },
-        highlights: ['大图标', '宽松间距', '桌面感'],
+        highlights: ['大图标', '左侧分组', '连续分组'],
     },
 ];
 

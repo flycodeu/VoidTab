@@ -236,7 +236,7 @@ onUnmounted(() => {
   <div v-if="!store.isLoaded" class="fixed inset-0 flex items-center justify-center bg-[#121212] text-white z-[9999]">
     <div class="flex flex-col items-center gap-4">
       <PhSpinner size="40" class="animate-spin text-[var(--accent-color)]"/>
-      <span class="font-mono tracking-widest text-xs opacity-70 animate-pulse">SYSTEM INITIALIZING...</span>
+      <span class="font-mono tracking-widest text-xs opacity-70 animate-pulse">正在初始化...</span>
     </div>
   </div>
 
@@ -335,15 +335,22 @@ onUnmounted(() => {
 
       <div class="relative z-[100]">
         <SettingsModal
+            v-if="showSettings"
             :show="showSettings"
             @close="showSettings = false"
             @openPrivacyVault="openPrivacyVaultFromSettings"
         />
-        <WidgetPanel :isOpen="showWidgetModal" :activeGroupId="widgetPanelGroupId || activeGroupId" @close="showWidgetModal = false"/>
-        <PrivacyVaultModal :show="showPrivacyVault" @close="showPrivacyVault = false"/>
-        <DesignerModal :show="showDesigner" @close="showDesigner = false"/>
+        <WidgetPanel
+            v-if="showWidgetModal"
+            :isOpen="showWidgetModal"
+            :activeGroupId="widgetPanelGroupId || activeGroupId"
+            @close="showWidgetModal = false"
+        />
+        <PrivacyVaultModal v-if="showPrivacyVault" :show="showPrivacyVault" @close="showPrivacyVault = false"/>
+        <DesignerModal v-if="showDesigner" :show="showDesigner" @close="showDesigner = false"/>
 
         <SiteDialog
+            v-if="dialogLogic.siteDialog.show"
             :show="dialogLogic.siteDialog.show"
             :isEdit="dialogLogic.siteDialog.isEdit"
             :initialData="dialogLogic.siteDialog.initialData"
@@ -352,6 +359,7 @@ onUnmounted(() => {
         />
 
         <GroupDialog
+            v-if="dialogLogic.groupDialog.show"
             :show="dialogLogic.groupDialog.show"
             :isEdit="dialogLogic.groupDialog.isEdit"
             :initialData="dialogLogic.groupDialog.initialData"

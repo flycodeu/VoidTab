@@ -658,7 +658,7 @@ watch(() => props.isOpen, async (val) => {
               <PhChatCircleText size="64" weight="thin"/>
               <div class="text-center">
                 <p class="font-medium">开始新的对话</p>
-                <p class="text-xs mt-2 opacity-60">AI Content may be inaccurate</p>
+                <p class="text-xs mt-2 opacity-60">AI 内容可能不准确</p>
               </div>
             </div>
           </div>

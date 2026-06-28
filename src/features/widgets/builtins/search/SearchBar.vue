@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, computed, watch} from 'vue';
+import {ref, computed, watch, defineAsyncComponent} from 'vue';
 import {useConfigStore} from '../../../../stores/useConfigStore';
 import {useHistoryStore} from '../../../../stores/useHistoryStore';
 import {onClickOutside} from '@vueuse/core';
@@ -8,11 +8,12 @@ import {
   PhSparkle, PhAppWindow, PhArrowSquareOut,
   PhClockCounterClockwise
 } from '@phosphor-icons/vue';
-import AiChatPanel from "../../../ai/components/AiChatPanel.vue";
-import HistoryModal from './HistoryModal.vue';
 import {resolvePhosphorIcon} from '../../../../shared/icons/phosphorIconMap';
 import HomeIcon from '../../../../shared/icons/HomeIcon.vue';
 import {findLocalResults} from '../../../../core/search/searchUtils.ts';
+
+const AiChatPanel = defineAsyncComponent(() => import('../../../ai/components/AiChatPanel.vue'));
+const HistoryModal = defineAsyncComponent(() => import('./HistoryModal.vue'));
 
 const store = useConfigStore();
 const historyStore = useHistoryStore();
@@ -364,11 +365,13 @@ const handleSearch = () => {
 
     <Teleport to="body">
       <AiChatPanel
+          v-if="showAiModal"
           :is-open="showAiModal"
           :initial-query="aiQuery"
           @close="showAiModal = false"
       />
       <HistoryModal
+          v-if="showHistoryModal"
           :show="showHistoryModal"
           @close="showHistoryModal = false"
       />

@@ -288,10 +288,18 @@ const handleBookmarkUpload = (event: Event) => {
 };
 
 // ===============================
-// 浏览器书签双向同步（仅扩展环境）
+// 浏览器书签直读/写入（仅扩展环境）
 // ===============================
 const browserSyncSupported = isBrowserBookmarksSupported();
 const browserSyncBusy = ref(false);
+const bookmarkImportModeLabel = computed(() =>
+    browserSyncSupported ? '扩展直读 / HTML 文件' : 'HTML 文件导入',
+);
+const bookmarkSyncHint = computed(() =>
+    browserSyncSupported
+        ? '同名分组合并，重复网址跳过；写入浏览器时保存到「VoidTab」文件夹。'
+        : '普通网页没有书签 API，直读或写入浏览器需使用扩展版。',
+);
 
 const ensureBookmarkPermission = async () => {
   if (await hasBookmarksPermission()) return true;
@@ -447,64 +455,49 @@ const executeResetAll = async () => {
       </div>
     </div>
 
-    <!-- 导入浏览器书签 -->
+    <!-- 导入 / 同步浏览器书签 -->
     <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
       <div class="flex items-center gap-3 mb-2">
         <div class="p-2 rounded-lg bg-orange-500/10 text-orange-500">
           <PhBookmarkSimple size="20" weight="duotone"/>
         </div>
-        <div>
-          <h3 class="font-bold text-sm">导入浏览器书签</h3>
-          <p class="text-[10px] opacity-60">支持 Chrome/Edge/Firefox HTML</p>
+        <div class="min-w-0">
+          <h3 class="font-bold text-sm">浏览器书签</h3>
+          <p class="text-[10px] opacity-60">{{ bookmarkImportModeLabel }}</p>
         </div>
       </div>
 
-      <div class="flex justify-between items-center">
-        <span class="text-xs opacity-50">将文件夹解析为分组</span>
+      <p class="text-[11px] opacity-55 leading-relaxed">
+        {{ bookmarkSyncHint }}
+      </p>
+
+      <div class="flex flex-wrap gap-2">
+        <button
+            v-if="browserSyncSupported"
+            :disabled="browserSyncBusy"
+            @click="syncFromBrowser"
+            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-orange-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
+        >
+          <PhArrowsClockwise size="14" weight="bold"/>
+          从浏览器合并
+        </button>
         <button
             @click="triggerBookmarkImport"
             class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-orange-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2"
         >
           <PhFileArrowUp size="14" weight="bold"/>
-          选择 HTML 文件
-          <input type="file" ref="bookmarkInput" class="hidden" accept=".html" @change="handleBookmarkUpload"/>
-        </button>
-      </div>
-    </div>
-
-    <!-- 浏览器书签双向同步（仅扩展环境） -->
-    <div v-if="browserSyncSupported" class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
-      <div class="flex items-center gap-3 mb-2">
-        <div class="p-2 rounded-lg bg-blue-500/10 text-blue-500">
-          <PhArrowsClockwise size="20" weight="duotone"/>
-        </div>
-        <div class="min-w-0">
-          <h3 class="font-bold text-sm">浏览器书签同步</h3>
-          <p class="text-[10px] opacity-60">合并而非覆盖：同名分组合并、按网址去重、缺失分组自动新增</p>
-        </div>
-      </div>
-
-      <p class="text-[11px] opacity-55 leading-relaxed">
-        首次使用会请求「书签」权限。从浏览器同步会把现有书签合并进当前分组；导出会写入浏览器的「VoidTab」书签夹，二者都只新增、不删除、不覆盖。
-      </p>
-
-      <div class="flex flex-wrap gap-2">
-        <button
-            :disabled="browserSyncBusy"
-            @click="syncFromBrowser"
-            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-blue-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
-        >
-          <PhArrowsClockwise size="14" weight="bold"/>
-          从浏览器同步（合并）
+          导入 HTML
         </button>
         <button
+            v-if="browserSyncSupported"
             :disabled="browserSyncBusy"
             @click="exportToBrowser"
-            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-blue-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
+            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-orange-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
         >
           <PhUploadSimple size="14" weight="bold"/>
-          导出到浏览器书签
+          写入浏览器
         </button>
+        <input type="file" ref="bookmarkInput" class="hidden" accept=".html" @change="handleBookmarkUpload"/>
       </div>
     </div>
 

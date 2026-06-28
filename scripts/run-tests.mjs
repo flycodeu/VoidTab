@@ -59,7 +59,7 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /FETCHABLE_ICON_PROBE_HOSTS/);
   assert.match(icon, /probeIconCandidateBatch/);
   assert.match(icon, /parallelism: options\?\.parallelism/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*15/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*16/);
   assert.match(icon, /'google\.com': 'https:\/\/www\.google\.com\/favicon\.ico'/);
   assert.match(icon, /'notion\.so': 'https:\/\/www\.notion\.so\/images\/favicon\.ico'/);
   assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
@@ -92,7 +92,7 @@ test('web auto icons avoid CORP-blocked direct site favicons', async () => {
   assert.doesNotMatch(icon, /buildExternalCandidates\(thirdPartyDomains,\s*\{webSafeOnly:\s*true\}\)/);
   assert.match(icon, /first_party_proxy/);
   assert.match(icon, /buildFirstPartyProxyCandidates/);
-  assert.match(icon, /candidate\.provider === 'browser_favicon' \|\| candidate\.provider === 'preset'/);
+  assert.match(icon, /candidate\.provider === 'browser_favicon'\s*\|\|\s*candidate\.provider === 'preset'\s*\|\|\s*candidate\.provider === 'first_party_proxy'/);
   assert.match(siteIcon, /url\.includes\('\/api\/favicon'\) \? 5200 : 1600/);
   assert.match(icon, /if \(privateOrLocal\) \{\s*candidates\.push\(\.\.\.buildSiteOriginCandidates\(origin\)\);/);
   assert.doesNotMatch(preloader, /if \(isExtensionContext\(\)\) return true/);
