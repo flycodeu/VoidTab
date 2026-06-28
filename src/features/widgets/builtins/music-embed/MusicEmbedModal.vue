@@ -176,7 +176,10 @@ function applyPreset(p: MusicPreset) {
 
           <!-- 内置歌曲快速选择 -->
           <div class="flex flex-col gap-2">
-            <label class="text-[10px] font-bold text-white/55 uppercase tracking-wider">内置歌曲</label>
+            <label class="text-[10px] font-bold text-white/55 uppercase tracking-wider">内置歌曲 / 免版权电台</label>
+            <p class="text-[10px] leading-relaxed text-white/45">
+              内置为免版权电台与示例曲目。华语流行受版权限制无法提供免费直链，可在下方用官方 Spotify / YouTube 歌单链接添加正版来源。
+            </p>
             <div class="max-h-28 overflow-y-auto flex flex-wrap gap-1.5 pr-1 custom-scroll">
               <button
                   v-for="p in MUSIC_PRESETS"

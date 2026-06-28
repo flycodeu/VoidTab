@@ -290,6 +290,264 @@ export function exportDraftPackageJson(install: TileInstallRecord): string | nul
 }
 
 // ---------------------------------------------------------------------------
+// AI assist — build prompts for an external/in-app model and map the model's
+// JSON reply back onto an editable draft. Kept here (not in the Vue panel) so
+// the prompt contract and the parser stay testable and in sync with the draft.
+// ---------------------------------------------------------------------------
+
+/** The fixed runtime contract a generated widget must follow. Shown verbatim to the model. */
+export const DESIGNER_AI_SYSTEM_PROMPT = `你是 VoidTab「组件设计器」的代码生成助手。VoidTab 的自定义组件运行在隔离的 iframe 沙箱里，使用固定的 VoidWidget 运行时 API。请根据用户描述生成一个完整、可直接运行、弹窗可正常交互的组件，并以严格 JSON 返回。
+
+══════ 最重要（弹窗交互，违反必然无法交互）══════
+A. 弹窗 HTML 里【绝对不能】写任何 JavaScript：禁止 <script>、onclick、oninput、onsubmit、href="javascript:" 等。这些会被 CSP 拦截、静默失效，是「弹窗点了没反应」的头号原因。
+B. 弹窗与封面交互的【唯一】方式：在弹窗 HTML 的可点击元素上加属性 data-vt-action="动作名"，宿主会把点击转成对封面 modalEvent(ctx, event) 的回调。所有逻辑都写在封面 JS 的 modalEvent 里。
+C. 只要弹窗里出现了任意 data-vt-action，封面就【必须】定义 modalEvent(ctx, event)，并为每一个动作名写处理分支；处理完数据后【必须】调用 VoidTabDesigner.updateModal(ctx, {...}) 重新渲染弹窗，否则界面不会更新。
+D. 触发规则：
+   - 普通按钮用 <button type="button" data-vt-action="x">，点击即触发。
+   - 表单用 <form data-vt-action="save">，在提交时（含其内 <button type="submit">）触发，并把表单字段一起带出。
+   - 【不要】给 input / select / textarea 本身加 data-vt-action（会被忽略，且会破坏原生时间/日期/下拉选择器）。
+E. 回调参数 event = { name, data, source }：
+   - name：动作名（data-vt-action 的值）。
+   - data：离触发点最近的 <form> 的字段，键是 input/select/textarea 的 name，值是字符串；同名多值是数组；复选框勾选为 'on'、未勾选为 ''。
+   - source.dataset：被点击元素的 data-* 集合（如删除某行时用 data-id="..."，在 event.source.dataset.id 读取）。
+F. 弹窗 DOM 在每次 updateModal 时整体替换，因此【不要】缓存弹窗内的节点引用；每次都用数据重新生成完整 HTML。所有插入 HTML 的动态文本必须用 VoidTabDesigner.escapeHtml(value) 转义。
+
+══════ 运行时契约 ══════
+1. 封面 JS 必须调用 VoidWidget.define({ ... })，在 mount(ctx) 里创建 DOM 挂到 ctx.root。可选生命周期：update(ctx)、pause()、resume()、unmount()、modalEvent(ctx, event)。状态存在 this 上（如 this._state、this._timer）。有定时器/轮询必须在 pause 停、resume 启、unmount 清理。
+2. ctx：ctx.root（封面根节点）、ctx.size.placement.w/h（当前格子尺寸，用于自适应 1×1 / 2×2 / 宽卡）、ctx.settings（实例设置对象）、ctx.storage.get/set/remove(key[,value])（异步、本实例私有、单值约 8KB，返回 Promise，用 await）、ctx.network.fetch(url,init)（需声明 network 能力且域名在白名单，仅 GET/HEAD）、ctx.openUrl(url)、ctx.copyText(text)、ctx.notify(title,options)、ctx.emit(name,data)。这些 Promise 调用都计入每分钟配额，不要放进每秒定时器。
+3. 弹窗助手（系统已注入，禁止自行定义 VoidTabDesigner）：VoidTabDesigner.openModal(ctx, {title, html, width, height, scrollTarget}) 首次打开；VoidTabDesigner.updateModal(ctx, {title, html, scrollTarget}) 原地刷新（不重载、保留滚动）。强烈建议写一个 openDetail(ctx, self, updateOnly) 函数：updateOnly 为假走 openModal、为真走 updateModal；封面点击时 openDetail(ctx, this)，modalEvent 处理完 openDetail(ctx, this, true)。
+4. 禁止外部依赖、import、远程脚本；全部逻辑写进封面 JS，只用普通 DOM API。
+5. 样式适配主题变量：--vt-accent、--vt-text、--vt-muted、--vt-surface；封面根节点宽高 100%、已 border-box。
+
+══════ 视觉设计（务必遵循，否则界面会很丑）══════
+颜色：一律用主题变量派生，禁止写死纯黑/纯白或随意取色。
+- 表面 = color-mix(in srgb, var(--vt-surface) 90%, transparent)
+- 描边 = color-mix(in srgb, var(--vt-text) 12%, transparent)
+- 次要文字 = var(--vt-muted)；强调/高亮 = var(--vt-accent)；正文 = var(--vt-text)
+间距与圆角：卡片内边距 14–18px、元素间距 8–12px；圆角卡片 16–18px、控件 10–12px、标签 999px。
+字号：标题 13–15px/900，正文 12–13px，辅助 11px；时间和数字加 font-variant-numeric: tabular-nums。
+封面：根节点 width/height:100%，用 grid 布局，按 ctx.size.placement.w/h 自适应（小尺寸隐藏次要信息）；卡片用「渐变 + 半透明表面 + 1px 描边 + 轻微内阴影」，hover 要有细微反馈。务必填满卡片、不要留大片空白或裸文字。
+弹窗：信息较多时优先「主从布局」——左列列表（约 240px）+ 右列详情（flex:1），窄屏（max-width:640px）塌成单列。列表项要有 hover 和选中态 .is-active；要有空状态占位；输入框/按钮统一风格，按钮分 主(实心 accent) / 次(描边) / 危险(红) 三类；标签用 chip 小圆角。
+可直接采用的参考 CSS（按需改类名）：
+.detail-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px;height:100%;min-height:0}
+.list{display:grid;gap:6px;align-content:start;overflow:auto;padding-right:2px}
+.list-item{display:grid;gap:3px;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--vt-text) 12%,transparent);background:color-mix(in srgb,var(--vt-surface) 78%,transparent);cursor:pointer;text-align:left}
+.list-item:hover{border-color:color-mix(in srgb,var(--vt-accent) 40%,transparent)}
+.list-item.is-active{border-color:var(--vt-accent);background:color-mix(in srgb,var(--vt-accent) 12%,transparent)}
+.pane{display:flex;flex-direction:column;gap:10px;min-width:0}
+.input,.textarea{width:100%;border:1px solid color-mix(in srgb,var(--vt-text) 12%,transparent);border-radius:10px;background:color-mix(in srgb,var(--vt-surface) 82%,transparent);color:var(--vt-text);font:inherit;outline:none}
+.input{height:34px;padding:0 10px}.textarea{min-height:160px;padding:10px;resize:vertical;line-height:1.6}
+.input:focus,.textarea:focus{border-color:var(--vt-accent)}
+.btn{height:34px;padding:0 14px;border-radius:10px;font-weight:800;cursor:pointer;border:1px solid color-mix(in srgb,var(--vt-text) 12%,transparent);background:color-mix(in srgb,var(--vt-surface) 80%,transparent);color:var(--vt-text)}
+.btn.primary{border-color:transparent;background:var(--vt-accent);color:#fff}
+.btn.danger{border-color:color-mix(in srgb,#ef4444 40%,transparent);color:#ef4444}
+.chip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--vt-text) 12%,transparent);background:color-mix(in srgb,var(--vt-surface) 74%,transparent);font-size:11px;color:var(--vt-muted)}
+.empty{display:grid;place-items:center;height:100%;color:var(--vt-muted);font-size:12px}
+@media(max-width:640px){.detail-layout{grid-template-columns:1fr}}
+
+══════ 完整可运行示例（必须照此结构生成，尤其是 modalEvent + openDetail 的闭环）══════
+// 一个可增删的「今日待办」：封面显示数量，点击打开弹窗增删。
+VoidWidget.define({
+  async mount(ctx) {
+    this._root = document.createElement('button');
+    this._root.type = 'button';
+    this._root.className = 'todo-card';
+    ctx.root.appendChild(this._root);
+    this._items = await loadItems(ctx);
+    renderCover(this);
+    this._root.addEventListener('click', () => openDetail(ctx, this));
+  },
+  async modalEvent(ctx, event) {
+    if (event.name === 'add') {
+      const text = readValue(event.data, 'newText');
+      if (text) this._items.push({ id: 'i' + Date.now(), text: text });
+    } else if (event.name === 'delete') {
+      const id = event.source && event.source.dataset ? event.source.dataset.id : '';
+      this._items = this._items.filter((it) => it.id !== id);
+    }
+    await saveItems(ctx, this._items);
+    renderCover(this);
+    openDetail(ctx, this, true); // 关键：处理完用 updateModal 原地刷新弹窗
+  },
+});
+
+function readValue(data, key) {
+  const v = data && data[key];
+  return String(Array.isArray(v) ? v[0] : (v || '')).trim();
+}
+async function loadItems(ctx) {
+  const saved = await ctx.storage.get('items');
+  return Array.isArray(saved) ? saved : [];
+}
+async function saveItems(ctx, items) {
+  try { await ctx.storage.set('items', items); } catch (e) {}
+}
+function renderCover(self) {
+  self._root.textContent = '待办 ' + self._items.length + ' 项';
+}
+function openDetail(ctx, self, updateOnly) {
+  const esc = VoidTabDesigner.escapeHtml;
+  const rows = self._items.map((it) =>
+    '<li class="row"><span>' + esc(it.text) + '</span>' +
+    '<button type="button" data-vt-action="delete" data-id="' + esc(it.id) + '">删除</button></li>'
+  ).join('') || '<li class="empty">还没有待办</li>';
+  const html =
+    '<main class="todo-detail">' +
+      '<ul class="list">' + rows + '</ul>' +
+      '<form class="add" data-vt-action="add">' +
+        '<input name="newText" placeholder="新增一项待办">' +
+        '<button type="submit">添加</button>' +
+      '</form>' +
+    '</main>';
+  const payload = { title: '今日待办', html: html };
+  return updateOnly ? VoidTabDesigner.updateModal(ctx, payload) : VoidTabDesigner.openModal(ctx, payload);
+}
+
+══════ 生成前自检（务必满足）══════
+- 弹窗里每个可交互元素都用 data-vt-action，没有任何内联 JS / <script>。
+- modalEvent 覆盖了弹窗里出现的每一个 data-vt-action 动作名。
+- 每个分支改完数据后都调用了 updateModal（或经 openDetail(..., true)）刷新。
+- 需要持久化就声明 storage 并用 await ctx.storage 读写。
+- entryCode 是合法的 JS；返回的整体是合法 JSON（字符串里的换行、引号、反斜杠都正确转义）。
+
+══════ 输出格式 ══════
+只返回一个 JSON 对象（可放在 \`\`\`json 代码块中），不要输出任何解释文字。字段：
+{
+  "label": "组件名（中文）",
+  "description": "一句话描述",
+  "icon": "Phosphor 图标名，如 Clock / ListChecks / ChartLine",
+  "entryCode": "封面 JS，含 VoidWidget.define(...) 与 modalEvent；不要包含 VoidTabDesigner 的定义",
+  "styles": "封面 CSS",
+  "modalHtml": "弹窗默认 HTML（静态示例即可，运行时由 openModal/updateModal 覆盖；同样禁止内联 JS）",
+  "modalStyles": "弹窗 CSS",
+  "modalWidth": "如 760px 或 80vw",
+  "modalHeight": "如 620px 或 72vh",
+  "permissions": ["storage"],
+  "networkHosts": [],
+  "settingsSchema": null
+}
+permissions 仅可从 ["storage","network","openExternal","clipboard.write","notifications"] 中选取，按需声明，不需要就给 []。settingsSchema 为可选 JSON Schema 对象，不需要就给 null。`;
+
+/** Sections surfaced in the AI panel so the user can read/copy each prompt piece. */
+export interface DesignerAiPromptSection {
+    id: string;
+    label: string;
+    text: string;
+}
+
+/** The per-request prompt describing what the user wants, plus the draft's fixed context. */
+export function buildDesignerAiUserPrompt(description: string, draft: DesignerDraft): string {
+    const want = description.trim() || '一个实用的小组件';
+    const d = draft.sizes.default;
+    const min = draft.sizes.min;
+    return `请为 VoidTab 设计一个组件。需求：${want}
+
+约束：
+- 组件 ID 固定为「${draft.id.trim() || 'my.widget'}」，请勿更改。
+- 默认尺寸 ${d.w}×${d.h}，最小 ${min.w}×${min.h}，请让封面在该范围内自适应。
+- 界面用中文，视觉精致，配色走主题变量。
+- 提供配套弹窗用于查看/编辑数据：弹窗里所有交互都用 data-vt-action（禁止内联 JS / <script>），并在封面 modalEvent 里为每个动作写处理分支，处理后用 updateModal 刷新弹窗（参考系统示例的 openDetail 闭环）。
+- 若需要持久化数据，请声明 storage 能力并用 await ctx.storage 读写。`;
+}
+
+/** The full copy-paste prompt (system + request) for use on an external AI platform. */
+export function buildDesignerAiFullPrompt(description: string, draft: DesignerDraft): string {
+    return `${DESIGNER_AI_SYSTEM_PROMPT}\n\n———— 需求 ————\n${buildDesignerAiUserPrompt(description, draft)}`;
+}
+
+/** Prompt pieces for the "查看/复制提示词" UI. */
+export function buildDesignerAiPromptSections(description: string, draft: DesignerDraft): DesignerAiPromptSection[] {
+    return [
+        {id: 'system', label: '系统提示词（运行时契约）', text: DESIGNER_AI_SYSTEM_PROMPT},
+        {id: 'request', label: '需求提示词', text: buildDesignerAiUserPrompt(description, draft)},
+        {id: 'full', label: '完整提示词（粘贴到外部 AI）', text: buildDesignerAiFullPrompt(description, draft)},
+    ];
+}
+
+const AI_PERMISSION_SET = new Set<SandboxRuntimePermission>([
+    'storage', 'network', 'openExternal', 'clipboard.write', 'notifications',
+]);
+
+/** Pull the first JSON object out of a model reply (handles ```json fences and surrounding prose). */
+function extractJsonObject(text: string): string | null {
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = (fence ? fence[1] : text).trim();
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    return candidate.slice(start, end + 1);
+}
+
+export interface DesignerAiParseResult {
+    ok: boolean;
+    error?: string;
+    draftPatch?: Partial<DesignerDraft>;
+}
+
+/** Parse a model reply into a draft patch (does not mutate). Validate the merged draft via compileDraft. */
+export function parseDesignerAiResponse(text: string): DesignerAiParseResult {
+    const json = extractJsonObject(String(text || ''));
+    if (!json) return {ok: false, error: '未在回复中找到 JSON 内容'};
+
+    let parsed: Record<string, unknown>;
+    try {
+        parsed = JSON.parse(json) as Record<string, unknown>;
+    } catch {
+        return {ok: false, error: 'AI 返回的 JSON 无法解析，请检查格式或重试'};
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {ok: false, error: 'AI 返回的不是一个对象'};
+    }
+
+    const str = (value: unknown) => (typeof value === 'string' ? value : '');
+    const patch: Partial<DesignerDraft> = {};
+
+    if (typeof parsed.label === 'string' && parsed.label.trim()) patch.label = parsed.label.trim().slice(0, 60);
+    if (typeof parsed.description === 'string') patch.description = parsed.description.trim().slice(0, 200);
+    if (typeof parsed.icon === 'string' && parsed.icon.trim()) patch.icon = parsed.icon.trim().slice(0, 40);
+    if (typeof parsed.entryCode === 'string') patch.entryCode = parsed.entryCode;
+    if (typeof parsed.styles === 'string') patch.styles = parsed.styles;
+    if (typeof parsed.html === 'string') patch.html = parsed.html;
+    if (typeof parsed.modalHtml === 'string') patch.modalHtml = parsed.modalHtml;
+    if (typeof parsed.modalStyles === 'string') patch.modalStyles = parsed.modalStyles;
+    if (typeof parsed.modalWidth === 'string' && parsed.modalWidth.trim()) patch.modalWidth = parsed.modalWidth.trim();
+    if (typeof parsed.modalHeight === 'string' && parsed.modalHeight.trim()) patch.modalHeight = parsed.modalHeight.trim();
+
+    if (Array.isArray(parsed.permissions)) {
+        patch.permissions = parsed.permissions
+            .map((item) => str(item).trim() as SandboxRuntimePermission)
+            .filter((item) => AI_PERMISSION_SET.has(item));
+    }
+    if (Array.isArray(parsed.networkHosts)) {
+        patch.networkHosts = parsed.networkHosts.map((item) => str(item).trim()).filter(Boolean);
+    }
+    if (parsed.settingsSchema && typeof parsed.settingsSchema === 'object' && !Array.isArray(parsed.settingsSchema)) {
+        patch.settingsSchemaText = JSON.stringify(parsed.settingsSchema, null, 2);
+    }
+
+    if (!patch.entryCode || !patch.entryCode.includes('VoidWidget.define')) {
+        return {ok: false, error: 'AI 回复缺少有效的封面 JS（需包含 VoidWidget.define）'};
+    }
+    return {ok: true, draftPatch: patch};
+}
+
+/** Merge an AI patch onto a draft, keeping identity fields (id/version/sizes/category) from the base. */
+export function applyDesignerAiPatch(base: DesignerDraft, patch: Partial<DesignerDraft>): DesignerDraft {
+    return {
+        ...base,
+        ...patch,
+        id: base.id,
+        version: base.version,
+        category: base.category,
+        sizes: {
+            default: cloneSize(base.sizes.default),
+            min: cloneSize(base.sizes.min),
+            max: cloneSize(base.sizes.max),
+        },
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Starter templates — one-click examples loaded into the editor.
 // ---------------------------------------------------------------------------
 
@@ -1317,7 +1575,299 @@ const fetchModalStyles = `${themedModalBaseStyles}
 @media(max-width:560px){.network-pin-row{grid-template-columns:1fr}.network-pin-row button{width:max-content}}
 `;
 
+const memoCode = `// 备忘录：封面显示备忘条数与当前时间；点击打开主从布局弹窗（左列列表 / 右侧详情），支持新增、编辑、删除。
+const MEMO_KEY = 'memo-notes-v1';
+
+VoidWidget.define({
+  async mount(ctx) {
+    const root = document.createElement('button');
+    root.className = 'memo-cover';
+    root.type = 'button';
+    root.innerHTML =
+      '<div class="mc-head"><span class="mc-kicker">备忘录</span><b class="mc-count">0</b></div>' +
+      '<div class="mc-clock"><strong class="mc-time">--:--</strong><small class="mc-date"></small></div>' +
+      '<div class="mc-foot"><span class="mc-latest">还没有备忘</span></div>';
+    ctx.root.appendChild(root);
+
+    const state = {root, notes: await loadNotes(ctx), activeId: ''};
+    if (state.notes.length) state.activeId = state.notes[0].id;
+    this._state = state;
+    this._render = () => renderCover(ctx, state);
+    root.addEventListener('click', () => openDetail(ctx, state));
+    this._render();
+    this._timer = setInterval(this._render, 1000);
+  },
+  pause() { if (this._timer) clearInterval(this._timer); this._timer = null; },
+  resume() {
+    if (this._timer || !this._render) return;
+    this._render();
+    this._timer = setInterval(this._render, 1000);
+  },
+  unmount() { if (this._timer) clearInterval(this._timer); this._timer = null; },
+  async modalEvent(ctx, event) {
+    const state = this._state;
+    if (!state) return;
+    if (event.name === 'select-note') {
+      const id = event.source && event.source.dataset ? event.source.dataset.id : '';
+      if (id) state.activeId = id;
+      openDetail(ctx, state, true);
+      return;
+    }
+    if (event.name === 'add-note') {
+      const note = {
+        id: 'n-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        title: '新备忘',
+        content: '',
+        tags: [],
+        updatedAt: new Date().toISOString(),
+      };
+      state.notes.unshift(note);
+      state.activeId = note.id;
+      await saveNotes(ctx, state.notes);
+      renderCover(ctx, state);
+      openDetail(ctx, state, true, '[data-vt-field="title"]');
+      return;
+    }
+    if (event.name === 'save-note') {
+      const note = findNote(state, state.activeId);
+      if (note) {
+        note.title = readValue(event.data, 'title').trim().slice(0, 60) || '未命名';
+        note.content = readValue(event.data, 'content').slice(0, 4000);
+        note.tags = parseTags(readValue(event.data, 'tags'));
+        note.updatedAt = new Date().toISOString();
+        state.notes = sortNotes(state.notes);
+        state.activeId = note.id;
+      }
+      await saveNotes(ctx, state.notes);
+      renderCover(ctx, state);
+      openDetail(ctx, state, true);
+      return;
+    }
+    if (event.name === 'delete-note') {
+      const id = event.source && event.source.dataset ? event.source.dataset.id : '';
+      state.notes = state.notes.filter((n) => n.id !== id);
+      if (state.activeId === id) state.activeId = state.notes.length ? state.notes[0].id : '';
+      await saveNotes(ctx, state.notes);
+      renderCover(ctx, state);
+      openDetail(ctx, state, true);
+    }
+  },
+});
+
+function normalizeNote(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return {
+    id: String(s.id || ('n-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6))),
+    title: String(s.title || '未命名').slice(0, 60),
+    content: String(s.content || '').slice(0, 4000),
+    tags: Array.isArray(s.tags) ? s.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 6) : [],
+    updatedAt: String(s.updatedAt || new Date().toISOString()),
+  };
+}
+
+function sortNotes(notes) {
+  return notes.slice().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+function normalizeNotes(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  return sortNotes(list.map(normalizeNote)).slice(0, 100);
+}
+
+async function loadNotes(ctx) {
+  try { return normalizeNotes(await ctx.storage.get(MEMO_KEY)); } catch (e) { return []; }
+}
+
+async function saveNotes(ctx, notes) {
+  try { await ctx.storage.set(MEMO_KEY, notes); } catch (e) {}
+}
+
+function findNote(state, id) {
+  return state.notes.find((n) => n.id === id) || null;
+}
+
+function readValue(data, key) {
+  const v = data && data[key];
+  return String(Array.isArray(v) ? v[0] : (v || ''));
+}
+
+function parseTags(text) {
+  return String(text || '').split(/[,，\\s]+/).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+}
+
+function fmtClock(date) {
+  return date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
+}
+function fmtDate(date) {
+  return date.toLocaleDateString('zh-CN', {month: 'long', day: 'numeric', weekday: 'short'});
+}
+function fmtUpdated(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
+}
+
+function renderCover(ctx, state) {
+  if (!state.root) return;
+  const now = new Date();
+  const p = ctx.size && ctx.size.placement ? ctx.size.placement : {w: 2, h: 2};
+  state.root.classList.toggle('is-compact', p.w <= 1 || p.h <= 1);
+  state.root.querySelector('.mc-count').textContent = String(state.notes.length);
+  state.root.querySelector('.mc-time').textContent = fmtClock(now);
+  state.root.querySelector('.mc-date').textContent = fmtDate(now);
+  const latest = state.notes[0];
+  state.root.querySelector('.mc-latest').textContent = latest ? ('最近：' + latest.title) : '还没有备忘，点击新增';
+}
+
+function openDetail(ctx, state, updateOnly, scrollTarget) {
+  const esc = VoidTabDesigner.escapeHtml;
+  const count = state.notes.length;
+  const active = findNote(state, state.activeId);
+
+  const list = count
+    ? state.notes.map((n) => {
+        const meta = [fmtUpdated(n.updatedAt)].concat(n.tags.slice(0, 2)).filter(Boolean).join(' · ');
+        return '<button type="button" class="list-item memo-item' + (n.id === state.activeId ? ' is-active' : '') + '" data-vt-action="select-note" data-id="' + esc(n.id) + '">' +
+            '<b class="memo-item-title">' + esc(n.title || '未命名') + '</b>' +
+            '<span class="memo-item-meta">' + esc(meta || '尚未编辑') + '</span>' +
+          '</button>';
+      }).join('')
+    : '<div class="empty">还没有备忘</div>';
+
+  const pane = active
+    ? '<form class="pane memo-form" data-vt-action="save-note">' +
+        '<input class="input memo-title-input" name="title" data-vt-field="title" value="' + esc(active.title) + '" placeholder="标题" maxlength="60" autocomplete="off">' +
+        '<div class="memo-updated">更新于 ' + esc(fmtUpdated(active.updatedAt) || '—') + '</div>' +
+        '<textarea class="textarea" name="content" placeholder="在这里输入备忘内容...">' + esc(active.content) + '</textarea>' +
+        '<input class="input" name="tags" value="' + esc(active.tags.join(', ')) + '" placeholder="标签，用逗号分隔" autocomplete="off">' +
+        (active.tags.length ? '<div class="memo-tags">' + active.tags.map((t) => '<span class="chip">' + esc(t) + '</span>').join('') + '</div>' : '') +
+        '<div class="memo-actions">' +
+          '<button type="submit" class="btn primary" data-vt-action="save-note">保存</button>' +
+          '<button type="button" class="btn danger" data-vt-action="delete-note" data-id="' + esc(active.id) + '">删除</button>' +
+        '</div>' +
+      '</form>'
+    : '<div class="pane"><div class="empty">从左侧选择一条备忘，或点击右上角「新增」</div></div>';
+
+  const html =
+    '<main class="memo-detail">' +
+      '<header class="memo-bar">' +
+        '<div class="memo-bar-title"><b>备忘录</b><span>' + count + ' 条</span></div>' +
+        '<button type="button" class="btn primary" data-vt-action="add-note">＋ 新增</button>' +
+      '</header>' +
+      '<div class="detail-layout">' +
+        '<div class="list memo-list">' + list + '</div>' +
+        pane +
+      '</div>' +
+    '</main>';
+
+  const payload = {title: '备忘录', html: html, scrollTarget: scrollTarget || ''};
+  return updateOnly ? VoidTabDesigner.updateModal(ctx, payload) : VoidTabDesigner.openModal(ctx, payload);
+}`;
+
+const memoStyles = `.memo-cover{
+  position:relative;overflow:hidden;width:100%;height:100%;box-sizing:border-box;
+  display:grid;grid-template-rows:auto 1fr auto;gap:10px;padding:16px;text-align:left;cursor:pointer;
+  border:1px solid color-mix(in srgb,var(--vt-text,#e8eaed) 12%,transparent);border-radius:inherit;color:var(--vt-text,#e8eaed);
+  background:
+    linear-gradient(135deg,color-mix(in srgb,var(--vt-accent,#3b82f6) 14%,transparent),transparent 56%),
+    color-mix(in srgb,var(--vt-surface,rgba(255,255,255,.08)) 92%,transparent);
+  box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 16%,transparent);
+  transition:transform .16s ease,border-color .16s ease;
+}
+.memo-cover:hover{border-color:color-mix(in srgb,var(--vt-accent,#3b82f6) 42%,transparent)}
+.memo-cover:active{transform:scale(.99)}
+.mc-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mc-kicker{font-size:11px;font-weight:900;color:var(--vt-accent,#3b82f6)}
+.mc-count{min-width:26px;height:24px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:13px;font-weight:950;font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--vt-accent,#3b82f6) 16%,transparent);color:var(--vt-accent,#3b82f6)}
+.mc-clock{display:flex;align-items:baseline;gap:8px;min-width:0}
+.mc-time{font-size:clamp(30px,22vw,54px);line-height:1;font-weight:950;font-variant-numeric:tabular-nums}
+.mc-date{font-size:12px;font-weight:800;color:var(--vt-muted,rgba(232,234,237,.66));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-foot{min-width:0}
+.mc-latest{display:block;font-size:12px;line-height:1.35;color:var(--vt-muted,rgba(232,234,237,.66));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memo-cover.is-compact{grid-template-rows:auto auto;gap:6px;padding:12px;place-content:center;text-align:center}
+.memo-cover.is-compact .mc-foot,.memo-cover.is-compact .mc-date{display:none}
+.memo-cover.is-compact .mc-clock{justify-content:center}
+`;
+
+const memoModalHtml = `<main class="memo-detail">
+  <header class="memo-bar">
+    <div class="memo-bar-title"><b>备忘录</b><span>2 条</span></div>
+    <button type="button" class="btn primary" data-vt-action="add-note">＋ 新增</button>
+  </header>
+  <div class="detail-layout">
+    <div class="list memo-list">
+      <button type="button" class="list-item memo-item is-active" data-vt-action="select-note" data-id="demo1"><b class="memo-item-title">购物清单</b><span class="memo-item-meta">06-28 21:40 · 生活</span></button>
+      <button type="button" class="list-item memo-item" data-vt-action="select-note" data-id="demo2"><b class="memo-item-title">会议要点</b><span class="memo-item-meta">06-28 18:02 · 工作</span></button>
+    </div>
+    <form class="pane memo-form" data-vt-action="save-note">
+      <input class="input memo-title-input" name="title" data-vt-field="title" value="购物清单" placeholder="标题" maxlength="60">
+      <div class="memo-updated">更新于 06-28 21:40</div>
+      <textarea class="textarea" name="content" placeholder="在这里输入备忘内容...">牛奶、鸡蛋、面包；周末去超市补货。</textarea>
+      <input class="input" name="tags" value="生活, 待办" placeholder="标签，用逗号分隔">
+      <div class="memo-tags"><span class="chip">生活</span><span class="chip">待办</span></div>
+      <div class="memo-actions">
+        <button type="submit" class="btn primary" data-vt-action="save-note">保存</button>
+        <button type="button" class="btn danger" data-vt-action="delete-note" data-id="demo1">删除</button>
+      </div>
+    </form>
+  </div>
+</main>`;
+
+const memoModalStyles = `.memo-detail{display:flex;flex-direction:column;gap:14px;height:100%;min-height:0;padding:18px;color:var(--vt-text,#e8eaed)}
+.memo-bar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.memo-bar-title{display:flex;align-items:baseline;gap:8px}
+.memo-bar-title b{font-size:16px;font-weight:950}
+.memo-bar-title span{font-size:12px;color:var(--vt-muted,rgba(232,234,237,.66))}
+.detail-layout{flex:1;min-height:0;display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px}
+.list{display:grid;gap:6px;align-content:start;overflow:auto;padding-right:2px}
+.list-item{display:grid;gap:3px;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--vt-text,#e8eaed) 12%,transparent);background:color-mix(in srgb,var(--vt-surface,rgba(255,255,255,.08)) 78%,transparent);cursor:pointer;text-align:left}
+.list-item:hover{border-color:color-mix(in srgb,var(--vt-accent,#3b82f6) 40%,transparent)}
+.list-item.is-active{border-color:var(--vt-accent,#3b82f6);background:color-mix(in srgb,var(--vt-accent,#3b82f6) 12%,transparent)}
+.memo-item-title{font-size:13px;font-weight:800;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memo-item-meta{font-size:11px;color:var(--vt-muted,rgba(232,234,237,.66));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane{display:flex;flex-direction:column;gap:10px;min-width:0}
+.input,.textarea{width:100%;box-sizing:border-box;border:1px solid color-mix(in srgb,var(--vt-text,#e8eaed) 12%,transparent);border-radius:10px;background:color-mix(in srgb,var(--vt-surface,rgba(255,255,255,.08)) 82%,transparent);color:var(--vt-text,#e8eaed);font:inherit;outline:none}
+.input{height:36px;padding:0 12px;font-weight:700}
+.memo-title-input{font-size:15px;font-weight:900}
+.textarea{flex:1;min-height:160px;padding:12px;resize:none;line-height:1.6;font-size:13px}
+.input:focus,.textarea:focus{border-color:var(--vt-accent,#3b82f6)}
+.memo-updated{font-size:11px;color:var(--vt-muted,rgba(232,234,237,.66))}
+.memo-tags{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--vt-text,#e8eaed) 12%,transparent);background:color-mix(in srgb,var(--vt-surface,rgba(255,255,255,.08)) 74%,transparent);font-size:11px;color:var(--vt-muted,rgba(232,234,237,.66))}
+.memo-actions{display:flex;gap:9px;margin-top:2px}
+.btn{height:36px;padding:0 16px;border-radius:10px;font-size:13px;font-weight:850;cursor:pointer;border:1px solid color-mix(in srgb,var(--vt-text,#e8eaed) 12%,transparent);background:color-mix(in srgb,var(--vt-surface,rgba(255,255,255,.08)) 80%,transparent);color:var(--vt-text,#e8eaed)}
+.btn.primary{border-color:transparent;background:var(--vt-accent,#3b82f6);color:#fff}
+.btn.danger{border-color:color-mix(in srgb,#ef4444 40%,transparent);color:#ef4444;background:color-mix(in srgb,#ef4444 8%,transparent)}
+.empty{display:grid;place-items:center;height:100%;min-height:120px;color:var(--vt-muted,rgba(232,234,237,.66));font-size:12px;text-align:center;padding:16px}
+@media(max-width:640px){.detail-layout{grid-template-columns:1fr;overflow:auto}.list{max-height:160px}}
+`;
+
 export const STARTER_TEMPLATES: StarterTemplate[] = [
+    {
+        id: 'memo',
+        label: '备忘录',
+        description: '封面看条数与时间，弹窗左列列表 / 右侧详情，支持增删改与标签。',
+        draft: () => ({
+            id: `my.memo-${Math.random().toString(36).slice(2, 6)}`,
+            label: '备忘录',
+            description: '记录备忘标题、内容、时间与标签，主从布局编辑。',
+            icon: 'NotePencil',
+            category: 'local',
+            version: '0.1.0',
+            sizes: {default: {w: 2, h: 2}, min: {w: 1, h: 1}, max: {w: 4, h: 3}},
+            permissions: ['storage'],
+            networkHosts: [],
+            entryCode: memoCode,
+            styles: memoStyles,
+            modalHtml: memoModalHtml,
+            modalStyles: memoModalStyles,
+            modalWidth: '880px',
+            modalHeight: '620px',
+            html: '',
+            settingsSchemaText: '',
+        }),
+    },
     {
         id: 'clock',
         label: '时间看板',

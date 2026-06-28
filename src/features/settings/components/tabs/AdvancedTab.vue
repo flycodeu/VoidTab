@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import {computed} from 'vue';
-import {PhDatabase, PhFlask, PhShieldCheck, PhTrash, PhWarning, PhSquaresFour} from '@phosphor-icons/vue';
+import {PhDatabase, PhFlask, PhShieldCheck, PhTrash, PhWarning, PhSquaresFour, PhBroom} from '@phosphor-icons/vue';
 import type {SandboxRuntimeLimits, SandboxRuntimePermission} from '../../../../core/config/types.ts';
 import type {HostFeature} from '../../../../core/tiles/contracts.ts';
 import {DEFAULT_SANDBOX_LIMITS} from '../../../../core/tiles/sandboxRuntime.ts';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
+import {useToast} from '../../../../shared/composables/useToast';
 
 const store = useConfigStore();
+const toast = useToast();
+
+const pruneOrphanGrants = () => {
+  const removed = store.pruneOrphanSandboxGrants();
+  if (removed > 0) toast.success(`已清理 ${removed} 个已删除实例的授权与资源`);
+  else toast.info('没有需要清理的失效授权');
+};
 
 const permissionLabels: Record<SandboxRuntimePermission, string> = {
   storage: '实例存储',
@@ -314,10 +322,13 @@ const tileSpanOptions = [3, 4, 5, 6];
     </section>
 
     <section class="advanced-section space-y-4">
-      <div class="section-title">
-        <PhShieldCheck size="20" weight="duotone"/>
-        Sandbox 实例授权
+      <div class="section-title sandbox-grant-head">
+        <span class="flex items-center gap-2"><PhShieldCheck size="20" weight="duotone"/>Sandbox 实例授权</span>
+        <button type="button" class="prune-btn" title="清理已删除组件残留的授权与本地资源" @click="pruneOrphanGrants">
+          <PhBroom size="14" weight="bold"/>清理失效授权
+        </button>
       </div>
+      <p class="section-hint">删除组件实例或卸载自定义组件时会自动清理其授权、熔断记录与本地存储；此按钮可手动清扫历史残留。</p>
       <div v-if="grantEntries.length" class="record-list">
         <article v-for="record in grantEntries" :key="record.key" class="record-row">
           <div class="min-w-0">
@@ -381,6 +392,35 @@ const tileSpanOptions = [3, 4, 5, 6];
   gap: 8px;
   font-size: 13px;
   font-weight: 900;
+}
+
+.sandbox-grant-head {
+  justify-content: space-between;
+}
+
+.prune-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-color);
+  background: rgba(var(--accent-color-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-color-rgb), 0.22);
+}
+
+.prune-btn:hover {
+  background: rgba(var(--accent-color-rgb), 0.18);
+}
+
+.section-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.6;
 }
 
 .section-subtitle {

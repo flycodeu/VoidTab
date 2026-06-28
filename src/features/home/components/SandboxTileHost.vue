@@ -721,7 +721,7 @@ onBeforeUnmount(() => {
               class="sandbox-modal-frame"
               :srcdoc="modalSrcDoc"
               :title="modalPayload.title"
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-forms"
               referrerpolicy="no-referrer"
           ></iframe>
         </section>

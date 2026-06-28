@@ -14,11 +14,13 @@ import {
   PhCheckCircle,
   PhPlay,
   PhPencilSimple,
+  PhMagicWand,
 } from '@phosphor-icons/vue';
 import {useConfigStore} from '../../../../stores/useConfigStore.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 import CodeEditor from '../../../../shared/ui/CodeEditor.vue';
 import SandboxTileHost from '../../../home/components/SandboxTileHost.vue';
+import DesignerAiPanel from '../designer/DesignerAiPanel.vue';
 import {createSandboxTileDefinitionFromInstall} from '../../../../core/tiles/sandboxPackage.ts';
 import type {ComponentTile, SandboxTileDefinition, TileInstallRecord, TileSize} from '../../../../core/tiles/contracts.ts';
 import type {SandboxRuntimePermission} from '../../../../core/config/types.ts';
@@ -56,6 +58,7 @@ const committedDraft = ref<DesignerDraft>(JSON.parse(JSON.stringify(draft.value)
 const editingTileType = ref<string | null>(null);
 const activeSection = ref<SectionId>('basic');
 const showDocs = ref(false);
+const showAi = ref(false);
 const logs = ref<{level: string; text: string; at: number}[]>([]);
 const fileInput = ref<HTMLInputElement | null>(null);
 const previewNonce = ref(0);
@@ -147,6 +150,13 @@ const newDraft = () => {
   editingTileType.value = null;
   logs.value = [];
   activeSection.value = 'basic';
+};
+
+const applyAiDraft = (next: DesignerDraft) => {
+  draft.value = next;
+  committedDraft.value = JSON.parse(JSON.stringify(next));
+  activeSection.value = 'code';
+  showAi.value = false;
 };
 
 const loadTemplate = (templateId: string) => {
@@ -265,6 +275,7 @@ const deleteDesign = (install: TileInstallRecord) => {
           </div>
         </div>
         <div class="head-actions">
+          <button type="button" class="btn primary sm" @click="showAi = true"><PhMagicWand size="14" weight="bold"/>AI 生成</button>
           <button type="button" class="btn ghost sm" @click="newDraft"><PhPlus size="14" weight="bold"/>空白</button>
           <button type="button" class="btn ghost sm" @click="triggerImport"><PhUploadSimple size="14" weight="bold"/>导入</button>
           <button type="button" class="btn ghost sm" @click="showDocs = !showDocs">
@@ -310,21 +321,59 @@ const deleteDesign = (install: TileInstallRecord) => {
 
     <!-- 文档 -->
     <section v-if="showDocs" class="d-card docs">
+      <div class="doc-intro">
+        组件运行在隔离的 iframe 沙箱里，使用固定的 <code>VoidWidget</code> 运行时 API。下面是从「能跑」到「交付」需要知道的全部约定；不想手写时，点右上角「AI 生成」让 AI 按同一套约定产出代码。
+      </div>
       <div class="doc-grid">
         <div>
-          <h3 class="doc-h">入口</h3>
+          <h3 class="doc-h">1 · 入口与生命周期</h3>
+          <p>封面 JS 必须调用 <code>VoidWidget.define(...)</code>，在 <code>mount</code> 里把 DOM 挂到 <code>ctx.root</code>。需要保存状态用 <code>this</code>。</p>
           <pre class="doc-code">VoidWidget.define({
-  mount(ctx) {
-    ctx.root.textContent = 'Hello';
-  }
+  async mount(ctx) {
+    this._el = document.createElement('div');
+    ctx.root.appendChild(this._el);
+    this._state = await ctx.storage.get('data');
+    this.render(ctx);
+    this._timer = setInterval(() =&gt; this.render(ctx), 1000);
+  },
+  render(ctx) { /* 重绘封面 */ },
+  pause() { clearInterval(this._timer); },   // 不可见时停表
+  resume() { /* 重新开表 */ },
+  unmount() { clearInterval(this._timer); }, // 清理
+  modalEvent(ctx, event) { /* 弹窗动作回调 */ },
 });</pre>
+          <p><code>pause/resume</code> 在标签页隐藏或卡片滚出视口时触发——定时器、轮询请在此停启，避免后台空耗。</p>
+
+          <h3 class="doc-h">2 · ctx API</h3>
+          <p><code>ctx.root</code> 封面根节点 · <code>ctx.size.placement.w/h</code> 当前格子尺寸（据此自适应 1×1 / 2×2 / 宽卡）· <code>ctx.settings</code> 实例设置。</p>
+          <p><code>ctx.storage.get/set/remove(key[, value])</code> 异步本地存储（本实例私有，单值约 8KB）· <code>ctx.network.fetch(url, init)</code> 经宿主代理（需 network 能力 + 域名白名单，仅 GET/HEAD）。</p>
+          <p><code>ctx.openUrl</code> · <code>ctx.copyText</code> · <code>ctx.notify(title, options)</code> · <code>ctx.modal.open / ctx.modal.update</code> · <code>ctx.emit</code>。这些都是计入「每分钟请求配额」的调用，别放进每秒定时器。</p>
         </div>
         <div>
-          <h3 class="doc-h">常用 API</h3>
-          <p><code>ctx.root</code> 封面根节点 · <code>ctx.size</code> 当前尺寸 · <code>ctx.settings</code> 实例设置 · <code>ctx.modal.open</code> 打开弹窗 · <code>ctx.storage</code> 本地存储 · <code>ctx.network.fetch</code> 网络代理</p>
-          <p>封面和弹窗都可使用 <code>--vt-accent</code>、<code>--vt-text</code>、<code>--vt-muted</code>、<code>--vt-surface</code> 适配当前主题。</p>
-          <h3 class="doc-h">交付</h3>
-          <p>保存后安装到本机；应用到分组会放置一个实例；导出生成可分享的组件包。</p>
+          <h3 class="doc-h">3 · 弹窗与交互协议</h3>
+          <p>用注入的助手打开/刷新弹窗（<code>updateModal</code> 原地刷新、不重载、保留滚动）：</p>
+          <pre class="doc-code">// 首次打开
+VoidTabDesigner.openModal(ctx, { title, html, width: '760px' });
+// 操作后原地刷新（推荐）
+VoidTabDesigner.updateModal(ctx, { html, scrollTarget: '[data-vt-section=list]' });
+// 插值务必转义
+const safe = VoidTabDesigner.escapeHtml(userText);</pre>
+          <p>弹窗里给可点击元素加 <code>data-vt-action="动作名"</code>，宿主会回调封面的 <code>modalEvent(ctx, event)</code>：</p>
+          <pre class="doc-code">// 普通按钮（点击触发）
+&lt;button type="button" data-vt-action="del" data-id="3"&gt;删除&lt;/button&gt;
+// 表单（提交时触发，把字段一起带出）
+&lt;form data-vt-action="save"&gt; ... &lt;button type="submit"&gt;保存&lt;/button&gt; &lt;/form&gt;
+
+modalEvent(ctx, event) {
+  // event.name 动作名；event.data 表单字段(name-&gt;值)；
+  // event.source.dataset 该元素的 data-*（如 event.source.dataset.id）
+}</pre>
+          <p class="doc-warn">注意：不要给 <code>input/select/textarea</code> 自身加 <code>data-vt-action</code>（会被忽略，并妨碍原生时间/日期选择器）。复选框未勾选时字段值为空串。</p>
+
+          <h3 class="doc-h">4 · 主题 / 能力 / 交付</h3>
+          <p>封面与弹窗共用主题变量：<code>--vt-accent</code> · <code>--vt-text</code> · <code>--vt-muted</code> · <code>--vt-surface</code>。</p>
+          <p>用到 storage / network / 外链 / 剪贴板 / 通知，需在「能力」分区勾选；network 还要填域名白名单。</p>
+          <p><b>保存</b>装到本机「我的设计」；<b>应用到分组</b>放置实例（首次在桌面点「授权运行」）；<b>导出</b>生成可分享的组件包 JSON。</p>
         </div>
       </div>
     </section>
@@ -477,6 +526,8 @@ const deleteDesign = (install: TileInstallRecord) => {
         </div>
       </section>
     </div>
+
+    <DesignerAiPanel :show="showAi" :draft="draft" @close="showAi = false" @apply="applyAiDraft"/>
   </div>
 </template>
 
@@ -652,7 +703,9 @@ const deleteDesign = (install: TileInstallRecord) => {
 .btn.ghost:hover { border-color: var(--accent-color); }
 
 .docs { font-size: 12px; line-height: 1.6; }
-.doc-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px; }
+.doc-intro { padding: 10px 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid rgba(var(--accent-color-rgb), 0.18); background: rgba(var(--accent-color-rgb), 0.08); font-size: 11.5px; line-height: 1.55; }
+.doc-warn { padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08); font-size: 11px; }
+.doc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .docs p { opacity: 0.82; margin: 4px 0 10px; }
 .doc-h { font-size: 12px; font-weight: 900; margin: 12px 0 4px; }
 .doc-h:first-child { margin-top: 0; }

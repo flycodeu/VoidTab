@@ -104,7 +104,10 @@ export const createSiteActions = (
     const removeGroup = (groupId: string) => {
         const index = config.value.layout.findIndex((group) => group.id === groupId);
         if (index >= 0) {
-            config.value.layout.splice(index, 1);
+            const [removed] = config.value.layout.splice(index, 1);
+            for (const tile of removed?.tiles || []) {
+                if (isComponentTile(tile)) purgeSandboxInstanceState(tile.id);
+            }
             void saveConfig();
         }
     };
@@ -183,10 +186,99 @@ export const createSiteActions = (
         void saveConfig();
     };
 
+    // Remove the persisted localStorage written by a sandbox tile instance so a
+    // deleted component does not keep occupying browser storage quota.
+    const clearSandboxInstanceStorage = (tileId: string) => {
+        if (typeof window === 'undefined' || !window.localStorage || !tileId) return;
+        const prefix = 'voidtab:sandbox-storage:v1:';
+        const marker = `:${tileId}:`;
+        const stale: string[] = [];
+        for (let index = 0; index < window.localStorage.length; index += 1) {
+            const key = window.localStorage.key(index);
+            if (key && key.startsWith(prefix) && key.includes(marker)) stale.push(key);
+        }
+        for (const key of stale) window.localStorage.removeItem(key);
+    };
+
+    // Drop every trace of one sandbox instance: granted/revoked permissions,
+    // crash/fuse records and its local storage.
+    const purgeSandboxInstanceState = (tileId: string) => {
+        const runtime = config.value.runtime.sandbox;
+        if (runtime) {
+            const key = getSandboxGrantKey(tileId);
+            const grants = {...(runtime.grants || {})};
+            const revoked = {...(runtime.revoked || {})};
+            const crashes = {...(runtime.crashes || {})};
+            let changed = false;
+            if (grants[key]) { delete grants[key]; changed = true; }
+            if (revoked[key]) { delete revoked[key]; changed = true; }
+            if (crashes[key]) { delete crashes[key]; changed = true; }
+            if (changed) config.value.runtime.sandbox = {...runtime, grants, revoked, crashes};
+        }
+        clearSandboxInstanceStorage(tileId);
+    };
+
+    // Clean sandbox state for every instance of an uninstalled package.
+    const purgeSandboxStateForTileType = (tileType: string, packageId?: string) => {
+        const runtime = config.value.runtime.sandbox;
+        const affected = new Set<string>();
+        const match = (record?: {tileId?: string; tileType?: string; packageId?: string}) => {
+            if (!record?.tileId) return;
+            if (record.tileType === tileType || (packageId && record.packageId === packageId)) {
+                affected.add(record.tileId);
+            }
+        };
+        Object.values(runtime?.grants || {}).forEach(match);
+        Object.values(runtime?.revoked || {}).forEach(match);
+        Object.values(runtime?.crashes || {}).forEach(match);
+        for (const group of config.value.layout) {
+            for (const tile of group.tiles) {
+                if (isComponentTile(tile) && tile.tileType === tileType) affected.add(tile.id);
+            }
+        }
+        for (const tileId of affected) purgeSandboxInstanceState(tileId);
+    };
+
+    // One-shot sweep that removes grants/crashes/storage left behind by instances
+    // that no longer exist in any group (e.g. historical leftovers). Returns the
+    // number of distinct instances cleaned.
+    const pruneOrphanSandboxGrants = () => {
+        const runtime = config.value.runtime.sandbox;
+        if (!runtime) return 0;
+        const live = new Set<string>();
+        for (const group of config.value.layout) {
+            for (const tile of group.tiles) {
+                if (isComponentTile(tile)) live.add(tile.id);
+            }
+        }
+        const grants = {...(runtime.grants || {})};
+        const revoked = {...(runtime.revoked || {})};
+        const crashes = {...(runtime.crashes || {})};
+        const removed = new Set<string>();
+        const sweep = (map: Record<string, {tileId?: string}>) => {
+            for (const [key, record] of Object.entries(map)) {
+                if (record?.tileId && !live.has(record.tileId)) {
+                    delete map[key];
+                    removed.add(record.tileId);
+                }
+            }
+        };
+        sweep(grants);
+        sweep(revoked);
+        sweep(crashes);
+        if (removed.size) {
+            for (const tileId of removed) clearSandboxInstanceStorage(tileId);
+            config.value.runtime.sandbox = {...runtime, grants, revoked, crashes};
+            void saveConfig();
+        }
+        return removed.size;
+    };
+
     const removeSite = (groupId: string, siteId: string) => {
         const group = findWorkspace(config.value, groupId);
         if (group) {
             removeCanonicalTile(group, siteId);
+            purgeSandboxInstanceState(siteId);
             void saveConfig();
         }
     };
@@ -558,9 +650,12 @@ export const createSiteActions = (
     };
 
     const uninstallTilePackage = (tileType: string) => {
-        if (!config.value.tileInstalls[tileType]) return false;
+        const install = config.value.tileInstalls[tileType];
+        if (!install) return false;
+        const packageId = install.manifest?.id;
         config.value.tileInstalls = uninstallTilePackageInstall(config.value.tileInstalls, tileType);
         invalidateTileCapabilityGrantsForTileType(tileType);
+        purgeSandboxStateForTileType(tileType, packageId);
         void saveConfig();
         return true;
     };
@@ -881,6 +976,7 @@ export const createSiteActions = (
         updateSandboxRuntimeLimits,
         grantSandboxPermissions,
         revokeSandboxPermissions,
+        pruneOrphanSandboxGrants,
         recordSandboxCrash,
         clearSandboxCrash,
         importBookmarks,

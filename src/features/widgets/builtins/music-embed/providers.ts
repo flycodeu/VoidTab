@@ -136,7 +136,37 @@ const track = (n: number, file: number, label?: string): MusicPreset => {
     };
 };
 
+// 免版权电台：SomaFM 是听众资助、合法授权的网络电台，官方允许直接引用其流地址，
+// 直链可直接喂给原生 <audio>（按 content-type 播放，不依赖文件扩展名）。
+// 国产流行受版权限制无法提供免费直链；如需正版华语流行，请在配置弹窗用
+// 官方 Spotify / YouTube 歌单链接（这两个平台本身已获授权）。
+const radio = (id: string, label: string): MusicPreset => {
+    const url = `https://ice1.somafm.com/${id}-128-mp3`;
+    return {
+        id: `radio-${id}`,
+        label,
+        group: '免版权电台',
+        state: {
+            provider: 'audio',
+            kind: 'track',
+            resourceId: url,
+            customUrl: url,
+            autoplay: false,
+            height: 120,
+            title: label,
+        },
+    };
+};
+
 export const MUSIC_PRESETS: MusicPreset[] = [
+    radio('groovesalad', 'SomaFM · Groove Salad（氛围/慢拍）'),
+    radio('dronezone', 'SomaFM · Drone Zone（深空氛围）'),
+    radio('lush', 'SomaFM · Lush（人声慢歌）'),
+    radio('beatblender', 'SomaFM · Beat Blender（House/电子）'),
+    radio('indiepop', 'SomaFM · Indie Pop Rocks（独立流行）'),
+    radio('secretagent', 'SomaFM · Secret Agent（复古律动）'),
+    radio('bootliquor', 'SomaFM · Boot Liquor（美式乡村）'),
+    radio('fluid', 'SomaFM · Fluid（氛围嘻哈）'),
     track(1, 1, 'Void FM 01 · Morning Drive'),
     track(2, 2, 'Void FM 02 · City Pulse'),
     track(3, 3, 'Void FM 03 · Night Lane'),
