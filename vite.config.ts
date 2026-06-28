@@ -147,12 +147,35 @@ const createFaviconApiDevPlugin = () => ({
     },
 })
 
+const createSandboxRuntimeDevPlugin = () => ({
+    name: 'voidtab-sandbox-runtime-dev',
+    configureServer(server: any) {
+        server.middlewares.use('/assets/sandbox-page.js', async (req: any, res: any, next: any) => {
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+                next()
+                return
+            }
+            try {
+                const result = await server.transformRequest('/src/sandbox-page.ts')
+                if (!result?.code) throw new Error('sandbox runtime transform failed')
+                res.statusCode = 200
+                res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+                res.setHeader('Cache-Control', 'no-store')
+                res.setHeader('Access-Control-Allow-Origin', '*')
+                res.end(req.method === 'HEAD' ? undefined : result.code)
+            } catch (error) {
+                next(error)
+            }
+        })
+    },
+})
+
 export default defineConfig(({ mode }) => {
     // mode === 'ext' 时才把 background 作为入口构建
     const isExt = mode === 'ext'
 
     return {
-        plugins: [vue(), createStockApiDevPlugin(), createFaviconApiDevPlugin()],
+        plugins: [vue(), createStockApiDevPlugin(), createFaviconApiDevPlugin(), createSandboxRuntimeDevPlugin()],
         base: './',
 
         server: {
@@ -182,10 +205,12 @@ export default defineConfig(({ mode }) => {
                 input: isExt
                     ? {
                         main: resolve(__dirname, 'index.html'),
+                        'sandbox-page': resolve(__dirname, 'src/sandbox-page.ts'),
                         background: resolve(__dirname, 'src/background.ts'),
                     }
                     : {
                         main: resolve(__dirname, 'index.html'),
+                        'sandbox-page': resolve(__dirname, 'src/sandbox-page.ts'),
                     },
 
                 output: {

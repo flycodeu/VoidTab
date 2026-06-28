@@ -15,8 +15,8 @@ import {
   unregisterSandboxInstance,
 } from '../../../core/tiles/sandboxRuntime.ts';
 import {
-  buildSandboxSrcDoc,
-  buildSandboxModalSrcDoc,
+  createSandboxBootPayload,
+  createSandboxModalBootPayload,
   createSandboxNonce,
   parseSandboxFrameMessage,
   SANDBOX_BRIDGE_CHANNEL,
@@ -124,7 +124,23 @@ const themeTokens = computed(() => {
     scheme,
   };
 });
-const srcDoc = computed(() => buildSandboxSrcDoc({
+const getExtensionRuntime = () => {
+  const runtime = (globalThis as any).chrome?.runtime || (globalThis as any).browser?.runtime;
+  return runtime?.id && typeof runtime.getURL === 'function' ? runtime : null;
+};
+
+const getSandboxPageSrc = (scope: 'tile' | 'modal') => {
+  const query = `scope=${scope}&nonce=${encodeURIComponent(nonce.value)}`;
+  const runtime = getExtensionRuntime();
+  if (runtime) return `${runtime.getURL('sandbox.html')}?${query}`;
+  return `./sandbox.html?${query}`;
+};
+
+const sandboxFrameSrc = computed(() => getSandboxPageSrc('tile'));
+const modalFrameSrc = computed(() => getSandboxPageSrc('modal'));
+const frameSandboxPolicy = computed(() => getExtensionRuntime() ? undefined : 'allow-scripts');
+const modalFrameSandboxPolicy = computed(() => getExtensionRuntime() ? undefined : 'allow-scripts allow-forms');
+const bootPayload = computed(() => createSandboxBootPayload({
   definition: props.definition,
   tile: props.tile,
   nonce: nonce.value,
@@ -133,10 +149,11 @@ const srcDoc = computed(() => buildSandboxSrcDoc({
   theme: themeTokens.value,
   size: tileSize.value,
 }));
-const modalSrcDoc = computed(() => buildSandboxModalSrcDoc({
-  ...modalPayload.value,
+const modalBootPayload = computed(() => createSandboxModalBootPayload({
+  title: modalPayload.value.title,
+  html: modalPayload.value.html,
+  styles: modalPayload.value.styles,
   theme: themeTokens.value,
-  channel: SANDBOX_BRIDGE_CHANNEL,
   nonce: nonce.value,
 }));
 const storagePrefix = computed(() => {
@@ -221,6 +238,28 @@ const postToFrame = (message: Record<string, unknown>) => {
     channel: SANDBOX_BRIDGE_CHANNEL,
     nonce: nonce.value,
     ...message,
+  }, '*');
+};
+
+const postBootToFrame = () => {
+  if (!shouldRenderFrame.value || !iframeRef.value?.contentWindow) return;
+  iframeRef.value.contentWindow.postMessage({
+    channel: SANDBOX_BRIDGE_CHANNEL,
+    nonce: nonce.value,
+    kind: 'boot',
+    mode: 'tile',
+    payload: bootPayload.value,
+  }, '*');
+};
+
+const postBootToModalFrame = () => {
+  if (!modalOpen.value || !modalIframeRef.value?.contentWindow) return;
+  modalIframeRef.value.contentWindow.postMessage({
+    channel: SANDBOX_BRIDGE_CHANNEL,
+    nonce: nonce.value,
+    kind: 'boot',
+    mode: 'modal',
+    payload: modalBootPayload.value,
   }, '*');
 };
 
@@ -371,6 +410,7 @@ const showNotification = async (payload: Record<string, unknown>) => {
 };
 
 const openSandboxModal = (payload: Record<string, unknown>) => {
+  const wasOpen = modalOpen.value;
   modalPayload.value = {
     title: typeof payload.title === 'string' && payload.title.trim()
         ? payload.title.trim().slice(0, 80)
@@ -381,6 +421,7 @@ const openSandboxModal = (payload: Record<string, unknown>) => {
     height: normalizeModalDimension(payload.height, '620px'),
   };
   modalOpen.value = true;
+  if (wasOpen) window.requestAnimationFrame(postBootToModalFrame);
   return true;
 };
 
@@ -532,7 +573,9 @@ const syncPauseState = () => {
 const handleMessage = (event: MessageEvent) => {
   if (event.source === modalIframeRef.value?.contentWindow) {
     const data = event.data || {};
-    if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.escape') {
+    if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.kind === 'sandbox-page-ready') {
+      postBootToModalFrame();
+    } else if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.escape') {
       closeSandboxModal();
     } else if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.close') {
       closeSandboxModal();
@@ -542,6 +585,11 @@ const handleMessage = (event: MessageEvent) => {
     return;
   }
   if (!props.enabled || event.source !== iframeRef.value?.contentWindow || !canAcceptMessage()) return;
+  const data = event.data || {};
+  if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.kind === 'sandbox-page-ready') {
+    postBootToFrame();
+    return;
+  }
   const message = parseSandboxFrameMessage(event.data, nonce.value);
   if (!message) return;
   if (message.kind === 'log') {
@@ -686,10 +734,11 @@ onBeforeUnmount(() => {
           ref="iframeRef"
           class="sandbox-frame"
           :key="nonce"
-          :srcdoc="srcDoc"
-          sandbox="allow-scripts"
+          :src="sandboxFrameSrc"
+          :sandbox="frameSandboxPolicy"
           :title="definition.label"
           referrerpolicy="no-referrer"
+          @load="postBootToFrame"
       ></iframe>
 
       <div v-if="status === 'booting' || status === 'ready'" class="sandbox-status">
@@ -719,10 +768,11 @@ onBeforeUnmount(() => {
           <iframe
               ref="modalIframeRef"
               class="sandbox-modal-frame"
-              :srcdoc="modalSrcDoc"
+              :src="modalFrameSrc"
               :title="modalPayload.title"
-              sandbox="allow-scripts allow-forms"
+              :sandbox="modalFrameSandboxPolicy"
               referrerpolicy="no-referrer"
+              @load="postBootToModalFrame"
           ></iframe>
         </section>
       </div>

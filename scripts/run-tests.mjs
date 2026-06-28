@@ -1830,6 +1830,10 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   const contracts = await read('src/core/tiles/contracts.ts');
   const sandboxPackage = await read('src/core/tiles/sandboxPackage.ts');
   const sandboxBridge = await read('src/core/tiles/sandboxBridge.ts');
+  const sandboxPage = await read('src/sandbox-page.ts');
+  const sandboxHtml = await read('public/sandbox.html');
+  const manifest = await read('public/manifest.json');
+  const vite = await read('vite.config.ts');
   const sandboxRuntime = await read('src/core/tiles/sandboxRuntime.ts');
   const sandboxHost = await read('src/features/home/components/SandboxTileHost.vue');
   const designerTab = await read('src/features/settings/components/tabs/DesignerTab.vue');
@@ -1848,24 +1852,41 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   assert.match(sandboxPackage, /sandboxRuntime/);
   assert.match(sandboxPackage, /MAX_SCRIPT_BYTES/);
   assert.match(sandboxBridge, /SANDBOX_BRIDGE_CHANNEL/);
-  assert.match(sandboxBridge, /Content-Security-Policy/);
-  assert.match(sandboxBridge, /connect-src 'none'/);
+  assert.match(sandboxBridge, /createSandboxBootPayload/);
+  assert.match(sandboxBridge, /createSandboxModalBootPayload/);
   assert.match(sandboxBridge, /parseSandboxFrameMessage/);
-  assert.match(sandboxBridge, /network\.fetch/);
-  assert.match(sandboxBridge, /notification\.show/);
-  assert.match(sandboxBridge, /modal\.update/);
-  assert.match(sandboxBridge, /data\.kind === 'pause'/);
-  assert.match(sandboxBridge, /data\.kind === 'modal\.event'/);
-  assert.match(sandboxBridge, /data-vt-action/);
-  assert.match(sandboxBridge, /readSourcePayload/);
-  assert.match(sandboxBridge, /dataset/);
-  assert.match(sandboxBridge, /window\.scrollY/);
-  assert.match(sandboxBridge, /window\.scrollTo/);
+  assert.doesNotMatch(sandboxBridge, /buildSandboxSrcDoc/);
+  assert.match(sandboxHtml, /Content-Security-Policy/);
+  assert.match(sandboxHtml, /connect-src 'none'/);
+  assert.match(sandboxHtml, /script-src 'self' 'unsafe-eval'/);
+  assert.match(sandboxHtml, /assets\/sandbox-page\.js/);
+  assert.match(manifest, /"sandbox"/);
+  assert.match(manifest, /"sandbox\.html"/);
+  assert.match(vite, /createSandboxRuntimeDevPlugin/);
+  assert.match(vite, /'sandbox-page': resolve\(__dirname, 'src\/sandbox-page\.ts'\)/);
+  assert.match(sandboxPage, /new Function/);
+  assert.match(sandboxPage, /canEvaluatePackageScripts/);
+  assert.match(sandboxPage, /Sandbox CSP 阻止了组件脚本执行/);
+  assert.match(sandboxPage, /!scriptEvaluationBlocked/);
+  assert.match(sandboxPage, /network\.fetch/);
+  assert.match(sandboxPage, /notification\.show/);
+  assert.match(sandboxPage, /modal\.update/);
+  assert.match(sandboxPage, /data\.kind === 'pause'/);
+  assert.match(sandboxPage, /data\.kind === 'modal\.event'/);
+  assert.match(sandboxPage, /data-vt-action/);
+  assert.match(sandboxPage, /readSourcePayload/);
+  assert.match(sandboxPage, /dataset/);
+  assert.match(sandboxPage, /window\.scrollY/);
+  assert.match(sandboxPage, /window\.scrollTo/);
   assert.match(sandboxRuntime, /listMissingSandboxPermissions/);
   assert.match(sandboxRuntime, /recordSandboxCrash/);
   assert.match(sandboxRuntime, /evaluateSandboxMarketReview/);
   assert.match(sandboxHost, /event\.source !== iframeRef\.value\?\.contentWindow/);
-  assert.match(sandboxHost, /sandbox="allow-scripts"/);
+  assert.match(sandboxHost, /getExtensionRuntime/);
+  assert.match(sandboxHost, /runtime\.getURL\('sandbox\.html'\)/);
+  assert.match(sandboxHost, /frameSandboxPolicy/);
+  assert.match(sandboxHost, /:sandbox="frameSandboxPolicy"/);
+  assert.match(sandboxHost, /modalFrameSandboxPolicy/);
   assert.match(sandboxHost, /grantSandboxPermissions/);
   assert.match(sandboxHost, /network\.fetch/);
   assert.match(sandboxHost, /notification\.show/);
@@ -1921,7 +1942,8 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
       parseSandboxTilePackage,
     } from '../../../src/core/tiles/sandboxPackage.ts';
     import {
-      buildSandboxSrcDoc,
+      createSandboxBootPayload,
+      createSandboxModalBootPayload,
       parseSandboxFrameMessage,
       SANDBOX_BRIDGE_CHANNEL,
     } from '../../../src/core/tiles/sandboxBridge.ts';
@@ -2068,14 +2090,28 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
       createdAt: 1,
       revision: {updatedAt: 1, deviceId: 'p7', sequence: 1},
     };
-    const srcDoc = buildSandboxSrcDoc({definition, tile, nonce: 'nonce-1', host: enabledHost});
-    assert.match(srcDoc, /voidtab-boot/);
-    assert.equal(srcDoc.includes('</script><img src=x>'), false);
-    assert.match(srcDoc, /connect-src 'none'/);
-    assert.match(srcDoc, /VoidWidget/);
-    assert.match(srcDoc, /network\.fetch/);
-    assert.match(srcDoc, /notification\.show/);
-    assert.match(srcDoc, /data\.kind === 'pause'/);
+    const bootPayload = createSandboxBootPayload({definition, tile, nonce: 'nonce-1', host: enabledHost});
+    assert.equal(bootPayload.channel, SANDBOX_BRIDGE_CHANNEL);
+    assert.equal(bootPayload.nonce, 'nonce-1');
+    assert.equal(bootPayload.package.id, definition.id);
+    assert.equal(bootPayload.package.entry, 'index.js');
+    assert.equal(bootPayload.package.html, '<section id="quote"></section>');
+    assert.equal(bootPayload.package.styles, '#quote{font-weight:800;}');
+    assert.equal(bootPayload.package.scripts['index.js'].includes('</script><img src=x>'), true);
+    assert.equal(bootPayload.tile.id, tile.id);
+    assert.equal(bootPayload.tile.settings.title, 'Local quote');
+    assert.equal(bootPayload.host.features.sandboxRuntime, true);
+
+    const modalBoot = createSandboxModalBootPayload({
+      title: '详情',
+      html: '<button type="button" data-vt-action="save">保存</button>',
+      styles: '.btn{font-weight:800;}',
+      nonce: 'nonce-1',
+    });
+    assert.equal(modalBoot.channel, SANDBOX_BRIDGE_CHANNEL);
+    assert.equal(modalBoot.nonce, 'nonce-1');
+    assert.match(modalBoot.html, /data-vt-action/);
+    assert.match(modalBoot.styles, /font-weight/);
 
     const permissions = listSandboxRequiredPermissions(definition);
     assert.deepEqual(permissions, ['storage', 'network', 'openExternal', 'notifications']);

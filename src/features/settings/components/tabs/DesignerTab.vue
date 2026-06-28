@@ -111,6 +111,15 @@ watch(groups, (list) => {
   if (!applyGroupId.value && list.length) applyGroupId.value = list[0].id;
 }, {immediate: true});
 
+const activeSectionLabel = computed(() =>
+    SECTIONS.find((section) => section.id === activeSection.value)?.label || '编辑');
+const sizeSummary = computed(() =>
+    `${draft.value.sizes.default.w}x${draft.value.sizes.default.h} 默认 / ${draft.value.sizes.min.w}x${draft.value.sizes.min.h}-${draft.value.sizes.max.w}x${draft.value.sizes.max.h}`);
+const permissionSummary = computed(() =>
+    draft.value.permissions.length ? `${draft.value.permissions.length} 项能力` : '无额外能力');
+const buildSummary = computed(() => buildLive.value.ok ? '结构有效' : (buildLive.value.error || '结构无效'));
+const draftStateLabel = computed(() => editingTileType.value ? '编辑已有' : '本地草稿');
+
 const togglePermission = (permission: SandboxRuntimePermission) => {
   const set = new Set(draft.value.permissions);
   if (set.has(permission)) set.delete(permission);
@@ -264,14 +273,15 @@ const deleteDesign = (install: TileInstallRecord) => {
 </script>
 
 <template>
-  <div class="space-y-4 animate-fade-in">
+  <div class="designer-workbench animate-fade-in">
     <!-- 顶部：标题 + 示例 -->
-    <section class="d-card">
+    <section class="designer-command">
       <div class="designer-head">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 font-extrabold text-sm">
-            <PhCode size="20" weight="duotone"/>
-            组件设计（Sandbox JS）
+        <div class="designer-title min-w-0">
+          <div class="designer-title-icon"><PhCode size="20" weight="duotone"/></div>
+          <div class="min-w-0">
+            <h3>组件设计</h3>
+            <p>{{ draftStateLabel }} · Sandbox JS · {{ activeSectionLabel }}</p>
           </div>
         </div>
         <div class="head-actions">
@@ -285,6 +295,25 @@ const deleteDesign = (install: TileInstallRecord) => {
         </div>
       </div>
 
+      <div class="signal-grid">
+        <div class="signal" :class="sandboxEnabled ? 'ok' : 'warn'">
+          <b>{{ sandboxEnabled ? 'Sandbox 已启用' : 'Sandbox 未启用' }}</b>
+          <span>实时预览运行环境</span>
+        </div>
+        <div class="signal" :class="buildLive.ok ? 'ok' : 'bad'">
+          <b>{{ buildSummary }}</b>
+          <span>包结构校验</span>
+        </div>
+        <div class="signal">
+          <b>{{ sizeSummary }}</b>
+          <span>尺寸约束</span>
+        </div>
+        <div class="signal">
+          <b>{{ permissionSummary }}</b>
+          <span>运行能力</span>
+        </div>
+      </div>
+
       <div v-if="!sandboxEnabled" class="warn-banner mt-3">
         <PhWarning size="16" weight="fill" class="shrink-0 text-amber-500 mt-0.5"/>
         <div class="flex-1 min-w-0">
@@ -294,6 +323,9 @@ const deleteDesign = (install: TileInstallRecord) => {
         <button type="button" class="btn primary sm shrink-0" @click="enableSandbox">启用</button>
       </div>
 
+      <div class="starter-head">
+        <span class="qs-label">起步模板</span>
+      </div>
       <div class="starter-grid mt-3">
         <button
             v-for="t in STARTER_TEMPLATES"
@@ -320,7 +352,7 @@ const deleteDesign = (install: TileInstallRecord) => {
     </section>
 
     <!-- 文档 -->
-    <section v-if="showDocs" class="d-card docs">
+    <section v-if="showDocs" class="docs">
       <div class="doc-intro">
         组件运行在隔离的 iframe 沙箱里，使用固定的 <code>VoidWidget</code> 运行时 API。下面是从「能跑」到「交付」需要知道的全部约定；不想手写时，点右上角「AI 生成」让 AI 按同一套约定产出代码。
       </div>
@@ -381,7 +413,13 @@ modalEvent(ctx, event) {
     <!-- 主体：左编辑 / 右预览 -->
     <div class="d-body">
       <!-- 左：分区编辑 -->
-      <section class="d-card editor min-w-0">
+      <section class="editor min-w-0">
+        <div class="editor-toolbar">
+          <div>
+            <span class="qs-label">编辑区</span>
+            <strong>{{ activeSectionLabel }}</strong>
+          </div>
+        </div>
         <div class="seg">
           <button
               v-for="s in SECTIONS"
@@ -474,9 +512,12 @@ modalEvent(ctx, event) {
       </section>
 
       <!-- 右：预览 + 控制台 + 操作 -->
-      <section class="d-card preview-col min-w-0">
-        <div class="flex items-center justify-between gap-2 mb-2">
-          <div class="font-extrabold text-[13px]">实时预览</div>
+      <section class="preview-col min-w-0">
+        <div class="preview-head">
+          <div>
+            <span class="qs-label">实时预览</span>
+            <strong>{{ draft.label || '未命名组件' }}</strong>
+          </div>
           <button type="button" class="btn ghost sm" @click="rerunPreview"><PhPlay size="13" weight="bold"/>重新运行</button>
         </div>
 
@@ -535,13 +576,68 @@ modalEvent(ctx, event) {
 .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-.d-card { padding: 16px; border-radius: 16px; border: 1px solid var(--glass-border); background: var(--modal-input-bg); }
+.designer-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.designer-command,
+.docs,
+.editor,
+.preview-col {
+  border: 1px solid var(--settings-border);
+  border-radius: 12px;
+  background: var(--settings-panel);
+  color: var(--settings-text);
+  box-shadow: var(--overlay-panel-shadow-soft);
+}
+
+.designer-command {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
 
 .designer-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.designer-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.designer-title-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.24);
+  background: rgba(var(--accent-color-rgb), 0.11);
+  color: var(--accent-color);
+}
+
+.designer-title h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 950;
+}
+
+.designer-title p {
+  margin: 3px 0 0;
+  color: var(--settings-text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .head-actions {
@@ -551,24 +647,67 @@ modalEvent(ctx, event) {
   gap: 6px;
 }
 
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.signal {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--settings-border-soft);
+  background: var(--settings-input-bg);
+}
+
+.signal b,
+.preview-head strong,
+.editor-toolbar strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.signal span {
+  color: var(--settings-text-secondary);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.signal.ok { border-color: rgba(34, 197, 94, 0.28); }
+.signal.warn { border-color: rgba(245, 158, 11, 0.36); }
+.signal.bad { border-color: rgba(239, 68, 68, 0.32); }
+
+.starter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .starter-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .starter-card {
   min-width: 0;
-  min-height: 78px;
+  min-height: 72px;
   display: grid;
   align-content: space-between;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(var(--accent-color-rgb), 0.16);
-  background:
-      radial-gradient(circle at 90% 12%, rgba(var(--accent-color-rgb), 0.14), transparent 34%),
-      rgba(var(--overlay-rgb), 0.07);
+  gap: 7px;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid var(--settings-border-soft);
+  background: var(--settings-input-bg);
   text-align: left;
   transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
@@ -576,10 +715,8 @@ modalEvent(ctx, event) {
 .starter-card:hover,
 .starter-card:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(var(--accent-color-rgb), 0.36);
-  background:
-      radial-gradient(circle at 90% 12%, rgba(var(--accent-color-rgb), 0.20), transparent 34%),
-      rgba(var(--accent-color-rgb), 0.08);
+  border-color: rgba(var(--accent-color-rgb), 0.38);
+  background: rgba(var(--accent-color-rgb), 0.09);
   outline: none;
 }
 
@@ -601,28 +738,68 @@ modalEvent(ctx, event) {
 }
 
 .d-body { display: grid; grid-template-columns: 1fr; gap: 14px; }
-@media (min-width: 980px) { .d-body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: start; } }
+@media (min-width: 980px) { .d-body { grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr); align-items: start; } }
 @media (min-width: 980px) { .preview-col { position: sticky; top: 8px; } }
 
-/* 段切换 */
-.seg { display: inline-flex; padding: 3px; border-radius: 12px; background: rgba(var(--overlay-rgb), 0.10); margin-bottom: 14px; }
-.seg-btn { padding: 6px 14px; border-radius: 9px; font-size: 12px; font-weight: 800; opacity: 0.7; }
-.seg-btn.active { background: var(--accent-color); color: #fff; opacity: 1; }
+.editor,
+.preview-col {
+  padding: 14px;
+}
+
+.editor-toolbar,
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.editor-toolbar > div,
+.preview-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--settings-input-bg);
+  margin-bottom: 14px;
+}
+
+.seg-btn {
+  min-height: 31px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--settings-text-secondary);
+}
+
+.seg-btn.active {
+  background: var(--accent-color);
+  color: #fff;
+}
 
 .sec { min-width: 0; }
 .field { display: grid; gap: 5px; min-width: 0; }
 .field > span { font-size: 11px; font-weight: 800; opacity: 0.62; }
 .field-label { font-size: 11px; font-weight: 800; opacity: 0.62; margin-bottom: 6px; }
 .field input, .group-select {
-  width: 100%; height: 34px; padding: 0 10px; border-radius: 10px;
-  border: 1px solid var(--glass-border); background: rgba(var(--overlay-rgb), 0.08);
+  width: 100%; height: 34px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--settings-border-soft); background: var(--settings-input-bg);
   font-size: 12px; outline: none; color: inherit;
 }
 .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 
 .designer-note {
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(var(--accent-color-rgb), 0.18);
   background: rgba(var(--accent-color-rgb), 0.08);
   color: var(--settings-text-secondary);
@@ -638,8 +815,8 @@ modalEvent(ctx, event) {
 }
 
 .code-area {
-  width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--glass-border);
-  background: rgba(var(--overlay-rgb), 0.10); font-size: 12px; line-height: 1.5; resize: vertical; outline: none; color: inherit;
+  width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--settings-border-soft);
+  background: var(--settings-input-bg); font-size: 12px; line-height: 1.5; resize: vertical; outline: none; color: inherit;
 }
 .code-area.mono { font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
@@ -648,24 +825,27 @@ modalEvent(ctx, event) {
 .size-col { display: grid; gap: 5px; }
 .size-col > span { font-size: 11px; font-weight: 800; opacity: 0.62; }
 .size-col > div { display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: 0.7; }
-.size-col input { width: 46px; height: 32px; text-align: center; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(var(--overlay-rgb), 0.08); color: inherit; outline: none; }
+.size-col input { width: 46px; height: 32px; text-align: center; border-radius: 8px; border: 1px solid var(--settings-border-soft); background: var(--settings-input-bg); color: inherit; outline: none; }
 
-.cap-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; cursor: pointer; }
+.cap-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; cursor: pointer; border-bottom: 1px solid var(--settings-border-soft); }
+.cap-row:last-of-type { border-bottom: 0; }
 .cap-row input { margin-top: 2px; width: 15px; height: 15px; accent-color: var(--accent-color); }
 .cap-text { display: grid; gap: 1px; min-width: 0; }
 .cap-text b { font-size: 11px; }
 .cap-text small { font-size: 10px; opacity: 0.6; line-height: 1.35; }
 
 .preview-stage {
-  position: relative; width: 100%; height: 220px; border-radius: 14px; overflow: hidden;
-  border: 1px dashed var(--glass-border);
-  background: repeating-conic-gradient(rgba(127,127,127,0.06) 0% 25%, transparent 0% 50%) 0 0 / 18px 18px;
+  position: relative; width: 100%; height: 236px; border-radius: 10px; overflow: hidden;
+  border: 1px dashed var(--settings-border);
+  background:
+      linear-gradient(var(--settings-input-bg), var(--settings-input-bg)),
+      repeating-conic-gradient(rgba(127,127,127,0.07) 0% 25%, transparent 0% 50%) 0 0 / 18px 18px;
 }
 .preview-error { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px; color: rgb(239 68 68); font-size: 11px; font-weight: 700; text-align: center; }
 
-.console { border-radius: 12px; border: 1px solid var(--glass-border); overflow: hidden; }
-.console-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 11px; font-weight: 800; opacity: 0.75; background: rgba(var(--overlay-rgb), 0.08); }
-.console-body { max-height: 130px; overflow: auto; padding: 6px 8px; font-family: 'Fira Code', ui-monospace, monospace; }
+.console { border-radius: 10px; border: 1px solid var(--settings-border-soft); overflow: hidden; background: #0d1117; }
+.console-head { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; font-size: 11px; font-weight: 800; color: rgba(230, 237, 243, 0.78); background: #111820; }
+.console-body { max-height: 136px; overflow: auto; padding: 7px 8px; font-family: 'Fira Code', ui-monospace, monospace; color: rgba(230, 237, 243, 0.86); }
 .console-empty { font-size: 10px; opacity: 0.5; }
 .console-line { display: flex; gap: 8px; padding: 2px 0; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .console-level { flex: 0 0 auto; text-transform: uppercase; font-size: 9px; font-weight: 900; opacity: 0.6; }
@@ -676,18 +856,18 @@ modalEvent(ctx, event) {
 .status-row.ok { color: rgb(34 197 94); }
 .status-row.bad { color: rgb(239 68 68); }
 
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 2px; }
 .apply-group { display: flex; align-items: center; gap: 6px; }
 .group-select { width: auto; min-width: 110px; }
 
 .mydesigns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .qs-label { font-size: 11px; font-weight: 800; opacity: 0.55; }
 
-.chip { padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid var(--glass-border); background: rgba(var(--overlay-rgb), 0.08); }
+.chip { padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid var(--settings-border-soft); background: var(--settings-input-bg); }
 .chip:hover { border-color: var(--accent-color); color: var(--accent-color); }
 .chip.accent { border-color: var(--accent-color); background: rgba(var(--accent-color-rgb), 0.12); color: var(--accent-color); }
 
-.design-chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--glass-border); background: rgba(var(--overlay-rgb), 0.08); overflow: hidden; }
+.design-chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--settings-border-soft); background: var(--settings-input-bg); overflow: hidden; }
 .design-chip.active { border-color: var(--accent-color); }
 .design-chip-main { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px 5px 10px; font-size: 11px; font-weight: 700; max-width: 160px; }
 .design-chip-main span, .design-chip-main { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -695,14 +875,14 @@ modalEvent(ctx, event) {
 
 .warn-banner { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.1); }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 8px; font-size: 12px; font-weight: 900; cursor: pointer; white-space: nowrap; }
 .btn.sm { height: 30px; padding: 0 10px; }
-.btn.xs { height: 22px; padding: 0 8px; font-size: 10px; }
+.btn.xs { height: 22px; padding: 0 8px; font-size: 10px; border-radius: 7px; }
 .btn.primary { color: white; background: var(--accent-color); border: 0; }
-.btn.ghost { color: inherit; background: rgba(var(--overlay-rgb), 0.08); border: 1px solid var(--glass-border); }
+.btn.ghost { color: inherit; background: var(--settings-input-bg); border: 1px solid var(--settings-border-soft); }
 .btn.ghost:hover { border-color: var(--accent-color); }
 
-.docs { font-size: 12px; line-height: 1.6; }
+.docs { padding: 16px; font-size: 12px; line-height: 1.6; }
 .doc-intro { padding: 10px 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid rgba(var(--accent-color-rgb), 0.18); background: rgba(var(--accent-color-rgb), 0.08); font-size: 11.5px; line-height: 1.55; }
 .doc-warn { padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.08); font-size: 11px; }
 .doc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
@@ -715,6 +895,11 @@ modalEvent(ctx, event) {
 @media (max-width: 720px) {
   .designer-head { align-items: flex-start; flex-direction: column; }
   .head-actions { justify-content: flex-start; }
-  .starter-grid, .doc-grid { grid-template-columns: 1fr; }
+  .signal-grid,
+  .starter-grid,
+  .doc-grid,
+  .size-grid { grid-template-columns: 1fr; }
+  .apply-group { width: 100%; align-items: stretch; flex-direction: column; }
+  .group-select { width: 100%; }
 }
 </style>

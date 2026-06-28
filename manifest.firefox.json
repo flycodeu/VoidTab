@@ -48,7 +48,13 @@
     "https://*/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; frame-src https:;"
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self' https:;",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self'; style-src 'self' 'unsafe-inline'; img-src https: data: blob:; font-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';"
+  },
+  "sandbox": {
+    "pages": [
+      "sandbox.html"
+    ]
   },
   "background": {
     "scripts": ["assets/background.js"]
