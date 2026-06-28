@@ -203,7 +203,7 @@ const tileSpanOptions = [3, 4, 5, 6];
             Sandbox JS 本地实验
           </div>
           <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            开启后，本机导入的沙箱 JS 组件会在隔离 iframe 中运行；该开关不会随 WebDAV 同步。
+            开启后，本机导入的沙箱 JS 组件会在隔离环境中运行；该开关不会随云端同步。
           </p>
         </div>
         <input

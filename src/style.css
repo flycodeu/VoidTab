@@ -105,6 +105,17 @@
     --modal-swatch-border: rgba(255, 255, 255, 0.14);
 
     --tech-font-family: 'Fira Code', 'JetBrains Mono', 'Noto Sans SC', monospace;
+
+    /* Unified typography / shape tokens. font-size stays on a 16px root so the
+     * Tailwind rem scale is unchanged; these only standardize family, radii and
+     * spacing across panels and modals. */
+    --font-sans: 'Fira Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --font-mono: var(--tech-font-family);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+
     --sidebar-breath-duration: 3s;
 
     --app-cursor: auto;
@@ -285,7 +296,7 @@ html.light {
 }
 
 body {
-    font-family: 'Fira Sans', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-family: var(--font-sans);
     color: var(--text-primary);
     background-color: var(--page-fallback);
     background-image: var(--default-wallpaper);
@@ -297,6 +308,28 @@ body {
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.5s ease, color 0.3s ease;
     min-height: 100vh;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  全局统一：表单控件继承字体 + 一致的键盘聚焦环                              */
+/* -------------------------------------------------------------------------- */
+button,
+input,
+select,
+textarea,
+optgroup {
+    font-family: inherit;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -271,6 +271,18 @@ export const widgetRegistry: WidgetMeta[] = [
         color: 'from-emerald-500 to-zinc-900',
     },
     {
+        type: 'tetris',
+        label: '俄罗斯方块',
+        description: '经典消除。方向键移动旋转，填满整行即可消除！',
+        defaultW: 2,
+        defaultH: 2,
+        category: 'game',
+        runtime: 'local',
+        component: defineAsyncComponent(() => import('../../features/widgets/builtins/tetris/TetrisWidget.vue')),
+        icon: 'Stack',
+        color: 'from-cyan-500 to-fuchsia-900',
+    },
+    {
         type: 'survivor',
         label: '幸存者',
         description: '幸存者经典游戏',

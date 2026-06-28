@@ -60,7 +60,7 @@ export const templatePresets: TemplatePreset[] = [
         id: 'regular',
         name: '常规布局',
         audience: '默认习惯',
-        summary: '接近 VoidTab 默认使用方式：左侧分组、常规间距、图标入口和连续分组浏览。',
+        summary: '左侧分组、常规间距、图标入口，连续浏览所有分组。',
         accent: '#007AFF',
         layout: {
             sidebarPos: 'left',

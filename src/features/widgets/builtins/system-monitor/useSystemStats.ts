@@ -1,6 +1,7 @@
 // src/features/widgets/builtins/system-monitor/useSystemStats.ts
-import {ref, onMounted, onUnmounted} from 'vue';
+import {ref} from 'vue';
 import {collectSystemStats, type SystemStats} from '../../../../core/system/systemStats';
+import {useVisibilityInterval} from '../../../../shared/composables/useVisibilityInterval';
 
 export function useSystemStats(opts?: {
     pingUrl?: string;
@@ -10,8 +11,6 @@ export function useSystemStats(opts?: {
     const stats = ref<SystemStats | null>(null);
     const loading = ref(false);
     const error = ref('');
-
-    let timer: number | undefined;
 
     async function refresh() {
         loading.value = true;
@@ -29,14 +28,9 @@ export function useSystemStats(opts?: {
         }
     }
 
-    onMounted(async () => {
-        await refresh();
-        timer = window.setInterval(refresh, opts?.intervalMs ?? 5000);
-    });
-
-    onUnmounted(() => {
-        if (timer) clearInterval(timer);
-    });
+    // Visibility-gated: pause the 5s poll (and its network pings) while the tab
+    // is hidden so a background new-tab does not keep hitting the network.
+    useVisibilityInterval(() => { void refresh(); }, opts?.intervalMs ?? 5000, {immediate: true});
 
     return {stats, loading, error, refresh};
 }

@@ -37,7 +37,7 @@ const save = () => {
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="emit('close')"></div>
 
       <div
-          class="relative bg-[#1a1a1a] w-[360px] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden text-white">
+          class="relative bg-[#1a1a1a] w-[360px] max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto custom-scrollbar rounded-2xl border border-white/10 shadow-2xl flex flex-col text-white">
 
         <div class="p-4 border-b border-white/5 flex justify-between items-center bg-white/5">
           <h3 class="text-sm font-bold">看板设置</h3>

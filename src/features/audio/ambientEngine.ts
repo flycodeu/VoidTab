@@ -146,14 +146,16 @@ function buildSynth(ctx: AudioContext, type: SynthType, out: GainNode) {
         const src = makeNoise(ctx, 'white');
         const bp = ctx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.Q.value = 0.7;
+        bp.Q.value = 0.85;
         const g = ctx.createGain();
         g.gain.value = 0.5;
         src.connect(bp).connect(g).connect(out);
-        // 呼啸：扫频 + 强弱
-        const sweep = makeLFO(ctx, 0.07, 320, bp.frequency, 520);
-        const breath = makeLFO(ctx, 0.13, 0.25, g.gain, 0.5);
-        sources.push(src, sweep, breath);
+        // 呼啸：宽幅扫频制造"嗖嗖"的高低变化
+        const sweep = makeLFO(ctx, 0.06, 420, bp.frequency, 640);
+        // 狂风：两层不同周期的强弱起伏叠加，营造忽强忽弱的阵风感
+        const gust = makeLFO(ctx, 0.045, 0.34, g.gain, 0.5);
+        const breath = makeLFO(ctx, 0.17, 0.16, g.gain, 0.5);
+        sources.push(src, sweep, gust, breath);
     } else if (type === 'stream') {
         const src = makeNoise(ctx, 'white');
         const hp = ctx.createBiquadFilter();

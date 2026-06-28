@@ -1,7 +1,7 @@
 {
   "name": "voidtab",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,10 @@
     "build": "npm run build:web && npm run build:ext",
     "build:web": "vite build --mode web",
     "build:ext": "vite build --mode ext",
+    "build:firefox": "vite build --mode ext && node scripts/build-firefox.mjs",
+    "ff:run": "npm run build:firefox && web-ext run",
+    "ff:lint": "npm run build:firefox && web-ext lint",
+    "ff:sign": "npm run build:firefox && web-ext sign",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -47,6 +51,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.4.2",
     "vite": "^5.2.0",
-    "vue-tsc": "^2.0.6"
+    "vue-tsc": "^2.0.6",
+    "web-ext": "^10.4.0"
   }
 }

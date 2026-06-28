@@ -3,14 +3,18 @@
   "name": "VoidTab - Cyberpunk Dashboard",
   "version": "1.0.6",
   "description": "极简、赛博朋克风格的浏览器新标签页，支持搜索、快捷访问与主题自定义，并可进行数据云同步。",
-  "short_description": "赛博朋克风新标签页：快捷访问、搜索、主题自定义、云同步。",
   "author": "Fly",
   "homepage_url": "https://github.com/flycodeu",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "voidtab@flycode",
+      "strict_min_version": "128.0"
+    }
+  },
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "contextMenus",
-    "favicon"
+    "contextMenus"
   ],
   "host_permissions": [
     "https://geocoding-api.open-meteo.com/*",
@@ -47,8 +51,7 @@
     "extension_pages": "script-src 'self'; object-src 'self'; frame-src https:;"
   },
   "background": {
-    "service_worker": "assets/background.js",
-    "type": "module"
+    "scripts": ["assets/background.js"]
   },
   "chrome_url_overrides": {
     "newtab": "index.html"
@@ -67,6 +70,5 @@
       "128": "icons/icon128.png"
     },
     "default_title": "VoidTab"
-  },
-  "minimum_edge_version": "114.0.0.0"
+  }
 }

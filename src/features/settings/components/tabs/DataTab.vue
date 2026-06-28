@@ -8,7 +8,9 @@ import {
   PhWarning,
   PhCheck,
   PhCode,
-  PhTrash
+  PhTrash,
+  PhArrowsClockwise,
+  PhUploadSimple
 } from '@phosphor-icons/vue';
 
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
@@ -23,6 +25,13 @@ import {migrateV5ToV6} from '../../../../core/config/migrateV5ToV6.ts';
 import {normalizeConfigV6} from '../../../../core/config/v6.ts';
 import {getStableConfigDeviceId} from '../../../../core/config/deviceId.ts';
 import {exportBookmarksToHtml} from '../../../../core/bookmarks/export.ts';
+import {
+  isBrowserBookmarksSupported,
+  hasBookmarksPermission,
+  requestBookmarksPermission,
+  readBrowserBookmarkGroups,
+  writeGroupsToBrowser,
+} from '../../../../core/bookmarks/browserBookmarks.ts';
 import {hydrateTileInstallsFromRepository} from '../../../../core/tiles/packageRepository.ts';
 import {useToast} from '../../../../shared/composables/useToast';
 
@@ -147,7 +156,7 @@ const handleImport = (e: Event) => {
           });
           const recoveryCount = restored.recoveryRecords.length;
           pendingImportMessages.value = [
-            '将导入 v6 Tile/Workspace 配置；本地组件安装记录和运行时缓存不会被覆盖。',
+            '将导入备份配置；本地组件安装记录和运行时缓存不会被覆盖。',
             ...(recoveryCount > 0
                 ? [`检测到 ${recoveryCount} 条恢复记录，导入后可在“同步”页查看缺失组件包、布局重叠或冲突提示。`]
                 : []),
@@ -279,6 +288,57 @@ const handleBookmarkUpload = (event: Event) => {
 };
 
 // ===============================
+// 浏览器书签双向同步（仅扩展环境）
+// ===============================
+const browserSyncSupported = isBrowserBookmarksSupported();
+const browserSyncBusy = ref(false);
+
+const ensureBookmarkPermission = async () => {
+  if (await hasBookmarksPermission()) return true;
+  const granted = await requestBookmarksPermission();
+  if (!granted) showFeedback(false, '未授予书签权限，无法同步');
+  return granted;
+};
+
+const syncFromBrowser = async () => {
+  if (browserSyncBusy.value) return;
+  browserSyncBusy.value = true;
+  try {
+    if (!(await ensureBookmarkPermission())) return;
+    const groups = await readBrowserBookmarkGroups();
+    const result = store.mergeBrowserBookmarkGroups(groups);
+    if (result.added > 0) {
+      showFeedback(true, `已从浏览器合并：新增 ${result.added} 个书签（合并 ${result.mergedGroups} 个分组、新建 ${result.newGroups} 个分组），跳过 ${result.skipped} 个重复`);
+    } else {
+      showFeedback(true, `没有新书签需要合并（已跳过 ${result.skipped} 个重复）`);
+    }
+  } catch (error) {
+    showFeedback(false, error instanceof Error ? error.message : '同步失败');
+  } finally {
+    browserSyncBusy.value = false;
+  }
+};
+
+const exportToBrowser = async () => {
+  if (browserSyncBusy.value) return;
+  browserSyncBusy.value = true;
+  try {
+    if (!(await ensureBookmarkPermission())) return;
+    const groups = store.collectBookmarkGroupsForBrowser();
+    if (!groups.length) {
+      showFeedback(false, '当前没有可导出的书签');
+      return;
+    }
+    const result = await writeGroupsToBrowser(groups);
+    showFeedback(true, `已导出到浏览器「VoidTab」书签夹：新增 ${result.addedBookmarks} 个书签、${result.createdFolders} 个文件夹，跳过 ${result.skipped} 个重复`);
+  } catch (error) {
+    showFeedback(false, error instanceof Error ? error.message : '导出失败');
+  } finally {
+    browserSyncBusy.value = false;
+  }
+};
+
+// ===============================
 // ✅ 新增：恢复默认设置（危险）双重确认
 // ===============================
 const showReset1 = ref(false);
@@ -373,19 +433,10 @@ const executeResetAll = async () => {
       </div>
     </div>
 
-    <div class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-3">
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <h3 class="font-bold text-sm">可自定义卡片数据结构</h3>
-          <p class="text-[11px] opacity-60 leading-relaxed mt-1">
-            当前数据使用 v6 Tile/Workspace 结构。导入旧备份时会先在内存完成安全迁移，再替换当前配置。
-          </p>
-        </div>
-      </div>
-
-      <div v-if="v6SyncConfirmationPending" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start justify-between gap-3">
+    <div v-if="v6SyncConfirmationPending" class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)]">
+      <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-start justify-between gap-3">
         <p class="text-[11px] leading-relaxed opacity-85">
-          WebDAV 自动同步已暂停。确认所有设备均支持 v6 后，才会写入独立的 <code>.v6.json</code> 文件；旧备份不会被覆盖。
+          WebDAV 自动同步已暂停。确认所有设备均已升级后才会写入新版同步文件；旧备份不会被覆盖。
         </p>
         <button
             type="button"
@@ -417,6 +468,42 @@ const executeResetAll = async () => {
           <PhFileArrowUp size="14" weight="bold"/>
           选择 HTML 文件
           <input type="file" ref="bookmarkInput" class="hidden" accept=".html" @change="handleBookmarkUpload"/>
+        </button>
+      </div>
+    </div>
+
+    <!-- 浏览器书签双向同步（仅扩展环境） -->
+    <div v-if="browserSyncSupported" class="p-5 rounded-2xl border border-[var(--glass-border)] bg-[var(--modal-input-bg)] space-y-4">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+          <PhArrowsClockwise size="20" weight="duotone"/>
+        </div>
+        <div class="min-w-0">
+          <h3 class="font-bold text-sm">浏览器书签同步</h3>
+          <p class="text-[10px] opacity-60">合并而非覆盖：同名分组合并、按网址去重、缺失分组自动新增</p>
+        </div>
+      </div>
+
+      <p class="text-[11px] opacity-55 leading-relaxed">
+        首次使用会请求「书签」权限。从浏览器同步会把现有书签合并进当前分组；导出会写入浏览器的「VoidTab」书签夹，二者都只新增、不删除、不覆盖。
+      </p>
+
+      <div class="flex flex-wrap gap-2">
+        <button
+            :disabled="browserSyncBusy"
+            @click="syncFromBrowser"
+            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-blue-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
+        >
+          <PhArrowsClockwise size="14" weight="bold"/>
+          从浏览器同步（合并）
+        </button>
+        <button
+            :disabled="browserSyncBusy"
+            @click="exportToBrowser"
+            class="px-4 py-2 rounded-lg border border-current/20 text-xs font-bold hover:bg-blue-500 hover:text-white hover:border-transparent transition-all flex items-center gap-2 disabled:opacity-50"
+        >
+          <PhUploadSimple size="14" weight="bold"/>
+          导出到浏览器书签
         </button>
       </div>
     </div>
@@ -521,12 +608,12 @@ const executeResetAll = async () => {
 
     <ConfirmDialog
         :show="showV6SyncConfirm"
-        title="启用 v6 WebDAV 同步？"
+        title="启用新版同步？"
         :message="[
-          '确认后，后续同步只会读写同目录的 .v6.json 文件。',
-          '请确认所有会写入该新文件的设备都已升级；原 voidtab-backup.json 保持为只读恢复源。'
+          '确认后，后续同步只会读写同目录下的新版备份文件。',
+          '请确认所有写入该文件的设备都已升级；原备份文件保持为只读恢复源。'
         ]"
-        confirmText="确认启用 v6 通道"
+        confirmText="确认启用"
         cancelText="取消"
         :danger="true"
         :confirmDisabled="upgradeBusy"

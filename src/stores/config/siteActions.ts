@@ -13,7 +13,7 @@ import type {
     Workspace,
 } from '../../core/tiles/contracts.ts';
 import {parseBookmarkContent} from '../../shared/utils/bookmarkImporter';
-import {dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
+import {createBookmarkUrlKey, dedupeImportedBookmarkGroups} from '../../shared/utils/bookmarkImportDedup';
 import {clampInt, createTextIconValue, generateColor, MAX_WIDGET_H, MAX_WIDGET_W, normalizeSiteIconType} from './helpers';
 import {exportTileInstance as createTileInstanceExport, importTileInstance} from '../../core/tiles/instanceSharing.ts';
 import {resolveTileDefinition} from '../../core/tiles/registry.ts';
@@ -906,6 +906,93 @@ export const createSiteActions = (
         return {success: false, message: result.message || '导入失败'};
     };
 
+    // Merge live browser-bookmark groups into the layout: same-title groups are
+    // merged (dedup by URL), missing groups are appended. Never overwrites.
+    const mergeBrowserBookmarkGroups = (
+        groups: {title: string; items: {title: string; url: string}[]}[],
+    ) => {
+        const now = Date.now();
+        let added = 0;
+        let mergedGroups = 0;
+        let newGroups = 0;
+        let skipped = 0;
+
+        const buildTile = (item: {title: string; url: string}) => createCanonicalSiteTile({
+            id: createUniqueTileId(),
+            title: (item.title || '').slice(0, 120) || item.url,
+            url: item.url,
+            icon: '',
+            iconType: 'auto',
+            iconValue: '',
+            bgColor: '#3b82f6',
+            remark: '',
+            tags: [],
+            createdAt: now,
+            layouts: {desktop: {x: 0, y: 0, w: 1, h: 1}},
+        });
+
+        for (const incoming of groups) {
+            const title = (incoming.title || '').trim() || '未命名分组';
+            const items = (incoming.items || []).filter((item) => createBookmarkUrlKey(item.url));
+            if (!items.length) continue;
+
+            const existing = config.value.layout.find(
+                (group) => group.title.trim().toLowerCase() === title.toLowerCase(),
+            );
+
+            if (existing) {
+                const have = new Set(
+                    existing.tiles.filter(isSiteTile).map((tile) => createBookmarkUrlKey(tile.url)),
+                );
+                let groupAdded = 0;
+                for (const item of items) {
+                    const key = createBookmarkUrlKey(item.url);
+                    if (have.has(key)) { skipped += 1; continue; }
+                    have.add(key);
+                    existing.tiles.push(buildTile(item));
+                    added += 1;
+                    groupAdded += 1;
+                }
+                if (groupAdded) mergedGroups += 1;
+            } else {
+                const have = new Set<string>();
+                const tiles = [];
+                for (const item of items) {
+                    const key = createBookmarkUrlKey(item.url);
+                    if (have.has(key)) { skipped += 1; continue; }
+                    have.add(key);
+                    tiles.push(buildTile(item));
+                    added += 1;
+                }
+                if (tiles.length) {
+                    config.value.layout.push(createWorkspace({
+                        id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                        title,
+                        icon: 'Folder',
+                        tiles,
+                    }));
+                    newGroups += 1;
+                }
+            }
+        }
+
+        if (added > 0) void saveConfig();
+        return {added, mergedGroups, newGroups, skipped};
+    };
+
+    // Snapshot the current layout as {title, items[{title,url}]} for exporting to
+    // the browser bookmark tree.
+    const collectBookmarkGroupsForBrowser = () =>
+        config.value.layout
+            .map((group) => ({
+                title: group.title,
+                items: group.tiles
+                    .filter(isSiteTile)
+                    .map((tile) => ({title: tile.title || tile.url, url: tile.url}))
+                    .filter((item) => !!item.url),
+            }))
+            .filter((group) => group.items.length > 0);
+
     const setIconFallback = (itemId: string) => {
         for (const group of config.value.layout) {
             const item = findTile(group, itemId);
@@ -980,6 +1067,8 @@ export const createSiteActions = (
         recordSandboxCrash,
         clearSandboxCrash,
         importBookmarks,
+        mergeBrowserBookmarkGroups,
+        collectBookmarkGroupsForBrowser,
         setIconFallback,
         updateGroupSort,
         createSiteTile: addSite,

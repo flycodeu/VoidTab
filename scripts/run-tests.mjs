@@ -793,9 +793,9 @@ test('P3.6 isolates v6 sync files and rejects future configuration before normal
   assert.match(dataTab, /createConfigV6SyncExport/);
   assert.match(dataTab, /restoreConfigV6FromSyncExport/);
   assert.match(syncTab, /v6SyncConfirmationPending/);
-  assert.match(syncTab, /getV6SiblingFilename/);
+  assert.match(syncTab, /syncSchemaChannel !== 'v6'/);
   assert.match(syncTab, /confirmV6SyncUpgrade/);
-  assert.match(syncTab, /原 WebDAV 文件保持为只读恢复源/);
+  assert.match(syncTab, /原有备份文件保持为只读恢复源/);
   assert.match(transaction, /markConfigV6SyncSchemaUpgradePending/);
 
   await runBundledTypeScript('p3-6-v6-sync-isolation', `

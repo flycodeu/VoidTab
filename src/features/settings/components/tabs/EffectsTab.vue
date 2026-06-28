@@ -98,10 +98,6 @@ const breathSeconds = computed({
             {{ f.label }}
           </option>
         </select>
-
-        <p class="text-xs opacity-60 leading-relaxed">
-          不选择则为默认 Inter。开启后通过 <code>.theme-tech-font</code> 全局应用（也可只在时钟组件里使用）。
-        </p>
       </div>
 
       <hr class="border-[var(--glass-border)] opacity-50"/>
@@ -172,8 +168,7 @@ const breathSeconds = computed({
         </div>
 
         <p class="text-xs opacity-60 leading-relaxed">
-          打开后在新标签页播放专注背景音。雨声、海浪、篝火等为实时合成，即开即用；
-          Lo-Fi 需在 <code>public/audio/ambient/</code> 放入音频文件后生效。
+          打开后在新标签页播放专注背景音，即开即用。
         </p>
 
         <!-- 音色选择 -->

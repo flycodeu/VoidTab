@@ -16,7 +16,6 @@ import {
 import ConfirmDialog from '../../../../shared/ui/dialogs/ConfirmDialog.vue';
 import SyncConflictDialog from '../SyncConflictDialog.vue';
 import {useToast} from '../../../../shared/composables/useToast';
-import {getV6SiblingFilename} from '../../../../core/sync/v6Channel.ts';
 
 const store = useConfigStore();
 const toast = useToast();
@@ -117,7 +116,6 @@ const recoveryRecords = computed(() => store.config.sync.recoveryRecords || []);
 const v6SyncConfirmationPending = computed(() => isWebdav.value
     && syncEnabled.value
     && store.config.sync.syncSchemaChannel !== 'v6');
-const v6SiblingFilename = computed(() => getV6SiblingFilename(webdavFilename.value || 'voidtab-backup.json'));
 
 const openConflictDialog = () => { showConflictDialog.value = true; };
 
@@ -402,9 +400,9 @@ const ignoreRecoveryRecord = async (recordId: string) => {
       >
         <PhWarning size="16" weight="fill" class="text-amber-400 shrink-0 mt-0.5" />
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-amber-400">v6 同步通道尚未确认</div>
+          <div class="text-xs font-bold text-amber-400">云同步已暂停</div>
           <div class="text-[11px] opacity-70 leading-relaxed mt-1" style="color: var(--settings-text);">
-            立即备份前会先确认写入 <code>{{ v6SiblingFilename }}</code>；旧 WebDAV 文件只用于手动恢复，不会被覆盖。
+            确认所有设备均已升级后才会写入新版同步文件；旧备份只用于手动恢复，不会被覆盖。
           </div>
         </div>
         <button
@@ -412,7 +410,7 @@ const ignoreRecoveryRecord = async (recordId: string) => {
             class="shrink-0 px-3 py-2 rounded-lg border border-current/25 text-xs font-bold disabled:opacity-50"
             :disabled="upgradeBusy"
             @click="showV6SyncConfirm = true"
-        >确认 v6</button>
+        >确认升级</button>
       </div>
 
       <div v-if="recoveryRecords.length" class="recovery-panel mt-3">
@@ -652,12 +650,12 @@ const ignoreRecoveryRecord = async (recordId: string) => {
 
     <ConfirmDialog
         :show="showV6SyncConfirm"
-        title="启用 v6 WebDAV 同步？"
+        title="启用新版同步？"
         :message="[
-        `确认后，后续备份和自动同步只会读写 ${v6SiblingFilename}。`,
-        '请确认所有会写入该新文件的设备都已升级；原 WebDAV 文件保持为只读恢复源。'
+        '确认后，后续备份和自动同步会写入新版同步文件。',
+        '请确认所有设备都已升级；原有备份文件保持为只读恢复源，不会被覆盖。'
       ]"
-        confirmText="确认启用 v6 通道"
+        confirmText="确认启用"
         cancelText="取消"
         :danger="true"
         :confirmDisabled="upgradeBusy"

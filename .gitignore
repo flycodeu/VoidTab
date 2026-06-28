@@ -2,6 +2,7 @@ node_modules/**
 .idea/**
 dist/**
 dist.zip
+dist-firefox/**
 .tmp-build/
 .tmp-vite-preview-*.log
 .playwright-mcp/
