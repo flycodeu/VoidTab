@@ -442,6 +442,7 @@ const deleteDesign = (install: TileInstallRecord) => {
               :definition="previewDefinition"
               :enabled="sandboxEnabled"
               :debug="true"
+              :preview-mode="true"
               @log="onPreviewLog"
           />
         </div>

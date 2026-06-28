@@ -17,7 +17,8 @@ export type SandboxBridgeRequestType =
     | 'clipboard.write'
     | 'network.fetch'
     | 'notification.show'
-    | 'modal.open';
+    | 'modal.open'
+    | 'modal.update';
 
 export interface SandboxBridgeRequest {
     type: SandboxBridgeRequestType;
@@ -201,13 +202,14 @@ const bootstrapScript = `
     notify: (title, options) => request('notification.show', {title, options}),
     modal: Object.freeze({
       open: (payload) => request('modal.open', payload),
+      update: (payload) => request('modal.update', payload),
     }),
     emit: (name, data) => post('event', {name, data}),
   });
 
-  const callWidgetLifecycle = (method) => {
+  const callWidgetLifecycle = (method, payload) => {
     if (!widget || typeof widget[method] !== 'function') return;
-    Promise.resolve(widget[method](ctx)).catch((error) => post('error', cleanError(error)));
+    Promise.resolve(widget[method](ctx, payload)).catch((error) => post('error', cleanError(error)));
   };
 
   window.addEventListener('message', (event) => {
@@ -223,6 +225,10 @@ const bootstrapScript = `
     }
     if (data.kind === 'update' && widget && typeof widget.update === 'function') {
       Promise.resolve(widget.update(ctx)).catch((error) => post('error', cleanError(error)));
+      return;
+    }
+    if (data.kind === 'modal.event') {
+      callWidgetLifecycle('modalEvent', data.payload || {});
       return;
     }
     if (data.kind === 'pause') {
@@ -385,11 +391,115 @@ export function buildSandboxModalSrcDoc(input: {
 (() => {
   const channel = ${safeJsonForHtml(channel)};
   const nonce = ${safeJsonForHtml(nonce)};
-  window.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
-    window.parent.postMessage({channel, nonce, kind: 'modal.escape'}, '*');
-  });
+    const post = (kind, payload) => {
+      window.parent.postMessage({channel, nonce, kind, ...(payload === undefined ? {} : {payload})}, '*');
+    };
+    const cleanText = (value) => String(value == null ? '' : value).slice(0, 1200);
+    const serializeForm = (form) => {
+      const data = {};
+      if (!form || typeof FormData === 'undefined') return data;
+      const formData = new FormData(form);
+      for (const [key, value] of formData.entries()) {
+        const safeKey = cleanText(key).slice(0, 80);
+        if (!safeKey) continue;
+        const safeValue = value instanceof File ? value.name.slice(0, 240) : cleanText(value);
+        if (Object.prototype.hasOwnProperty.call(data, safeKey)) {
+          const current = data[safeKey];
+          data[safeKey] = Array.isArray(current) ? current.concat(safeValue) : [current, safeValue];
+        } else {
+          data[safeKey] = safeValue;
+        }
+      }
+      for (const input of Array.from(form.querySelectorAll('input[type="checkbox"][name]'))) {
+        const key = cleanText(input.name).slice(0, 80);
+        if (key && !Object.prototype.hasOwnProperty.call(data, key)) data[key] = input.checked ? 'on' : '';
+      }
+      return data;
+    };
+    const readSourcePayload = (source) => {
+      if (!source || !(source instanceof Element)) return {};
+      const dataset = {};
+      for (const [key, value] of Object.entries(source.dataset || {})) {
+        dataset[cleanText(key).slice(0, 80)] = cleanText(value);
+      }
+      return {
+        tag: source.tagName.toLowerCase(),
+        text: cleanText(source.textContent || '').slice(0, 240),
+        value: cleanText(source.value || ''),
+        dataset,
+      };
+    };
+    const emitAction = (action, source) => {
+      const name = cleanText(action || '').slice(0, 80);
+      if (!name) return;
+      const form = source && source.form ? source.form : source?.closest?.('form');
+      post('modal.event', {name, data: serializeForm(form), source: readSourcePayload(source)});
+      if (source?.hasAttribute?.('data-vt-close')) post('modal.close');
+    };
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      post('modal.escape');
+    });
+    window.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (!data || data.channel !== channel || data.nonce !== nonce || data.kind !== 'modal.update') return;
+      const payload = data.payload && typeof data.payload === 'object' ? data.payload : {};
+      const cleanLong = (value, max) => String(value == null ? '' : value).slice(0, max);
+      const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+      const maxBefore = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const keepBottom = maxBefore - scrollY <= 80;
+      if (payload.styles !== undefined) {
+        let style = document.getElementById('voidtab-modal-dynamic-style');
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'voidtab-modal-dynamic-style';
+          document.head.appendChild(style);
+        }
+        style.textContent = cleanLong(payload.styles || '', 16000);
+      }
+      document.body.innerHTML = cleanLong(payload.html || '', 24000) || '<main style="padding:24px">暂无弹窗内容</main>';
+      requestAnimationFrame(() => {
+        const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        const targetSelector = cleanText(payload.scrollTarget || '').slice(0, 160);
+        let target = null;
+        if (targetSelector) {
+          try { target = document.querySelector(targetSelector); } catch (e) { target = null; }
+        }
+        if (target) {
+          const rect = target.getBoundingClientRect();
+          if (rect.top < 24 || rect.bottom > window.innerHeight - 24) {
+            target.scrollIntoView({block: 'center'});
+          } else {
+            window.scrollTo(0, Math.min(scrollY, maxY));
+          }
+        } else {
+          window.scrollTo(0, keepBottom ? maxY : Math.min(scrollY, maxY));
+        }
+      });
+    });
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      event.preventDefault();
+      const submitter = event.submitter instanceof Element ? event.submitter : null;
+      emitAction(submitter?.getAttribute('data-vt-action') || form.getAttribute('data-vt-action') || 'submit', submitter || form);
+    });
+    document.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element)) return;
+      // Never hijack clicks on native form controls; otherwise the time/date
+      // picker, text fields and checkboxes can't be opened or focused, and a
+      // stray "submit" action fires on every click inside a data-vt-action form.
+      if (event.target.closest('input, select, textarea, option')) return;
+      const source = event.target.closest('[data-vt-action]');
+      if (!source) return;
+      const tag = source.tagName.toLowerCase();
+      if (tag === 'form') return; // forms emit on submit, not on plain clicks
+      const type = (source.getAttribute('type') || '').toLowerCase();
+      if (tag === 'button' && (!type || type === 'submit')) return;
+      event.preventDefault();
+      emitAction(source.getAttribute('data-vt-action'), source);
+    });
 })();
 </script>` : '';
     return `<!doctype html>
@@ -466,6 +576,7 @@ export function parseSandboxFrameMessage(raw: unknown, nonce: string): SandboxFr
             && type !== 'network.fetch'
             && type !== 'notification.show'
             && type !== 'modal.open'
+            && type !== 'modal.update'
         ) return null;
         return {
             channel: SANDBOX_BRIDGE_CHANNEL,

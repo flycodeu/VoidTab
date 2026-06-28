@@ -1832,6 +1832,8 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   const sandboxBridge = await read('src/core/tiles/sandboxBridge.ts');
   const sandboxRuntime = await read('src/core/tiles/sandboxRuntime.ts');
   const sandboxHost = await read('src/features/home/components/SandboxTileHost.vue');
+  const designerTab = await read('src/features/settings/components/tabs/DesignerTab.vue');
+  const designerPackage = await read('src/core/tiles/designerPackage.ts');
   const tileHost = await read('src/features/home/components/TileHost.vue');
   const widgetPanel = await read('src/features/widgets/components/WidgetPanel.vue');
   const advancedTab = await read('src/features/settings/components/tabs/AdvancedTab.vue');
@@ -1851,7 +1853,14 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   assert.match(sandboxBridge, /parseSandboxFrameMessage/);
   assert.match(sandboxBridge, /network\.fetch/);
   assert.match(sandboxBridge, /notification\.show/);
+  assert.match(sandboxBridge, /modal\.update/);
   assert.match(sandboxBridge, /data\.kind === 'pause'/);
+  assert.match(sandboxBridge, /data\.kind === 'modal\.event'/);
+  assert.match(sandboxBridge, /data-vt-action/);
+  assert.match(sandboxBridge, /readSourcePayload/);
+  assert.match(sandboxBridge, /dataset/);
+  assert.match(sandboxBridge, /window\.scrollY/);
+  assert.match(sandboxBridge, /window\.scrollTo/);
   assert.match(sandboxRuntime, /listMissingSandboxPermissions/);
   assert.match(sandboxRuntime, /recordSandboxCrash/);
   assert.match(sandboxRuntime, /evaluateSandboxMarketReview/);
@@ -1864,6 +1873,30 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
   assert.match(sandboxHost, /visibilitychange/);
   assert.match(sandboxHost, /recordSandboxCrash/);
   assert.match(sandboxHost, /registerSandboxInstance/);
+  assert.match(sandboxHost, /previewMode\?: boolean/);
+  assert.match(sandboxHost, /sandbox-preview-storage:v1/);
+  assert.match(sandboxHost, /isPreviewAutoGrantedPermission/);
+  assert.match(sandboxHost, /requiredPermissions\.value\.includes\(permission\)/);
+  assert.match(sandboxHost, /props\.previewMode === true\s*\?\s*\[\]/);
+  assert.match(sandboxHost, /forwardModalEvent/);
+  assert.match(sandboxHost, /updateSandboxModal/);
+  assert.doesNotMatch(sandboxHost, /permission === 'storage'/);
+  assert.match(designerTab, /:preview-mode="true"/);
+  assert.match(designerPackage, /updateModal\(ctx, overrides\)/);
+  assert.match(designerPackage, /updateOnly \? VoidTabDesigner\.updateModal/);
+  assert.match(designerPackage, /time-board-plan-v2/);
+  assert.match(designerPackage, /data-vt-action="save-time-plan"/);
+  assert.match(designerPackage, /data-vt-action="add-time-plan"/);
+  assert.match(designerPackage, /data-vt-action="delete-time-plan"/);
+  assert.match(designerPackage, /permissions: \['storage', 'notifications'\]/);
+  assert.match(designerPackage, /counterSettingsSchema/);
+  assert.match(designerPackage, /data-vt-action="add-habit-record"/);
+  assert.match(designerPackage, /data-vt-action="delete-habit-record"/);
+  assert.match(designerPackage, /data-vt-action="refresh-network"/);
+  assert.match(designerPackage, /data-vt-action="pin-network"/);
+  assert.match(designerPackage, /data-vt-action="delete-network-pin"/);
+  assert.match(designerPackage, /data-vt-action="save-network-note"/);
+  assert.match(designerPackage, /permissions: \['storage', 'network'\]/);
   assert.doesNotMatch(sandboxHost, /allow-same-origin/);
   assert.match(tileHost, /SandboxTileHost/);
   assert.match(widgetPanel, /listSandboxTileDefinitions/);
@@ -1913,6 +1946,16 @@ test('P7 imports and renders local sandbox JS packages behind an explicit host s
     import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
     import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
     import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {STARTER_TEMPLATES, compileDraft, createBlankDraft} from '../../../src/core/tiles/designerPackage.ts';
+
+    const starterBuilds = STARTER_TEMPLATES.map((template) => ({id: template.id, draft: template.draft(123)}));
+    for (const starter of starterBuilds) {
+      const compiled = compileDraft(starter.draft, 123);
+      assert.equal(compiled.ok, true, starter.id + ' starter should compile: ' + (compiled.error || ''));
+    }
+    assert.deepEqual(starterBuilds.find((item) => item.id === 'clock').draft.permissions, ['storage', 'notifications']);
+    assert.deepEqual(starterBuilds.find((item) => item.id === 'fetch').draft.permissions, ['storage', 'network']);
+    assert.equal(compileDraft(createBlankDraft(123), 123).ok, true);
 
     const pack = {
       kind: 'voidtab.tile-package',

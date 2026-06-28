@@ -30,6 +30,7 @@ const props = defineProps<{
   definition: SandboxTileDefinition;
   enabled: boolean;
   debug?: boolean;
+  previewMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -79,13 +80,19 @@ const limits = computed(() => ({
   ...(sandboxRuntime.value.limits || {}),
 }));
 const requiredPermissions = computed(() => listSandboxRequiredPermissions(props.definition));
+const isPreviewAutoGrantedPermission = (permission: SandboxRuntimePermission) =>
+    props.previewMode === true && requiredPermissions.value.includes(permission);
 const missingPermissions = computed(() =>
-    listMissingSandboxPermissions(props.definition, sandboxRuntime.value.grants, props.tile.id),
+    props.previewMode === true
+        ? []
+        : listMissingSandboxPermissions(props.definition, sandboxRuntime.value.grants, props.tile.id),
 );
 const missingPermissionItems = computed(() =>
     missingPermissions.value.map((permission) => ({permission, ...permissionCopy[permission]})),
 );
-const fuseState = computed(() => getSandboxFuseState(sandboxRuntime.value.crashes, props.tile.id));
+const fuseState = computed(() => props.previewMode === true
+    ? {fused: false as const}
+    : getSandboxFuseState(sandboxRuntime.value.crashes, props.tile.id));
 const fuseUntilLabel = computed(() =>
     fuseState.value.fused && fuseState.value.until
         ? new Date(fuseState.value.until).toLocaleString()
@@ -132,7 +139,10 @@ const modalSrcDoc = computed(() => buildSandboxModalSrcDoc({
   channel: SANDBOX_BRIDGE_CHANNEL,
   nonce: nonce.value,
 }));
-const storagePrefix = computed(() => `voidtab:sandbox-storage:v1:${props.definition.id}:${props.tile.id}:`);
+const storagePrefix = computed(() => {
+  const namespace = props.previewMode === true ? 'voidtab:sandbox-preview-storage:v1' : 'voidtab:sandbox-storage:v1';
+  return `${namespace}:${props.definition.id}:${props.tile.id}:`;
+});
 const shouldPauseFrame = computed(() => !documentVisible.value || !isIntersecting.value);
 const modalPanelStyle = computed(() => ({
   width: `min(${modalPayload.value.width}, calc(100vw - 32px))`,
@@ -159,6 +169,7 @@ const ensureInstanceRegistration = () => {
 };
 
 const markSandboxCrash = (reason: string) => {
+  if (props.previewMode === true) return;
   store.recordSandboxCrash(props.tile.id, reason);
 };
 
@@ -219,8 +230,10 @@ const responseToRequest = (requestId: string, payload: unknown, ok = true) => {
       : {kind: 'response', requestId, ok: false, error: String(payload || '请求被拒绝')});
 };
 
-const hasGrantedPermission = (permission: SandboxRuntimePermission) =>
-    hasSandboxPermission(props.definition, sandboxRuntime.value.grants, props.tile.id, permission);
+const hasGrantedPermission = (permission: SandboxRuntimePermission) => {
+  if (isPreviewAutoGrantedPermission(permission)) return true;
+  return hasSandboxPermission(props.definition, sandboxRuntime.value.grants, props.tile.id, permission);
+};
 
 const byteLength = (value: string) => {
   try {
@@ -371,6 +384,19 @@ const openSandboxModal = (payload: Record<string, unknown>) => {
   return true;
 };
 
+const updateSandboxModal = (payload: Record<string, unknown>) => {
+  if (!modalOpen.value) return openSandboxModal(payload);
+  const html = typeof payload.html === 'string' ? payload.html.slice(0, 24_000) : '';
+  const styles = typeof payload.styles === 'string' ? payload.styles.slice(0, 16_000) : '';
+  modalIframeRef.value?.contentWindow?.postMessage({
+    channel: SANDBOX_BRIDGE_CHANNEL,
+    nonce: nonce.value,
+    kind: 'modal.update',
+    payload: {html, styles},
+  }, '*');
+  return true;
+};
+
 const closeSandboxModal = () => {
   modalOpen.value = false;
 };
@@ -381,12 +407,62 @@ const handleKeydown = (event: KeyboardEvent) => {
   closeSandboxModal();
 };
 
+const forwardModalEvent = (payload: unknown) => {
+  const source = payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : {};
+  const name = typeof source.name === 'string' ? source.name.trim().slice(0, 80) : '';
+  if (!name) return;
+  const data = source.data && typeof source.data === 'object' && !Array.isArray(source.data)
+      ? source.data as Record<string, unknown>
+      : {};
+  const safeData: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(data).slice(0, 80)) {
+    const safeKey = key.trim().slice(0, 80);
+    if (!safeKey) continue;
+    if (Array.isArray(value)) {
+      safeData[safeKey] = value.map((item) => String(item ?? '').slice(0, 1200)).slice(0, 20);
+    } else {
+      safeData[safeKey] = String(value ?? '').slice(0, 1200);
+    }
+  }
+  const rawSource = source.source && typeof source.source === 'object' && !Array.isArray(source.source)
+      ? source.source as Record<string, unknown>
+      : {};
+  const rawDataset = rawSource.dataset && typeof rawSource.dataset === 'object' && !Array.isArray(rawSource.dataset)
+      ? rawSource.dataset as Record<string, unknown>
+      : {};
+  const safeDataset: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rawDataset).slice(0, 24)) {
+    const safeKey = key.trim().slice(0, 80);
+    if (!safeKey) continue;
+    safeDataset[safeKey] = String(value ?? '').slice(0, 240);
+  }
+  postToFrame({
+    kind: 'modal.event',
+    payload: {
+      name,
+      data: safeData,
+      source: {
+        tag: typeof rawSource.tag === 'string' ? rawSource.tag.slice(0, 32) : '',
+        text: typeof rawSource.text === 'string' ? rawSource.text.slice(0, 240) : '',
+        value: typeof rawSource.value === 'string' ? rawSource.value.slice(0, 240) : '',
+        dataset: safeDataset,
+      },
+    },
+  });
+};
+
 const handleRequest = async (message: Extract<SandboxFrameMessage, {kind: 'request'}>) => {
   const payload = message.request.payload && typeof message.request.payload === 'object'
       ? message.request.payload as Record<string, unknown>
       : {};
   try {
-    assertRequestBudget();
+    // Modal open/update are host-side UI operations (no storage/network/external
+    // resource use), so they should not consume the per-minute request budget.
+    if (message.request.type !== 'modal.open' && message.request.type !== 'modal.update') {
+      assertRequestBudget();
+    }
     if (message.request.type === 'storage.get') {
       if (!hasGrantedPermission('storage')) throw new Error('未授权 storage 权限');
       const key = normalizeStorageKey(payload.key);
@@ -435,6 +511,10 @@ const handleRequest = async (message: Extract<SandboxFrameMessage, {kind: 'reque
       responseToRequest(message.requestId, openSandboxModal(payload));
       return;
     }
+    if (message.request.type === 'modal.update') {
+      responseToRequest(message.requestId, updateSandboxModal(payload));
+      return;
+    }
     responseToRequest(message.requestId, '未知请求', false);
   } catch (error) {
     responseToRequest(message.requestId, error instanceof Error ? error.message : '请求失败', false);
@@ -454,6 +534,10 @@ const handleMessage = (event: MessageEvent) => {
     const data = event.data || {};
     if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.escape') {
       closeSandboxModal();
+    } else if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.close') {
+      closeSandboxModal();
+    } else if (data.channel === SANDBOX_BRIDGE_CHANNEL && data.nonce === nonce.value && data.kind === 'modal.event') {
+      forwardModalEvent(data.payload);
     }
     return;
   }
