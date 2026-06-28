@@ -81,7 +81,7 @@ export const defaultConfig: ConfigV5 = {
         techFontFamily: 'Fira Code',
         breathingDuration: 3,
         siteLayoutMode: 'icon',
-        showAllGroupsInMain: true,
+        showAllGroupsInMain: false,
         siteCard: {
             w: 3,
             h: 1,

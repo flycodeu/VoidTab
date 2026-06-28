@@ -143,9 +143,15 @@ const getGroupProfile = (group: LayoutGroup): LayoutProfileId =>
 
 const legacyProfileOverride = computed<Partial<WorkspaceLayoutProfile>>(() => {
   const iconSize = Number(store.config.theme.iconSize || 60);
-  const labelSpace = store.config.theme.showIconName || store.config.theme.showWidgetName ? 32 : 12;
+  const showName = store.config.theme.showIconName || store.config.theme.showWidgetName;
+  // labelH 必须与 GlassCard/IconTab 的真实文字行高公式保持一致，
+  // 否则大图标 + 大字号会溢出固定行高，与下一行图标堆叠。
+  const textSize = Number(store.config.theme.iconTextSize || 12);
+  const labelH = showName ? Math.max(18, Math.ceil(textSize * 1.35 + 6)) : 0;
+  // 图标容器(iconSize) + 名称行(labelH) + mt-1(4px) + 上下呼吸空间。
+  const labelSpace = showName ? labelH + 10 : 8;
   return {
-    unit: Math.max(72, Math.min(160, Math.round(iconSize + labelSpace))),
+    unit: Math.max(64, Math.round(iconSize + labelSpace)),
     gap: Math.max(0, Math.min(48, Math.round(Number(store.config.theme.gap || 20)))),
   };
 });
@@ -246,7 +252,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-    () => [store.config.theme.iconSize, store.config.theme.gap, store.config.theme.showIconName, store.config.theme.showWidgetName, store.config.theme.gridMaxWidth],
+    () => [store.config.theme.iconSize, store.config.theme.iconTextSize, store.config.theme.gap, store.config.theme.showIconName, store.config.theme.showWidgetName, store.config.theme.gridMaxWidth],
     () => recalcGridDebounced()
 );
 

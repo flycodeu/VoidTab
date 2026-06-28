@@ -63,10 +63,11 @@ const emit = defineEmits<{
   (e: 'openDevTools'): void;
 }>();
 
+// 预览数值需与 core/tiles/style.ts 的 tileStylePresets 保持一致（这是另一份常量）。
 const STYLE_PRESETS = [
-  {id: 'clean', label: '清爽', tone: '细边 / 低噪', accent: '#2563eb', surface: '#e5e7eb', radius: 8, elevation: 0},
-  {id: 'soft', label: '柔和', tone: '圆角 / 柔面', accent: '#14b8a6', surface: '#99f6e4', radius: 18, elevation: 1},
-  {id: 'vivid', label: '醒目', tone: '高亮 / 强阴影', accent: '#f97316', surface: '#fed7aa', radius: 13, elevation: 2},
+  {id: 'clean', label: '清爽', tone: '直角 / 浅灰', accent: '#2563eb', surface: '#e5e7eb', radius: 12, elevation: 0},
+  {id: 'soft', label: '柔和', tone: '大圆角 / 青绿', accent: '#14b8a6', surface: '#99f6e4', radius: 24, elevation: 1},
+  {id: 'vivid', label: '醒目', tone: '强阴影 / 橙', accent: '#f97316', surface: '#fed7aa', radius: 18, elevation: 3},
 ] as const;
 
 const sameSize = (left: SizeValue | undefined, right: SizeValue | undefined) =>

@@ -356,6 +356,7 @@ const restoreAuthorization = async () => {
           :cardSpanW="cardSpanW"
           :cardSpanH="cardSpanH"
           :priority="priority"
+          :styleOverride="tile.styleOverride"
       />
     </div>
   </div>

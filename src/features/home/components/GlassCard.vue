@@ -3,6 +3,7 @@ import {computed, ref, watch, onMounted, onUnmounted, nextTick} from "vue";
 import {useConfigStore} from "../../../stores/useConfigStore.ts";
 import {useUiStore} from "../../../stores/ui/useUiStore.ts";
 import type {SiteItem, BookmarkDensity} from "../../../core/config/types.ts";
+import type {TileStyleOverride} from "../../../core/tiles/contracts.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
 import {getDirectIconFallbackUrl, getInstantAutoIconUrl} from "../../../shared/utils/icon.ts";
@@ -17,6 +18,7 @@ const props = defineProps<{
   cardSpanW?: number;
   cardSpanH?: number;
   priority?: 'high' | 'low';
+  styleOverride?: TileStyleOverride;
 }>();
 
 const hasLoadError = ref(false);
@@ -263,6 +265,23 @@ const cardCfg = computed(() => {
 const iconSize = computed(() => Number(store.config.theme.iconSize || 72));
 const cardRadius = computed(() => Number(store.config.theme.radius || 16));
 
+// 实例外观预设（清爽/柔和/醒目）在 icon 模式下的可视化：
+// 裸 favicon 不会用到 TileHost 挂的 --tile-surface/accent/elevation，
+// 所以这里显式判断是否存在 override，存在时给图标加底板/描边/阴影，
+// 让三个预设有肉眼可辨的差别（默认无 override 时仍是裸图标）。
+const hasStyleOverride = computed(() =>
+    !!props.styleOverride && Object.keys(props.styleOverride).length > 0);
+const iconEffectiveRadius = computed(() =>
+    typeof props.styleOverride?.radius === "number"
+        ? props.styleOverride.radius
+        : Number(store.config.theme.radius || 16));
+// 底板内缩，favicon 缩小以露出底色，形成 iOS 风格的圆角卡片。
+const ICON_PLATE_PADDING = 8;
+const iconPlateInnerSize = computed(() =>
+    Math.max(24, iconSize.value - ICON_PLATE_PADDING * 2));
+const iconPlateInnerRadius = computed(() =>
+    Math.max(4, Math.round(iconEffectiveRadius.value - ICON_PLATE_PADDING)));
+
 const domain = computed(() => {
   const raw = String(props.item.url || "");
   if (!raw) return "";
@@ -294,6 +313,7 @@ const iconContainerStyle = computed(() => ({
   height: `${iconSize.value}px`,
   transform: 'scale(var(--tile-icon-scale, 1))',
   transformOrigin: 'center top',
+  '--plate-radius': `${iconEffectiveRadius.value}px`,
 }));
 
 type DensityMode = "wide" | "compact" | "tiny";
@@ -500,11 +520,12 @@ const showDomainRow = computed(() => {
       :style="{ width: '100%', height: '100%' }"
   >
     <div class="flex-shrink-0 relative transition-transform duration-200 group-hover:-translate-y-1"
+         :class="{ 'icon-plate': hasStyleOverride }"
          :style="iconContainerStyle">
       <SiteIcon
           :item="item"
-          :size="Number(store.config.theme.iconSize)"
-          :radius="Number(store.config.theme.radius)"
+          :size="hasStyleOverride ? iconPlateInnerSize : Number(store.config.theme.iconSize)"
+          :radius="hasStyleOverride ? iconPlateInnerRadius : iconEffectiveRadius"
           :isAuto="isAuto"
           :autoIconUrl="autoIconUrl"
           :hasError="hasLoadError"
@@ -545,6 +566,32 @@ const showDomainRow = computed(() => {
 </template>
 
 <style scoped>
+/* icon 模式下的实例外观底板：仅当用户应用了预设(styleOverride)时出现。
+   颜色/圆角/阴影来自 TileHost 挂在 .tile-host 上的 --tile-* 变量。 */
+.icon-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--plate-radius, 16px);
+  background:
+      linear-gradient(160deg, color-mix(in srgb, var(--tile-surface) 92%, transparent), color-mix(in srgb, var(--tile-surface) 64%, transparent)),
+      rgba(var(--overlay-rgb), 0.08);
+  border: 1px solid color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 38%, transparent);
+  box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.22) inset,
+      0 calc(var(--tile-elevation, 1) * 5px + 1px) calc(var(--tile-elevation, 1) * 12px + 2px) rgba(15, 23, 42, 0.18),
+      0 0 0 calc(var(--tile-elevation, 1) * 1px) color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 12%, transparent);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.2s ease;
+}
+
+.group:hover .icon-plate {
+  border-color: color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 60%, transparent);
+  box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.26) inset,
+      0 calc(var(--tile-elevation, 1) * 7px + 4px) calc(var(--tile-elevation, 1) * 16px + 8px) rgba(15, 23, 42, 0.22),
+      0 0 0 1px color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 28%, transparent);
+}
+
 .site-card {
   min-width: 0;
   min-height: 0;

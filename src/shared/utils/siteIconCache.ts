@@ -2,6 +2,7 @@ import {idbGetBlob, idbSetBlob} from '../../core/storage/photoIdb';
 import {
     extractSiteDomain,
     getEffectiveMinEdgePx,
+    getFastIconCandidatesWithProviders,
     ICON_MIN_EDGE_PX,
     isExtensionContext,
     probeFastIconCandidate,
@@ -11,7 +12,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 15;
+export const SITE_ICON_CACHE_VERSION = 16;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -949,6 +950,28 @@ async function resolveAndCacheSiteIconAsset(
             url: probe.url,
         };
     };
+
+    // Web/dev: the first-party /api/favicon proxy is a same-origin, server-side resolver
+    // that can take a moment (it fetches declared + provider candidates). Probing it with
+    // tight client timeouts under a page-load storm spuriously fails and poisons the cache,
+    // making every icon disappear. Trust it instead: fetch it once to populate the blob
+    // cache, or fall back to a URL record that the <img> renders directly (SiteIcon already
+    // gives /api/favicon URLs a generous load window).
+    if (!isExtensionContext()) {
+        const proxyCandidate = getFastIconCandidatesWithProviders(rawUrl)
+            .find((candidate) => candidate.provider === 'first_party_proxy');
+        if (proxyCandidate && !skipProviders.has('first_party_proxy')) {
+            return await materializeProbeAsset({
+                url: proxyCandidate.url,
+                source: proxyCandidate.url,
+                provider: 'first_party_proxy',
+                qualityScore: 256,
+                width: 256,
+                height: 256,
+                lowQuality: false,
+            });
+        }
+    }
 
     if (fastFirst) {
         const fastProbe = await probeFastIconCandidate(rawUrl, {

@@ -852,9 +852,13 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number): Promise<str
 }
 
 function shouldPrevalidateCandidate(candidate: IconCandidate): boolean {
-    // Browser favicon and presets are curated image endpoints; same-origin proxy still gets prevalidated
-    // so failed proxy responses do not become noisy <img> 404s in the browser console.
-    if (candidate.provider === 'browser_favicon' || candidate.provider === 'preset') return false;
+    // Browser favicon, presets and the first-party /api/favicon proxy are curated/trusted
+    // endpoints. The proxy in particular resolves icons server-side and can take a moment,
+    // so a tight HEAD prevalidation under a page-load storm spuriously aborts and poisons
+    // the candidate health cache for 30min — skip it and let the image load decide instead.
+    if (candidate.provider === 'browser_favicon'
+        || candidate.provider === 'preset'
+        || candidate.provider === 'first_party_proxy') return false;
     return true;
 }
 

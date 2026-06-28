@@ -136,7 +136,7 @@ const previewKey = computed(() => {
           <label class="ctrl-title">图标尺寸</label>
           <span class="badge font-mono">{{ store.config.theme.iconSize }}px</span>
         </div>
-        <input type="range" v-model.number="store.config.theme.iconSize" min="40" max="120" step="2"
+        <input type="range" v-model.number="store.config.theme.iconSize" min="44" max="96" step="2"
                class="range-input w-full"/>
       </div>
 
