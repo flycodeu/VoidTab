@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VoidTab - Cyberpunk Dashboard",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "极简、赛博朋克风格的浏览器新标签页，支持搜索、快捷访问与主题自定义，并可进行数据云同步。",
   "author": "Fly",
   "homepage_url": "https://github.com/flycodeu",

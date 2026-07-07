@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.7 - 2026-07-07
+
+- Fixed site and group edit dialogs so existing data is hydrated on first open.
+- Updated Vite and related build dependencies to clear known audit findings.
+- Synchronized app, extension manifest, and host capability version metadata.
+
 ## 1.0.4 - 2026-06-08
 
 - Synchronized project and extension version metadata.
