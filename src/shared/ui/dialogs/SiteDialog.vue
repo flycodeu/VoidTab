@@ -84,38 +84,42 @@ onUnmounted(() => {
 });
 
 // === 3. 初始化逻辑 ===
-watch(
-    () => props.show,
-    (isShow) => {
-      if (!isShow) return;
+const initializeForm = () => {
+  if (props.isEdit && props.initialData) {
+    formData.value = {
+      title: props.initialData.title || '',
+      url: props.initialData.url || '',
+      bgColor: props.initialData.bgColor || '#3b82f6',
+      iconType: (props.initialData.iconType as IconMode) || 'auto',
+      iconValue: props.initialData.iconValue || '',
+      icon: (props.initialData as any).icon || '',
+      remark: (props.initialData as any).remark || ''
+    };
+    activeTab.value = formData.value.iconType;
+    refresh(true);
+  } else {
+    const randomColor = colors[Math.floor(Math.random() * (colors.length - 2))];
+    formData.value = {
+      title: '',
+      url: '',
+      bgColor: randomColor,
+      iconType: 'auto',
+      iconValue: '',
+      icon: '',
+      remark: ''
+    };
+    activeTab.value = 'auto';
+    refresh(true);
+  }
+};
 
-      if (props.isEdit && props.initialData) {
-        formData.value = {
-          title: props.initialData.title || '',
-          url: props.initialData.url || '',
-          bgColor: props.initialData.bgColor || '#3b82f6',
-          iconType: (props.initialData.iconType as IconMode) || 'auto',
-          iconValue: props.initialData.iconValue || '',
-          icon: (props.initialData as any).icon || '',
-          remark: (props.initialData as any).remark || ''
-        };
-        activeTab.value = formData.value.iconType;
-        refresh(true);
-      } else {
-        const randomColor = colors[Math.floor(Math.random() * (colors.length - 2))];
-        formData.value = {
-          title: '',
-          url: '',
-          bgColor: randomColor,
-          iconType: 'auto',
-          iconValue: '',
-          icon: '',
-          remark: ''
-        };
-        activeTab.value = 'auto';
-        refresh(true);
-      }
-    }
+watch(
+    () => [props.show, props.isEdit, props.initialData],
+    ([isShow]) => {
+      if (!isShow) return;
+      initializeForm();
+    },
+    { immediate: true }
 );
 
 // 双重保险：url blur 时补标题

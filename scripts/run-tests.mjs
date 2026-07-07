@@ -2237,6 +2237,16 @@ test('primary dialogs provide focus traps and dialog semantics', async () => {
   }
 });
 
+test('edit dialogs hydrate form data on first v-if mount', async () => {
+  const siteDialog = await read('src/shared/ui/dialogs/SiteDialog.vue');
+  const groupDialog = await read('src/shared/ui/dialogs/GroupDialog.vue');
+
+  for (const source of [siteDialog, groupDialog]) {
+    assert.match(source, /initializeForm/);
+    assert.match(source, /watch\(\s*\(\)\s*=>\s*\[props\.show,\s*props\.isEdit,\s*props\.initialData\][\s\S]*?\{\s*immediate:\s*true\s*\}\s*\)/);
+  }
+});
+
 test('app exposes semantic landmarks and skip navigation', async () => {
   const app = await read('src/App.vue');
   const home = await read('src/features/home/components/HomeMain.vue');

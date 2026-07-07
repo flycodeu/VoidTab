@@ -28,29 +28,33 @@ const formRef = ref<InstanceType<typeof GroupDialogForm> | null>(null);
 const formData = ref<GroupForm>({title: '', icon: 'Folder'});
 const errorMsg = ref('');
 
+const initializeForm = () => {
+  errorMsg.value = '';
+
+  if (props.isEdit && props.initialData) {
+    //   编辑模式：回填颜色数据
+    formData.value = {
+      title: String(props.initialData.title ?? ''),
+      icon: String(props.initialData.icon ?? 'Folder'),
+      iconColor: props.initialData.iconColor,
+      iconBgColor: props.initialData.iconBgColor
+    };
+  } else {
+    // 新建模式：重置
+    formData.value = {title: '', icon: 'Folder'};
+  }
+};
+
 watch(
-    () => props.show,
+    () => [props.show, props.isEdit, props.initialData],
     async (val) => {
-      if (!val) return;
-
-      errorMsg.value = '';
-
-      if (props.isEdit && props.initialData) {
-        //   编辑模式：回填颜色数据
-        formData.value = {
-          title: String(props.initialData.title ?? ''),
-          icon: String(props.initialData.icon ?? 'Folder'),
-          iconColor: props.initialData.iconColor,
-          iconBgColor: props.initialData.iconBgColor
-        };
-      } else {
-        // 新建模式：重置
-        formData.value = {title: '', icon: 'Folder'};
-      }
+      if (!val[0]) return;
+      initializeForm();
 
       await nextTick();
       formRef.value?.focusTitle();
-    }
+    },
+    { immediate: true }
 );
 
 const close = () => emit('close');
