@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 - 2026-08-26
+
+- Fixed cross-tab configuration synchronization and stale-tab overwrite data loss.
+- Added serialized local saves, three-way merges, and save-before-backup guarantees.
+- Added Chromium and Firefox release packages for the repaired persistence flow.
+
 ## 1.0.7 - 2026-07-07
 
 - Fixed site and group edit dialogs so existing data is hydrated on first open.

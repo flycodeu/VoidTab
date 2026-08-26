@@ -12,7 +12,7 @@ export function getCurrentHostCapabilities(options: {sandboxRuntime?: boolean} =
     const extension = isExtensionContext();
     return {
         target: extension ? 'extension' : 'web',
-        hostVersion: '1.0.7',
+        hostVersion: '1.0.8',
         browser: {
             family,
             version: parseMajor(browserInfo.version),
