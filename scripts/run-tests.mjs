@@ -3312,6 +3312,146 @@ test('declarative data providers, layout nodes, formatters, and v6 schema save v
   `);
 });
 
+test('cross-tab config merges independent site changes without stale overwrite', async () => {
+  const persistence = await read('src/stores/config/persistence.ts');
+  const repository = await read('src/core/config/repository.ts');
+  const localMerge = await read('src/core/config/localMerge.ts');
+  const webdav = await read('src/shared/utils/webdav.ts');
+  const webdavProvider = await read('src/core/sync/providers/webdav.ts');
+
+  assert.match(persistence, /watchConfigChanges/);
+  assert.match(persistence, /mergeConfigV6ThreeWay/);
+  assert.match(persistence, /committedSnapshot/);
+  assert.match(repository, /withConfigWriteLock/);
+  assert.match(repository, /mergeConfigV6WithPersisted/);
+  assert.match(webdav, /remoteEtag/);
+  assert.match(webdavProvider, /remoteMtime/);
+
+  await runBundledTypeScript('cross-tab-config-merge', `
+    import assert from 'node:assert/strict';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {mergeConfigV6ThreeWay, mergeConfigV6WithPersisted} from '../../../src/core/config/localMerge.ts';
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const base = normalizeConfigV6(migrateV5ToV6(clone(defaultConfig), {deviceId:'merge-test', migratedAt:1}).config);
+    base.layout[0].tiles = [];
+    const local = clone(base);
+    const remote = clone(base);
+    const tile = (id, url, title, updatedAt, sequence = 1) => ({
+      id, tileType:'site', title, url, bgColor:'#3b82f6', iconType:'auto', iconValue:'', icon:'', remark:'',
+      createdAt:1, layouts:{desktop:{x:0,y:0,w:1,h:1}},
+      revision:{updatedAt, deviceId:'tab', sequence},
+    });
+
+    local.layout[0].tiles.push(tile('local-site', 'https://local.example', 'Local', 10));
+    remote.layout[0].tiles.push(tile('remote-site', 'https://remote.example', 'Remote', 11));
+    const merged = mergeConfigV6ThreeWay(base, local, remote);
+    assert.deepEqual(merged.layout[0].tiles.map((item) => item.id).sort(), ['local-site', 'remote-site']);
+
+    const editedLocal = clone(base);
+    const editedRemote = clone(base);
+    const original = tile('shared-site', 'https://before.example', 'Before', 1);
+    base.layout[0].tiles = [clone(original)];
+    editedLocal.layout[0].tiles = [clone(original)];
+    editedRemote.layout[0].tiles = [clone(original)];
+    editedLocal.layout[0].tiles[0].title = 'Title from A';
+    editedLocal.layout[0].tiles[0].revision = {updatedAt:20, deviceId:'tab-a', sequence:2};
+    editedRemote.layout[0].tiles[0].url = 'https://url-from-b.example';
+    editedRemote.layout[0].tiles[0].revision = {updatedAt:21, deviceId:'tab-b', sequence:2};
+    const independent = mergeConfigV6ThreeWay(base, editedLocal, editedRemote).layout[0].tiles[0];
+    assert.equal(independent.title, 'Title from A');
+    assert.equal(independent.url, 'https://url-from-b.example');
+
+    const staleCandidate = clone(base);
+    staleCandidate.layout[0].tiles = [];
+    staleCandidate.layout[0].tiles.push(tile('stale-tab-site', 'https://stale.example', 'Stale', 30));
+    const latest = clone(base);
+    latest.layout[0].tiles = [];
+    latest.layout[0].tiles.push(tile('latest-tab-site', 'https://latest.example', 'Latest', 31));
+    const saveMerge = mergeConfigV6WithPersisted(latest, staleCandidate);
+    assert.deepEqual(saveMerge.layout[0].tiles.map((item) => item.id).sort(), ['latest-tab-site', 'stale-tab-site']);
+  `);
+});
+
+test('cross-tab persistence keeps concurrent additions in the real repository path', async () => {
+  await runBundledTypeScript('cross-tab-persistence-integration', `
+    import assert from 'node:assert/strict';
+
+    const listeners = new Set();
+    const values = new Map();
+    globalThis.window = {
+      addEventListener(type, listener) {
+        if (type === 'storage') listeners.add(listener);
+      },
+      removeEventListener(type, listener) {
+        if (type === 'storage') listeners.delete(listener);
+      },
+    };
+    globalThis.localStorage = {
+      getItem(key) { return values.has(key) ? values.get(key) : null; },
+      setItem(key, value) { values.set(key, String(value)); },
+      removeItem(key) { values.delete(key); },
+    };
+
+    const {ref} = await import('vue');
+    const {defaultConfig} = await import('../../../src/core/config/default.ts');
+    const {migrateV5ToV6} = await import('../../../src/core/config/migrateV5ToV6.ts');
+    const {normalizeConfigV6} = await import('../../../src/core/config/v6.ts');
+    const {createConfigPersistence} = await import('../../../src/stores/config/persistence.ts');
+    const {configRepository} = await import('../../../src/core/config/repository.ts');
+
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const base = normalizeConfigV6(migrateV5ToV6(clone(defaultConfig), {
+      deviceId: 'integration-test', migratedAt: 1,
+    }).config);
+    base.layout[0].tiles = [];
+    const createTile = (id, url) => ({
+      id, tileType: 'site', title: id, url, bgColor: '#3b82f6', iconType: 'auto',
+      iconValue: '', icon: '', remark: '', createdAt: 1,
+      layouts: {desktop: {x: 0, y: 0, w: 1, h: 1}},
+      revision: {updatedAt: Date.now(), deviceId: id, sequence: 1},
+    });
+    const makeTab = () => {
+      const config = ref(clone(base));
+      const persistence = createConfigPersistence({
+        config, isLoaded: ref(true), applyingExternal: ref(false), localRevision: ref(0),
+      });
+      persistence.markCommittedConfig(config.value);
+      return {config, persistence};
+    };
+
+    const tabA = makeTab();
+    const tabB = makeTab();
+    tabA.config.value.layout[0].tiles.push(createTile('site-a', 'https://a.example'));
+    tabB.config.value.layout[0].tiles.push(createTile('site-b', 'https://b.example'));
+
+    await Promise.all([tabA.persistence.flushConfig(), tabB.persistence.flushConfig()]);
+    const persisted = await configRepository.load();
+    assert.deepEqual(
+      persisted.layout[0].tiles.map((item) => item.id).sort(),
+      ['site-a', 'site-b'],
+    );
+
+    for (const listener of listeners) {
+      listener({key: 'voidtab-core-config', oldValue: null, newValue: persisted});
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepEqual(
+      tabA.config.value.layout[0].tiles.map((item) => item.id).sort(),
+      ['site-a', 'site-b'],
+    );
+    assert.deepEqual(
+      tabB.config.value.layout[0].tiles.map((item) => item.id).sort(),
+      ['site-a', 'site-b'],
+    );
+
+    tabA.persistence.destroy();
+    tabB.persistence.destroy();
+  `);
+});
+
 let failed = 0;
 for (const check of checks) {
   try {

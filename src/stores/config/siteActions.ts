@@ -85,7 +85,18 @@ export const createSiteActions = (
         const existing = new Set(config.value.layout.flatMap((group) => group.tiles.map((tile) => tile.id)));
         let candidate = '';
         do {
-            candidate = 'tile-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+            const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 14);
+            candidate = 'tile-' + Date.now() + '-' + randomId;
+        } while (existing.has(candidate));
+        return candidate;
+    };
+
+    const createUniqueWorkspaceId = () => {
+        const existing = new Set(config.value.layout.map((group) => group.id));
+        let candidate = '';
+        do {
+            const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 14);
+            candidate = 'workspace-' + Date.now() + '-' + randomId;
         } while (existing.has(candidate));
         return candidate;
     };
@@ -93,7 +104,7 @@ export const createSiteActions = (
     const addGroup = (group: GroupInput) => {
         const nextGroup = createWorkspace({
             ...group,
-            id: Date.now().toString(),
+            id: createUniqueWorkspaceId(),
             title: group.title || '新分组',
             icon: group.icon || 'SquaresFour',
         });
@@ -126,7 +137,7 @@ export const createSiteActions = (
 
         const now = Date.now();
         const payload = createCanonicalSiteTile({
-            id: now.toString(),
+            id: createUniqueTileId(),
             title: site.title || '',
             url: site.url || '',
             bgColor: site.bgColor || '#3b82f6',

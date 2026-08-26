@@ -14,6 +14,8 @@ export interface WebDavActionResult<T = unknown> {
     message: string;
     status?: number;
     data?: T;
+    remoteEtag?: string;
+    remoteMtime?: string;
 }
 
 const DAV_FOLDER = 'voidtab';
@@ -155,6 +157,11 @@ const webdavFetch = async (config: WebDavConfig, url: string, init: RequestInit)
     });
 };
 
+const getRemoteMetadata = (response: Response) => ({
+    remoteEtag: response.headers.get('etag') || undefined,
+    remoteMtime: response.headers.get('last-modified') || undefined,
+});
+
 /** 确保目录存在（已存在时 405/409 也视为 OK） */
 export const ensureWebDavFolderDetailed = async (config: WebDavConfig): Promise<WebDavActionResult> => {
     // 注意：创建目录时不带文件名
@@ -233,7 +240,12 @@ export const uploadToWebDavDetailed = async (
         });
 
         if (resp.ok || resp.status === 201 || resp.status === 204) {
-            return {ok: true, status: resp.status, message: '云端备份成功'};
+            return {
+                ok: true,
+                status: resp.status,
+                message: '云端备份成功',
+                ...getRemoteMetadata(resp),
+            };
         }
         return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'upload')};
     } catch (error) {
@@ -262,7 +274,13 @@ export const downloadFromWebDavDetailed = async (
         if (!resp.ok) {
             return {ok: false, status: resp.status, message: explainHttpStatus(resp.status, 'download')};
         }
-        return {ok: true, status: resp.status, message: '下载成功', data: await resp.text()};
+        return {
+            ok: true,
+            status: resp.status,
+            message: '下载成功',
+            data: await resp.text(),
+            ...getRemoteMetadata(resp),
+        };
     } catch (error) {
         return {ok: false, message: explainError(error)};
     }

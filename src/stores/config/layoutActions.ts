@@ -21,6 +21,16 @@ export const createLayoutActions = (
     config: Ref<ConfigV6>,
     saveConfig: () => Promise<void>
 ) => {
+    const createUniqueWidgetId = () => {
+        const existing = new Set(config.value.layout.flatMap((group) => group.tiles.map((tile) => tile.id)));
+        let candidate = '';
+        do {
+            const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 14);
+            candidate = `widget-${Date.now()}-${randomId}`;
+        } while (existing.has(candidate));
+        return candidate;
+    };
+
     const normalizeRequestedTileSize = (item: TileInstance, w: number, h: number, fallback: TileSize): TileSize | null => {
         const definition = resolveTileDefinition(item.tileType, config.value.tileInstalls);
         if (!('sizes' in definition)) {
@@ -113,7 +123,7 @@ export const createLayoutActions = (
         const defH = meta?.defaultH ?? 2;
 
         const newWidget = createComponentTile(widgetType, {
-            id: `widget-${Date.now()}`,
+            id: createUniqueWidgetId(),
             title: getWidgetLabel(widgetType),
             settings: {},
             layouts: {desktop: {

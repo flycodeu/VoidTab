@@ -51,6 +51,8 @@ export const useConfigStore = defineStore('config', () => {
         localRevision,
         normalizeLayoutItems: layoutActions.normalizeLayoutItems,
         saveConfig: persistence.saveConfig,
+        flushConfig: persistence.flushConfig,
+        refreshConfig: persistence.refreshConfig,
     });
     const upgradeActions = createUpgradeActions({
         config,
@@ -65,6 +67,7 @@ export const useConfigStore = defineStore('config', () => {
         rssCache,
         normalizeLayoutItems: layoutActions.normalizeLayoutItems,
         saveConfig: persistence.saveConfig,
+        markCommittedConfig: persistence.markCommittedConfig,
         startScheduler: syncActions.startScheduler,
         onLoadWarning: (message) => toast.warning(message),
     });

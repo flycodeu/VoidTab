@@ -21,6 +21,7 @@ type LifecycleDeps = {
     rssCache: Ref<Record<string, unknown[]>>;
     normalizeLayoutItems: () => void;
     saveConfig: () => Promise<void>;
+    markCommittedConfig: (next: ConfigV6) => void;
     startScheduler: () => void;
     onLoadWarning?: (message: string) => void;
 };
@@ -33,6 +34,7 @@ export const createLifecycleActions = ({
     rssCache,
     normalizeLayoutItems,
     saveConfig,
+    markCommittedConfig,
     startScheduler,
     onLoadWarning,
 }: LifecycleDeps) => {
@@ -45,6 +47,7 @@ export const createLifecycleActions = ({
         normalizeLayoutItems();
         ensureSiteIconRuntime(config.value.runtime);
         isLoaded.value = true;
+        markCommittedConfig(next);
         queueMicrotask(() => (applyingExternal.value = false));
     };
 

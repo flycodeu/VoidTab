@@ -23,7 +23,12 @@ export function createWebDavProvider(): SyncProvider {
             const p = asWebDav(profile);
             if (!p) return {ok: false, message: 'provider mismatch'};
             const result = await uploadToWebDavDetailed(p, payload, options?.filename || p.filename);
-            return {ok: result.ok, message: result.message};
+            return {
+                ok: result.ok,
+                message: result.message,
+                remoteEtag: result.remoteEtag,
+                remoteMtime: result.remoteMtime,
+            };
         },
 
         async download(profile: SyncProfile, options?: SyncFileOptions): Promise<SyncOpResult> {
@@ -31,7 +36,13 @@ export function createWebDavProvider(): SyncProvider {
             if (!p) return {ok: false, message: 'provider mismatch'};
             const result = await downloadFromWebDavDetailed(p, options?.filename || p.filename);
             if (!result.ok || !result.data) return {ok: false, message: result.message};
-            return {ok: true, message: result.message, data: result.data};
+            return {
+                ok: true,
+                message: result.message,
+                data: result.data,
+                remoteEtag: result.remoteEtag,
+                remoteMtime: result.remoteMtime,
+            };
         }
     };
 }

@@ -11,6 +11,7 @@ import {applyLegacyLocalStorageIntoConfig} from "./legacyLocalStorage.ts";
 import {openSensitiveConfigFromStorage, sealSensitiveConfigForStorage} from './sensitive';
 import {commitConfigV5ToV6Migration} from './v6MigrationTransaction.ts';
 import {getStableConfigDeviceId} from './deviceId.ts';
+import {mergeConfigV6ThreeWay, mergeConfigV6WithPersisted} from './localMerge.ts';
 
 const isBase64Image = (s: string) => typeof s === 'string' && s.startsWith('data:image');
 
@@ -42,6 +43,76 @@ type ConfigLoadOptions = {
     restoreWallpaper: boolean;
     saveLegacyMigration: boolean;
 };
+
+export type ConfigSaveOptions = {
+    /** Last snapshot known by this tab; used to distinguish edits from stale fields. */
+    base?: ConfigV6;
+};
+
+const CONFIG_WRITE_LOCK = 'voidtab-config-write-v1';
+const FALLBACK_LOCK_KEY = 'voidtab:config-write-lock:v1';
+const FALLBACK_LOCK_TTL_MS = 8_000;
+const FALLBACK_LOCK_WAIT_MS = 35;
+const FALLBACK_LOCK_ATTEMPTS = 240;
+
+const delay = (ms: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
+
+async function withFallbackWriteLock<T>(work: () => Promise<T>): Promise<T> {
+    let local: Storage | null = null;
+    try {
+        local = typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
+    } catch {
+        local = null;
+    }
+    if (!local) return await work();
+    const lockOwner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+    for (let attempt = 0; attempt < FALLBACK_LOCK_ATTEMPTS; attempt += 1) {
+        const now = Date.now();
+        try {
+            const currentRaw = local.getItem(FALLBACK_LOCK_KEY);
+            const current = currentRaw ? JSON.parse(currentRaw) as {owner?: string; expiresAt?: number} : null;
+            if (current?.owner && current.owner !== lockOwner && Number(current.expiresAt) > now) {
+                await delay(FALLBACK_LOCK_WAIT_MS);
+                continue;
+            }
+
+            local.setItem(FALLBACK_LOCK_KEY, JSON.stringify({
+                owner: lockOwner,
+                expiresAt: now + FALLBACK_LOCK_TTL_MS,
+            }));
+            const acquiredRaw = local.getItem(FALLBACK_LOCK_KEY);
+            const acquired = acquiredRaw ? JSON.parse(acquiredRaw) as {owner?: string} : null;
+            if (acquired?.owner !== lockOwner) {
+                await delay(FALLBACK_LOCK_WAIT_MS);
+                continue;
+            }
+
+            try {
+                return await work();
+            } finally {
+                const heldRaw = local.getItem(FALLBACK_LOCK_KEY);
+                const held = heldRaw ? JSON.parse(heldRaw) as {owner?: string} : null;
+                if (held?.owner === lockOwner) local.removeItem(FALLBACK_LOCK_KEY);
+            }
+        } catch {
+            // A restricted localStorage should never make configuration writes
+            // fail; the Web Locks path remains the primary implementation.
+            return await work();
+        }
+    }
+
+    // Never strand a user behind a lock if a browser throttles background tabs.
+    return await work();
+}
+
+async function withConfigWriteLock<T>(work: () => Promise<T>): Promise<T> {
+    const locks = (globalThis as any).navigator?.locks;
+    if (typeof locks?.request === 'function') {
+        return await locks.request(CONFIG_WRITE_LOCK, {mode: 'exclusive'}, work);
+    }
+    return await withFallbackWriteLock(work);
+}
 
 const defaultLoadOptions: ConfigLoadOptions = {
     restoreWallpaper: true,
@@ -139,23 +210,49 @@ export const configRepository = {
      * - base64 wallpaper => 写 local 的 WALLPAPER_KEY，并把 theme.wallpaper 改 marker
      * - config 本体写 local（你也可以未来改成：enabled 时写 sync）
      */
-    async save(cfg: Config): Promise<void> {
-        const normalized = normalizeConfigForRuntime(cfg);
-        assertConfigValidForRuntimeSave(normalized);
+    async save(cfg: Config, options: ConfigSaveOptions = {}): Promise<Config> {
+        return await withConfigWriteLock(async () => {
+            const candidate = normalizeConfigForRuntime(cfg);
+            assertConfigValidForRuntimeSave(candidate);
+            let normalized = candidate;
 
-        const copy: any = await sealSensitiveConfigForStorage(normalized);
-        const wp = copy?.theme?.wallpaper ?? '';
-
-        if (isBase64Image(wp)) {
-            await storage.set(WALLPAPER_KEY, wp, 'local');
-            copy.theme.wallpaper = LOCAL_WALLPAPER_MARKER;
-        } else {
-            // 不是 marker 才删，避免误删已存的大图
-            if (wp !== LOCAL_WALLPAPER_MARKER) {
-                await storage.remove(WALLPAPER_KEY, 'local');
+            // Every tab writes a complete config object. Re-read the persisted
+            // value while holding the cross-context lock and merge it first, so
+            // a stale tab cannot erase a site added by another tab.
+            if (isConfigV6(candidate)) {
+                const stored = await storage.get<any>(CONFIG_KEY, null, 'local');
+                if (stored) {
+                    try {
+                        const persisted = normalizeConfigForRuntime(await openSensitiveConfigFromStorage(stored));
+                        if (isConfigV6(persisted)) {
+                            const merged = options.base && isConfigV6(options.base)
+                                ? mergeConfigV6ThreeWay(normalizeConfigV6(options.base), candidate, persisted)
+                                : mergeConfigV6WithPersisted(persisted, candidate);
+                            normalized = normalizeConfigV6(merged);
+                        }
+                    } catch {
+                        // A malformed old value is safely replaced by the
+                        // already validated candidate below.
+                    }
+                }
             }
-        }
 
-        await storage.set(CONFIG_KEY, copy, 'local');
+            assertConfigValidForRuntimeSave(normalized);
+            const copy: any = await sealSensitiveConfigForStorage(normalized);
+            const wp = copy?.theme?.wallpaper ?? '';
+
+            if (isBase64Image(wp)) {
+                await storage.set(WALLPAPER_KEY, wp, 'local');
+                copy.theme.wallpaper = LOCAL_WALLPAPER_MARKER;
+            } else {
+                // 不是 marker 才删，避免误删已存的大图
+                if (wp !== LOCAL_WALLPAPER_MARKER) {
+                    await storage.remove(WALLPAPER_KEY, 'local');
+                }
+            }
+
+            await storage.set(CONFIG_KEY, copy, 'local');
+            return normalized;
+        });
     }
 };

@@ -36,6 +36,8 @@ type SyncActionDeps = {
     localRevision: Ref<number>;
     normalizeLayoutItems: () => void;
     saveConfig: () => Promise<void>;
+    flushConfig: () => Promise<boolean>;
+    refreshConfig: () => Promise<boolean>;
 };
 
 const normalizeRuntimeConfig = (raw: unknown): ConfigV6 => {
@@ -90,6 +92,8 @@ export const createSyncActions = ({
     localRevision,
     normalizeLayoutItems,
     saveConfig,
+    flushConfig,
+    refreshConfig,
 }: SyncActionDeps) => {
     let scheduler: SyncScheduler | null = null;
     const toast = useToast();
@@ -312,6 +316,13 @@ export const createSyncActions = ({
                         : '请先启用 WebDAV 同步',
                 };
             }
+
+            // A site action schedules local persistence with a short debounce.
+            // Flush it before building the WebDAV payload so "立即备份" is a
+            // committed snapshot, not a race with the local write queue.
+            if (!await flushConfig()) {
+                return {success: false, msg: '本地配置保存失败，已取消云端备份'};
+            }
             const now = Date.now();
             const res = await uploadConfigV6ToSibling(syncService, config.value.sync, config.value);
             if (res.ok) {
@@ -327,6 +338,11 @@ export const createSyncActions = ({
 
     const downloadBackup = async () => {
         return await measurePerformanceAsync('config.sync.download', async () => {
+            // Pull the latest local snapshot first. This also refreshes a
+            // stale tab's v6 channel/profile before selecting the WebDAV file.
+            if (!await refreshConfig()) {
+                return {success: false, msg: '本地配置刷新失败，已取消恢复操作'};
+            }
             const currentSync = {...config.value.sync};
             const currentRuntime = config.value.runtime;
             const v6WriteAuthorized = isV6SyncWriteAuthorized(config.value.sync);
