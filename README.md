@@ -1,10 +1,12 @@
+
+
 # VoidTab
 
 [English](./README.en.md) | 简体中文
 
 [![Version](https://img.shields.io/badge/version-1.0.8-0ea5e9)](./CHANGELOG.md)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org)
-[![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
+[![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Demo](https://img.shields.io/badge/Demo-flycode.icu-0ea5e9)](https://www.flycode.icu)
@@ -113,7 +115,7 @@ src/
 
 - Vue 3 + Composition API
 - TypeScript
-- Vite 5
+- Vite 6
 - Manifest V3
 - Tailwind CSS
 - Pinia
