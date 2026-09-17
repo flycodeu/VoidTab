@@ -1,6 +1,7 @@
 import {idbGetBlob, idbSetBlob} from '../../core/storage/photoIdb';
 import {
     extractSiteDomain,
+    getRegistrableDomain,
     getEffectiveMinEdgePx,
     getFastIconCandidatesWithProviders,
     ICON_MIN_EDGE_PX,
@@ -12,7 +13,7 @@ import {
 import {fetchWithRetry} from './network';
 import type {RuntimeConfig, SiteIconCacheMode, SiteIconCacheRecord, SiteIconProvider} from '../../core/config/types';
 
-export const SITE_ICON_CACHE_VERSION = 16;
+export const SITE_ICON_CACHE_VERSION = 17;
 export const SITE_ICON_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const SITE_ICON_RETRY_MS = 30 * 60 * 1000;
 export const SITE_ICON_IMG_ERROR_RETRY_MS = 2 * 60 * 1000;
@@ -445,7 +446,11 @@ export function ensureSiteIconRuntime(runtime: RuntimeConfig): void {
                 && isThirdPartyFaviconSource(source);
 
             if (
-                poisonedBrowserScheme
+                // v16 could cache a parent-domain provider result for a
+                // subdomain. Drop those records once so the exact host is
+                // resolved again.
+                (currentVersion < 17 && domain !== getRegistrableDomain(domain))
+                || poisonedBrowserScheme
                 || poisonedBrowserUrl
                 || poisonedFailedExternal
                 || staleDisplayOnlyRemote

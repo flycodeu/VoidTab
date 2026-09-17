@@ -320,11 +320,8 @@ export function getRegistrableDomain(hostname: string): string {
 
 function getThirdPartyQueryDomains(hostname: string): string[] {
     const host = normalizeHost(hostname);
-    if (!host) return [];
-
-    const registrable = getRegistrableDomain(host);
-    if (!registrable || registrable === host) return [host];
-    return [host, registrable];
+    // A subdomain can be a different product or a user-hosted site.
+    return host ? [host] : [];
 }
 
 function dedupe(candidates: IconCandidate[]): IconCandidate[] {
@@ -338,13 +335,10 @@ function dedupe(candidates: IconCandidate[]): IconCandidate[] {
     return out;
 }
 
-function pushPresetCandidate(candidates: IconCandidate[], host: string, rootDomain: string) {
-    if (host && PRESET_ICONS[host]) {
-        candidates.push({url: PRESET_ICONS[host], provider: 'preset'});
-        return;
-    }
-    if (rootDomain && PRESET_ICONS[rootDomain]) {
-        candidates.push({url: PRESET_ICONS[rootDomain], provider: 'preset'});
+function pushPresetCandidate(candidates: IconCandidate[], host: string) {
+    const domain = host.replace(/^www\./, '');
+    if (domain && PRESET_ICONS[domain]) {
+        candidates.push({url: PRESET_ICONS[domain], provider: 'preset'});
     }
 }
 
@@ -468,7 +462,8 @@ export function resolveDirectIconUrl(rawIcon: string | null | undefined, pageUrl
         if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href;
 
         if ((parsed.protocol === 'chrome-extension:' || parsed.protocol === 'moz-extension:') && parsed.pathname.startsWith('/_favicon/')) {
-            return browserFaviconForPage(parsed.searchParams.get('pageUrl') || pageHref);
+            // A saved favicon URL may still point at the site's previous URL.
+            return browserFaviconForPage(pageHref || parsed.searchParams.get('pageUrl') || '');
         }
 
         if ((parsed.protocol === 'chrome:' || parsed.protocol === 'edge:') && parsed.href.includes('favicon')) {
@@ -645,7 +640,6 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
     if (!parsed) return [];
 
     const host = normalizeHost(parsed.hostname);
-    const rootDomain = getRegistrableDomain(host);
     const thirdPartyDomains = getThirdPartyQueryDomains(host);
     const origin = parsed.origin;
     const privateOrLocal = isPrivateOrLocalHost(host);
@@ -657,7 +651,7 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
         if (canUseBrowserFaviconApi()) {
             candidates.push(...buildExtensionCandidates(parsed.href));
         }
-        pushPresetCandidate(candidates, host, rootDomain);
+        pushPresetCandidate(candidates, host);
         if (!privateOrLocal) {
             candidates.push(...buildExternalCandidates(thirdPartyDomains));
         }
@@ -668,7 +662,7 @@ export function getIconCandidatesWithProviders(rawUrl: string): IconCandidate[] 
 
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
-    pushPresetCandidate(candidates, host, rootDomain);
+    pushPresetCandidate(candidates, host);
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
     }
@@ -681,7 +675,6 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
     if (!parsed) return [];
 
     const host = normalizeHost(parsed.hostname);
-    const rootDomain = getRegistrableDomain(host);
     const origin = parsed.origin;
     const privateOrLocal = isPrivateOrLocalHost(host);
     const thirdPartyDomains = getThirdPartyQueryDomains(host);
@@ -693,7 +686,7 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
         if (canUseBrowserFaviconApi()) {
             candidates.push(...buildExtensionCandidates(parsed.href));
         }
-        pushPresetCandidate(candidates, host, rootDomain);
+        pushPresetCandidate(candidates, host);
         if (!privateOrLocal) {
             candidates.push(...buildExternalCandidates(thirdPartyDomains));
         }
@@ -704,7 +697,7 @@ export function getFastIconCandidatesWithProviders(rawUrl: string): IconCandidat
 
     const proxyCandidates = !privateOrLocal ? buildFirstPartyProxyCandidates(parsed.href) : [];
     candidates.push(...proxyCandidates);
-    pushPresetCandidate(candidates, host, rootDomain);
+    pushPresetCandidate(candidates, host);
     if (privateOrLocal) {
         candidates.push(...buildSiteOriginCandidates(origin));
     }

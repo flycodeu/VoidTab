@@ -181,10 +181,9 @@ function getRegistrableDomain(hostname) {
 
 function getQueryDomains(hostname) {
   const host = normalizeHost(hostname);
-  if (!host) return [];
-  const registrable = getRegistrableDomain(host);
-  if (!registrable || registrable === host) return [host];
-  return [host, registrable];
+  // A subdomain can be a separate product or user-hosted site. Never replace
+  // its icon with the parent domain's branding.
+  return host ? [host] : [];
 }
 
 function resolveHttpUrl(raw, base) {

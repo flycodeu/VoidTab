@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.9 - 2026-09-17
+
+- Added glow, frosted-glass, and obsidian tile appearance presets with quick reset controls.
+- Refined site icons, card hover states, search, sidebar, and clock layouts.
+- Added built-in SVG brand icons and gradient fallbacks for automatic site icons.
+- Fixed icon reload flicker, loading placeholders, stale icon results, and title-based brand mismatches.
+- Fixed delayed storage refreshes rolling back newly saved tile appearances.
+- Synchronized app, Chromium/Firefox manifests, host capabilities, and documentation versions.
+
 ## 1.0.8 - 2026-08-26
 
 - Fixed cross-tab configuration synchronization and stale-tab overwrite data loss.

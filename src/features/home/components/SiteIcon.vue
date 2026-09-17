@@ -4,7 +4,7 @@ import {PhGlobe} from '@phosphor-icons/vue';
 import type {SiteItem, BookmarkDensity} from '../../../core/config/types.ts';
 import {resolvePhosphorIcon} from '../../../shared/icons/phosphorIconMap';
 import {warmBrowserIconUrl} from '../../../shared/utils/iconPreloader';
-import {matchBrandPreset, getFallbackGradient} from '../../../shared/utils/brandIcons';
+import {getSiteBrandPreset, getFallbackGradient} from '../../../shared/utils/brandIcons';
 
 const props = defineProps<{
   item: SiteItem;
@@ -26,12 +26,11 @@ const emit = defineEmits<{
 }>();
 
 const imageLoaded = ref(false);
+const imageFailed = ref(false);
+const imageElement = ref<HTMLImageElement | null>(null);
 let imageFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-const brandPreset = computed(() => {
-  if (props.item.iconType && props.item.iconType !== 'auto') return null;
-  return matchBrandPreset(props.item.url || '', props.item.title || '');
-});
+const brandPreset = computed(() => getSiteBrandPreset(props.item));
 
 const clearImageFallbackTimer = () => {
   if (!imageFallbackTimer) return;
@@ -46,6 +45,7 @@ const getImageFallbackDelayMs = (url: string) => {
 const startImageFallbackTimer = () => {
   clearImageFallbackTimer();
   imageLoaded.value = false;
+  imageFailed.value = false;
   if (!props.isAuto || props.hasError || !props.autoIconUrl) return;
   if (brandPreset.value?.svg) return; // If brand preset has high-def SVG, no need to fallback
   if (props.lowQuality) return;
@@ -53,7 +53,7 @@ const startImageFallbackTimer = () => {
 
   imageFallbackTimer = setTimeout(() => {
     if (!imageLoaded.value && props.isAuto && !props.hasError && props.autoIconUrl) {
-      emit('fallback');
+      handleImageError();
     }
   }, getImageFallbackDelayMs(props.autoIconUrl));
 };
@@ -117,23 +117,36 @@ const dynamicFontSize = computed(() => {
 const shouldShowText = computed(() => {
   if (hasBrandSvg.value) return false;
   return props.item.iconType === 'text'
-      || (props.isAuto && (props.hasError || props.lowQuality || !props.autoIconUrl || !imageLoaded.value));
+      || (props.isAuto && !isImageMode.value);
 });
 
 const hasAutoImage = computed(() =>
-    !hasBrandSvg.value && props.isAuto && !props.hasError && !props.lowQuality && !!props.autoIconUrl
+    !hasBrandSvg.value && props.isAuto && !props.hasError && !props.lowQuality && !imageFailed.value && !!props.autoIconUrl
 );
 const isImageMode = computed(() => hasAutoImage.value && imageLoaded.value);
 const imageLoading = computed(() => props.priority === 'high' ? 'eager' : 'lazy');
 const imageFetchPriority = computed(() => props.priority === 'high' ? 'high' : 'low');
 
-const handleImageLoad = () => {
+const isCurrentImage = (event: Event) => event.target === imageElement.value
+    && imageElement.value?.getAttribute('src') === props.autoIconUrl;
+
+const handleImageLoad = (event: Event) => {
+  if (!isCurrentImage(event) || imageFailed.value) return;
+  const img = event.target as HTMLImageElement;
+  if (!img.naturalWidth || !img.naturalHeight) {
+    handleImageError(event);
+    return;
+  }
   imageLoaded.value = true;
   clearImageFallbackTimer();
   emit('loaded');
 };
 
-const handleImageError = () => {
+const handleImageError = (event?: Event) => {
+  if (event && !isCurrentImage(event)) return;
+  if (imageFailed.value) return;
+  imageFailed.value = true;
+  imageLoaded.value = false;
   clearImageFallbackTimer();
   emit('fallback');
 };
@@ -151,7 +164,7 @@ watch(
 );
 
 watch(
-  () => [props.autoIconUrl, props.hasError, props.isAuto, props.lowQuality],
+  [() => props.autoIconUrl, () => props.hasError, () => props.isAuto, () => props.lowQuality, hasBrandSvg],
   startImageFallbackTimer,
   {immediate: true}
 );
@@ -163,7 +176,7 @@ onUnmounted(() => {
 
 <template>
   <div
-      class="site-icon-container flex items-center justify-center text-white overflow-hidden relative select-none transition-all duration-300"
+      class="site-icon-container flex items-center justify-center text-white overflow-hidden relative select-none"
       :style="{
       background: isImageMode ? 'transparent' : bg,
       width: size + 'px',
@@ -181,10 +194,12 @@ onUnmounted(() => {
 
     <!-- 2. 网络自动抓取的图片 -->
     <img
-        v-else-if="hasAutoImage"
+        v-if="hasAutoImage"
+        ref="imageElement"
         :key="autoIconUrl"
         :src="autoIconUrl"
-        class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+        class="absolute inset-0 w-full h-full object-contain"
+        :style="{ opacity: isImageMode ? 1 : 0 }"
         :loading="imageLoading"
         decoding="async"
         :fetchpriority="imageFetchPriority"
@@ -197,7 +212,7 @@ onUnmounted(() => {
 
     <!-- 3. 文字降级 (采用优雅渐变与轻微立体投影) -->
     <span
-        v-else-if="shouldShowText"
+        v-if="shouldShowText"
         class="relative z-10 font-bold select-none leading-none flex items-center justify-center text-center px-0.5 tracking-wide drop-shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
         :style="{
           fontSize: dynamicFontSize + 'px',

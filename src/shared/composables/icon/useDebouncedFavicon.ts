@@ -54,6 +54,7 @@ export function useDebouncedFavicon(
     };
 
     const setFaviconUrl = (url: string, objectUrl = false) => {
+        if (url === faviconUrl.value) return;
         releaseCurrentObjectUrl();
         faviconUrl.value = url;
         currentIsObjectUrl.value = objectUrl;
@@ -111,6 +112,8 @@ export function useDebouncedFavicon(
         clearTimer();
         const url = urlRef.value;
         const token = ++runToken;
+        // Do not show or save the previous site's preview during the debounce.
+        setFaviconUrl('', false);
 
         if (!url) {
             setFaviconUrl('', false);

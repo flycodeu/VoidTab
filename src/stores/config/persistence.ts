@@ -130,35 +130,35 @@ export const createConfigPersistence = ({
         if (!isLoaded.value) return false;
         const runId = ++externalChangeRun;
 
-        // If this tab is already writing, wait for that write and inspect the
-        // storage again. The event payload may have been read before the write
-        // queue finished and would otherwise re-apply an obsolete snapshot.
-        await saveQueue;
-        if (runId !== externalChangeRun || !isLoaded.value) return false;
+        // Serialize reads with writes too. Merely awaiting the current queue
+        // lets a later save overtake this read and turn its stale result into
+        // an apparent remote edit that rolls back the newly committed data.
+        const task = saveQueue.then(async () => {
+            if (runId !== externalChangeRun || !isLoaded.value) return false;
+            try {
+                const remote = await configRepository.load();
+                if (runId !== externalChangeRun || !isLoaded.value) return false;
+                const current = cloneJson(config.value);
+                const base = committedSnapshot;
+                const isClean = !base || valuesEqual(current, base);
+                const nextConfig = isClean
+                    ? remote
+                    : mergeConfigV6ThreeWay(base, current, remote);
 
-        try {
-            const remote = await configRepository.load();
-            const current = cloneJson(config.value);
-            const base = committedSnapshot;
-            const isClean = !base || valuesEqual(current, base);
-            const nextConfig = isClean
-                ? remote
-                : mergeConfigV6ThreeWay(base, current, remote);
+                committedSnapshot = cloneJson(remote);
+                if (valuesEqual(current, nextConfig)) return true;
 
-            committedSnapshot = cloneJson(remote);
-            if (valuesEqual(current, nextConfig)) return true;
-
-            suppressNextWatch += 1;
-            config.value = nextConfig;
-
-            // A dirty tab keeps its own edits, but also needs to publish the
-            // merged result so every other tab converges on one snapshot.
-            if (!isClean) saveConfigDebounced();
-            return true;
-        } catch (error) {
-            if (import.meta.env.DEV) console.error('[VoidTab] external config sync failed', error);
-            return false;
-        }
+                suppressNextWatch += 1;
+                config.value = nextConfig;
+                if (!isClean) saveConfigDebounced();
+                return true;
+            } catch (error) {
+                if (import.meta.env.DEV) console.error('[VoidTab] external config sync failed', error);
+                return false;
+            }
+        });
+        saveQueue = task.then(() => undefined, () => undefined);
+        return task;
     };
 
     const stopWatchingExternal = watchConfigChanges(async () => {

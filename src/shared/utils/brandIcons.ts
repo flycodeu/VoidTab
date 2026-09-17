@@ -119,49 +119,35 @@ const BRAND_MAP: Record<string, BrandSiteInfo> = {
 };
 
 /**
- * Extract clean root domain from any url or title
+ * Extract a website hostname; invalid URLs must not become brand identifiers.
  */
 export function extractDomain(rawUrl: string): string {
   if (!rawUrl) return '';
   try {
-    const url = rawUrl.startsWith('http') ? new URL(rawUrl) : new URL(`https://${rawUrl}`);
-    return url.hostname.toLowerCase().replace(/^www\./, '');
+    const raw = rawUrl.trim();
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
+    return url.hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
   } catch {
-    return rawUrl.toLowerCase().trim();
+    return '';
   }
 }
 
 /**
- * Match a brand preset from a URL or title
+ * Titles and unrelated subdomains are not evidence of a site's identity.
  */
-export function matchBrandPreset(url: string, title?: string): BrandSiteInfo | null {
+export function matchBrandPreset(url: string, _title?: string): BrandSiteInfo | null {
   const domain = extractDomain(url);
-  if (domain) {
-    if (BRAND_MAP[domain]) return BRAND_MAP[domain];
-    // Check suffix match
-    for (const [key, preset] of Object.entries(BRAND_MAP)) {
-      if (domain.endsWith(`.${key}`) || domain === key) {
-        return preset;
-      }
-    }
-  }
+  return Object.prototype.hasOwnProperty.call(BRAND_MAP, domain) ? BRAND_MAP[domain] : null;
+}
 
-  // Check title match
-  if (title) {
-    const cleanTitle = title.toLowerCase().trim();
-    if (cleanTitle.includes('github')) return BRAND_MAP['github.com'];
-    if (cleanTitle.includes('bilibili') || cleanTitle.includes('哔哩哔哩') || cleanTitle.includes('b站')) return BRAND_MAP['bilibili.com'];
-    if (cleanTitle.includes('知乎')) return BRAND_MAP['zhihu.com'];
-    if (cleanTitle.includes('youtube') || cleanTitle.includes('油管')) return BRAND_MAP['youtube.com'];
-    if (cleanTitle.includes('掘金')) return BRAND_MAP['juejin.cn'];
-    if (cleanTitle.includes('notion')) return BRAND_MAP['notion.so'];
-    if (cleanTitle.includes('twitter') || cleanTitle === 'x') return BRAND_MAP['twitter.com'];
-    if (cleanTitle.includes('chatgpt') || cleanTitle.includes('openai')) return BRAND_MAP['chatgpt.com'];
-    if (cleanTitle.includes('figma')) return BRAND_MAP['figma.com'];
-    if (cleanTitle.includes('steam')) return BRAND_MAP['steamcommunity.com'];
-  }
-
-  return null;
+export function getSiteBrandPreset(item: {
+  url?: string; iconType?: string; icon?: string; iconValue?: string;
+}): BrandSiteInfo | null {
+  if (item.iconType && item.iconType !== 'auto') return null;
+  // Explicit images take precedence over a built-in brand icon.
+  if (/^data:image\//i.test(item.icon || '') || /^(?:data:image\/|https?:\/\/|\/)/i.test(item.iconValue || '')) return null;
+  return matchBrandPreset(item.url || '');
 }
 
 /**

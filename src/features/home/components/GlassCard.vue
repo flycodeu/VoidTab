@@ -7,6 +7,7 @@ import type {TileStyleOverride} from "../../../core/tiles/contracts.ts";
 import SiteIcon from "./SiteIcon.vue";
 import {markSiteIconMiss, resolveAndCacheSiteIcon} from "../../../shared/utils/siteIconCache.ts";
 import {getDirectIconFallbackUrl, getInstantAutoIconUrl} from "../../../shared/utils/icon.ts";
+import {getSiteBrandPreset} from "../../../shared/utils/brandIcons.ts";
 
 const store = useConfigStore();
 const ui = useUiStore();
@@ -28,6 +29,8 @@ const normalizedIconType = computed(() => {
   return "auto";
 });
 const isAuto = computed(() => normalizedIconType.value === "auto");
+const hasBrandIcon = computed(() => !!getSiteBrandPreset(props.item)?.svg);
+const hasLoadedIcon = ref(false);
 const autoIconUrl = ref("");
 const isObjectUrl = ref(false);
 const resolveToken = ref(0);
@@ -52,9 +55,11 @@ const revokeObjectUrl = () => {
 };
 
 const setAutoIconUrl = (url: string, objectUrl: boolean) => {
+  if (url === autoIconUrl.value) return;
   revokeObjectUrl();
   autoIconUrl.value = url;
   isObjectUrl.value = objectUrl;
+  hasLoadedIcon.value = false;
 };
 
 const clearDeferredResolveTimer = () => {
@@ -96,7 +101,7 @@ const scheduleDeferredResolveRetry = (token: number) => {
 };
 
 const applyInstantAutoIcon = () => {
-  if (!isAuto.value || !props.item.url || autoIconUrl.value) return;
+  if (!isAuto.value || hasBrandIcon.value || !props.item.url || autoIconUrl.value) return;
   const instantUrl = getInstantAutoIconUrl(props.item.url, props.item.icon, props.item.iconValue);
   if (!instantUrl || instantUrl === directIconErrorUrl.value) return;
   hasLoadError.value = false;
@@ -139,7 +144,8 @@ const scheduleAutoIconResolve = (forceRefresh = false) => {
 };
 
 const resolveAutoIcon = async (forceRefresh = false) => {
-  if (!isAuto.value) {
+  if (!isAuto.value || hasBrandIcon.value || hasLoadedIcon.value) {
+    if (hasLoadedIcon.value) return;
     setAutoIconUrl("", false);
     iconSourceMode.value = "none";
     autoIconLowQuality.value = false;
@@ -166,7 +172,7 @@ const resolveAutoIcon = async (forceRefresh = false) => {
     timeoutMs: 1400,
   });
 
-  if (token !== resolveToken.value) {
+  if (token !== resolveToken.value || hasLoadedIcon.value) {
     if (result?.objectUrl && result.url.startsWith("blob:")) URL.revokeObjectURL(result.url);
     return;
   }
@@ -195,8 +201,11 @@ const resolveAutoIcon = async (forceRefresh = false) => {
 };
 
 watch(
-    () => [props.item.url, props.item.iconType, props.item.icon, props.item.iconValue],
+    [() => props.item.url, () => normalizedIconType.value, () => props.item.icon, () => props.item.iconValue],
     () => {
+      // Invalidate in-flight work immediately, before the debounce starts.
+      resolveToken.value += 1;
+      setAutoIconUrl("", false);
       hasLoadError.value = false;
       hasTriedForceRefresh.value = false;
       directIconErrorUrl.value = "";
@@ -204,6 +213,7 @@ watch(
       deferredResolveAttempts = 0;
       clearDeferredResolveTimer();
       clearScheduledResolve();
+      if (!isAuto.value || hasBrandIcon.value) return;
       applyInstantAutoIcon();
       scheduleAutoIconResolve(false);
     },
@@ -238,7 +248,11 @@ const handleFallback = () => {
   }
 
   if (iconSourceMode.value === "auto" && props.item.url && !!autoIconUrl.value) {
-    markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error", preserveExisting: true});
+    markSiteIconMiss(props.item.url, store.config.runtime, {error: "img_error", preserveExisting: false});
+    // Keep the text placeholder visible while the one recovery attempt runs.
+    setAutoIconUrl("", false);
+    hasLoadError.value = true;
+    clearDeferredResolveTimer();
     if (!hasTriedForceRefresh.value) {
       hasTriedForceRefresh.value = true;
       clearScheduledResolve();
@@ -248,10 +262,18 @@ const handleFallback = () => {
   }
 
   hasLoadError.value = true;
+  resolveToken.value += 1;
+  clearScheduledResolve();
+  clearDeferredResolveTimer();
   autoIconLowQuality.value = false;
   setAutoIconUrl("", false);
 };
-const handleImgLoad = () => (hasLoadError.value = false);
+const handleImgLoad = () => {
+  hasLoadError.value = false;
+  hasLoadedIcon.value = true;
+  clearDeferredResolveTimer();
+  clearScheduledResolve();
+};
 
 const mode = computed(() => (store.config.theme as any).siteLayoutMode || "icon");
 
@@ -395,6 +417,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  resolveToken.value += 1;
   ro?.disconnect();
   ro = null;
   clearDeferredResolveTimer();

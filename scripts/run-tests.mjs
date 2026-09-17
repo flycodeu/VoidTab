@@ -59,7 +59,7 @@ test('favicon probing avoids extension fetch false negatives', async () => {
   assert.match(icon, /FETCHABLE_ICON_PROBE_HOSTS/);
   assert.match(icon, /probeIconCandidateBatch/);
   assert.match(icon, /parallelism: options\?\.parallelism/);
-  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*16/);
+  assert.match(cache, /SITE_ICON_CACHE_VERSION\s*=\s*17/);
   assert.match(icon, /'google\.com': 'https:\/\/www\.google\.com\/favicon\.ico'/);
   assert.match(icon, /'notion\.so': 'https:\/\/www\.notion\.so\/images\/favicon\.ico'/);
   assert.doesNotMatch(cache, /if\s*\(\s*isExtensionContext\(\)\s*\)\s*return true/);
@@ -3449,6 +3449,74 @@ test('cross-tab persistence keeps concurrent additions in the real repository pa
 
     tabA.persistence.destroy();
     tabB.persistence.destroy();
+  `);
+});
+
+test('automatic icons use website identity and refresh saved browser favicon targets', async () => {
+  await runBundledTypeScript('icon-identity', `
+    import assert from 'node:assert/strict';
+    import {matchBrandPreset, getSiteBrandPreset} from '../../../src/shared/utils/brandIcons.ts';
+    import {resolveDirectIconUrl} from '../../../src/shared/utils/icon.ts';
+    import {getIconCandidatesWithProviders} from '../../../src/shared/utils/icon.ts';
+    import {ensureSiteIconRuntime} from '../../../src/shared/utils/siteIconCache.ts';
+    assert.equal(matchBrandPreset('https://example.com', 'GitHub 教程'), null);
+    assert.equal(matchBrandPreset('https://github.com.example.com', 'GitHub'), null);
+    assert.equal(matchBrandPreset('https://custom.notion.so', 'Notion'), null);
+    assert.equal(matchBrandPreset('javascript:github.com'), null);
+    assert.equal(matchBrandPreset('https://www.github.com/repo')?.name, 'GitHub');
+    assert.equal(getSiteBrandPreset({url:'https://github.com',iconType:'text'}), null);
+    assert.equal(getSiteBrandPreset({url:'https://github.com',icon:'data:image/png;base64,test'}), null);
+    assert.equal(getSiteBrandPreset({url:'https://github.com',iconValue:'https://example.com/custom.png'}), null);
+    const previousWindow = globalThis.window, previousChrome = globalThis.chrome;
+    globalThis.window = {location:{protocol:'chrome-extension:',href:'chrome-extension://test/index.html',origin:'chrome-extension://test'}};
+    globalThis.chrome = {runtime:{id:'test',getURL:(path)=>'chrome-extension://test/'+path,getManifest:()=>({permissions:['favicon']})}};
+    const old = 'chrome-extension://previous/_favicon/?pageUrl='+encodeURIComponent('https://old.example')+'&size=128';
+    const fresh = new URL(resolveDirectIconUrl(old, 'https://new.example/path'));
+    assert.equal(fresh.searchParams.get('pageUrl'), 'https://new.example/path');
+    const candidates = getIconCandidatesWithProviders('https://foo.google.com');
+    assert.equal(candidates.some(c => c.provider === 'preset'), false);
+    assert.ok(candidates.filter(c => c.provider === 'google_s2').every(c => decodeURIComponent(c.url).includes('foo.google.com')));
+    const runtime = {siteIcons:{version:16,records:{'custom.example.com':{cacheMode:'url',fallbackUrl:'https://icons.example.com/parent.png',provider:'google_s2',updatedAt:1}},lastBatchRefreshAt:0}};
+    ensureSiteIconRuntime(runtime);
+    assert.equal(runtime.siteIcons.records['custom.example.com'], undefined);
+    globalThis.window = previousWindow;
+    globalThis.chrome = previousChrome;
+  `);
+});
+
+test('a delayed storage refresh cannot roll back a newly saved appearance', async () => {
+  await runBundledTypeScript('persistence-refresh-race', `
+    import assert from 'node:assert/strict';
+    import {ref, nextTick} from 'vue';
+    import {defaultConfig} from '../../../src/core/config/default.ts';
+    import {normalizeConfigV6} from '../../../src/core/config/v6.ts';
+    import {migrateV5ToV6} from '../../../src/core/config/migrateV5ToV6.ts';
+    import {configRepository} from '../../../src/core/config/repository.ts';
+    import {createConfigPersistence} from '../../../src/stores/config/persistence.ts';
+    const clone = value => JSON.parse(JSON.stringify(value));
+    const initial = normalizeConfigV6(migrateV5ToV6(clone(defaultConfig), {deviceId:'race',migratedAt:1}).config);
+    let persisted = clone(initial);
+    let beginRead, finishRead;
+    const started = new Promise(resolve => beginRead = resolve);
+    const release = new Promise(resolve => finishRead = resolve);
+    configRepository.load = async () => {const snapshot=clone(persisted);beginRead();await release;return snapshot;};
+    configRepository.save = async candidate => {persisted=clone(candidate);return clone(persisted);};
+    globalThis.window = {addEventListener(){},removeEventListener(){}};
+    const config = ref(clone(initial));
+    const persistence = createConfigPersistence({config,isLoaded:ref(true),applyingExternal:ref(false),localRevision:ref(0)});
+    persistence.markCommittedConfig(config.value);
+    try {
+      const refreshing = persistence.refreshConfig();
+      await started;
+      config.value.layout[0].tiles[0].styleOverride = {radius:18,elevation:3};
+      await nextTick();
+      const saving = persistence.flushConfig();
+      await Promise.race([saving,new Promise(resolve=>setTimeout(resolve,30))]);
+      finishRead();
+      await Promise.all([saving,refreshing]);
+      assert.equal(config.value.layout[0].tiles[0].styleOverride?.elevation,3);
+      assert.equal(persisted.layout[0].tiles[0].styleOverride?.elevation,3);
+    } finally {persistence.destroy();}
   `);
 });
 
