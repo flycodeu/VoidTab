@@ -51,9 +51,9 @@ const mainContainerClass = computed(() => {
 
   let sidebarOffset = '';
   if (!props.isFocusMode && props.showSidebar) {
-    if (props.sidebarPos === 'left') sidebarOffset = 'md:pl-28';
-    else if (props.sidebarPos === 'right') sidebarOffset = 'md:pr-28';
-    else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-36';
+    if (props.sidebarPos === 'left') sidebarOffset = 'md:pl-24';
+    else if (props.sidebarPos === 'right') sidebarOffset = 'md:pr-24';
+    else if (props.sidebarPos === 'bottom') sidebarOffset = 'md:pb-28';
   }
 
   if (props.isFocusMode) {

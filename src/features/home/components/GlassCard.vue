@@ -265,17 +265,25 @@ const cardCfg = computed(() => {
 const iconSize = computed(() => Number(store.config.theme.iconSize || 72));
 const cardRadius = computed(() => Number(store.config.theme.radius || 16));
 
-// 实例外观预设（清爽/柔和/醒目）在 icon 模式下的可视化：
-// 裸 favicon 不会用到 TileHost 挂的 --tile-surface/accent/elevation，
-// 所以这里显式判断是否存在 override，存在时给图标加底板/描边/阴影，
-// 让三个预设有肉眼可辨的差别（默认无 override 时仍是裸图标）。
+// 实例外观三大形态级质变（微光 / 磨砂 / 黑晶）：
 const hasStyleOverride = computed(() =>
     !!props.styleOverride && Object.keys(props.styleOverride).length > 0);
+
+const presetMode = computed<'none' | 'glow' | 'glass' | 'stealth'>(() => {
+  if (!hasStyleOverride.value) return 'none';
+  const s = props.styleOverride!;
+  if (s.elevation === 3 || s.density === 'comfortable') return 'glow';
+  if (s.radius === 20 || s.density === 'normal') return 'glass';
+  if (s.elevation === 0 || s.density === 'compact') return 'stealth';
+  return 'glass';
+});
+
 const iconEffectiveRadius = computed(() =>
     typeof props.styleOverride?.radius === "number"
         ? props.styleOverride.radius
         : Number(store.config.theme.radius || 16));
-// 底板内缩，favicon 缩小以露出底色，形成 iOS 风格的圆角卡片。
+
+// 仅在磨砂 (glass) 与黑晶 (stealth) 模式下进行内缩，微光 (glow) 保持原生尺寸！
 const ICON_PLATE_PADDING = 8;
 const iconPlateInnerSize = computed(() =>
     Math.max(24, iconSize.value - ICON_PLATE_PADDING * 2));
@@ -520,12 +528,17 @@ const showDomainRow = computed(() => {
       :style="{ width: '100%', height: '100%' }"
   >
     <div class="flex-shrink-0 relative transition-transform duration-200 group-hover:-translate-y-1"
-         :class="{ 'icon-plate': hasStyleOverride }"
+         :class="{
+           'icon-plate': hasStyleOverride,
+           'icon-plate-glow': presetMode === 'glow',
+           'icon-plate-glass': presetMode === 'glass',
+           'icon-plate-stealth': presetMode === 'stealth',
+         }"
          :style="iconContainerStyle">
       <SiteIcon
           :item="item"
-          :size="hasStyleOverride ? iconPlateInnerSize : Number(store.config.theme.iconSize)"
-          :radius="hasStyleOverride ? iconPlateInnerRadius : iconEffectiveRadius"
+          :size="(presetMode === 'glass' || presetMode === 'stealth') ? iconPlateInnerSize : Number(store.config.theme.iconSize)"
+          :radius="(presetMode === 'glass' || presetMode === 'stealth') ? iconPlateInnerRadius : iconEffectiveRadius"
           :isAuto="isAuto"
           :autoIconUrl="autoIconUrl"
           :hasError="hasLoadError"
@@ -552,11 +565,11 @@ const showDomainRow = computed(() => {
         :style="{ height: labelH + 'px' }"
     >
       <span
-          class="w-full truncate text-center leading-tight"
+          class="w-full truncate text-center leading-tight font-medium tracking-tight"
           :style="{
           fontSize: store.config.theme.iconTextSize + 'px',
           color: 'var(--text-primary)',
-          textShadow: '0 1px 2px rgba(0,0,0,0.45)',
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
         }"
       >
         {{ item.title }}
@@ -573,23 +586,69 @@ const showDomainRow = computed(() => {
   align-items: center;
   justify-content: center;
   border-radius: var(--plate-radius, 16px);
-  background:
-      linear-gradient(160deg, color-mix(in srgb, var(--tile-surface) 92%, transparent), color-mix(in srgb, var(--tile-surface) 64%, transparent)),
-      rgba(var(--overlay-rgb), 0.08);
-  border: 1px solid color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 38%, transparent);
-  box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.22) inset,
-      0 calc(var(--tile-elevation, 1) * 5px + 1px) calc(var(--tile-elevation, 1) * 12px + 2px) rgba(15, 23, 42, 0.18),
-      0 0 0 calc(var(--tile-elevation, 1) * 1px) color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 12%, transparent);
-  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.2s ease;
+  transition: all 0.22s ease;
 }
 
-.group:hover .icon-plate {
-  border-color: color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 60%, transparent);
+/* 1. 微光模式 (Ambient Glow Aura) - 图标不缩小，外周扩散出柔和品牌光晕 */
+.icon-plate-glow {
+  position: relative;
+  border-radius: var(--plate-radius, 16px);
   box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.26) inset,
-      0 calc(var(--tile-elevation, 1) * 7px + 4px) calc(var(--tile-elevation, 1) * 16px + 8px) rgba(15, 23, 42, 0.22),
-      0 0 0 1px color-mix(in srgb, var(--tile-accent-color, var(--accent-color)) 28%, transparent);
+      0 0 24px color-mix(in srgb, var(--tile-accent-color, #3b82f6) 65%, transparent),
+      0 4px 14px rgba(15, 23, 42, 0.12);
+  transition: box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
+}
+
+.group:hover .icon-plate-glow {
+  box-shadow:
+      0 0 36px color-mix(in srgb, var(--tile-accent-color, #3b82f6) 92%, transparent),
+      0 8px 22px rgba(15, 23, 42, 0.2);
+}
+
+/* 2. 磨砂模式 (Frosted Glass Card) - Apple 级通透毛玻璃卡片 */
+.icon-plate-glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 6px 20px rgba(15, 23, 42, 0.08);
+  transition: all 0.2s ease;
+}
+
+:global(.dark) .icon-plate-glass {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.group:hover .icon-plate-glass {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 12px 28px rgba(15, 23, 42, 0.16);
+}
+
+/* 3. 黑晶模式 (Obsidian Stealth) - 黑曜石极客沉浸深色底座 */
+.icon-plate-stealth {
+  background: rgba(15, 17, 23, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: all 0.2s ease;
+}
+
+.group:hover .icon-plate-stealth {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
 .site-card {

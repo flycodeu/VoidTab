@@ -461,6 +461,19 @@ const handleTileImportFile = async (event: Event) => {
   }
 };
 
+const activePreset = computed<'clean' | 'soft' | 'vivid' | null>(() => {
+  const {groupId, item} = ui.contextMenu;
+  if (!groupId || !item?.id) return null;
+  const group = (store.config.layout as any[]).find((g: any) => g.id === groupId);
+  const found = group?.tiles?.find((t: any) => t.id === item.id) || item;
+  const s = found?.styleOverride;
+  if (!s) return null;
+  if (s.radius === tileStylePresets.clean.radius && s.accent === tileStylePresets.clean.accent) return 'clean';
+  if (s.radius === tileStylePresets.soft.radius && s.accent === tileStylePresets.soft.accent) return 'soft';
+  if (s.radius === tileStylePresets.vivid.radius && s.accent === tileStylePresets.vivid.accent) return 'vivid';
+  return null;
+});
+
 const handleStylePreset = (preset: 'clean' | 'soft' | 'vivid') => {
   const {groupId, item} = ui.contextMenu;
   if (!groupId || !item?.id) {
@@ -468,8 +481,25 @@ const handleStylePreset = (preset: 'clean' | 'soft' | 'vivid') => {
     ui.closeContextMenu();
     return;
   }
-  const success = store.updateTileStyleOverride(groupId, item.id, {...tileStylePresets[preset]});
-  toast[success ? 'success' : 'warning'](success ? '已更新这个卡片的实例外观。' : '这个卡片已经不在当前分组中。');
+  if (activePreset.value === preset) {
+    const success = store.resetTileStyleOverride(groupId, item.id);
+    toast[success ? 'success' : 'warning'](success ? '已恢复默认外观。' : '这个卡片已经不在当前分组中。');
+  } else {
+    const success = store.updateTileStyleOverride(groupId, item.id, {...tileStylePresets[preset]});
+    toast[success ? 'success' : 'warning'](success ? '已更新这个卡片的实例外观。' : '这个卡片已经不在当前分组中。');
+  }
+  ui.closeContextMenu();
+};
+
+const handleResetStyle = () => {
+  const {groupId, item} = ui.contextMenu;
+  if (!groupId || !item?.id) {
+    toast.warning('当前项目缺少必要信息，无法重置。');
+    ui.closeContextMenu();
+    return;
+  }
+  const success = store.resetTileStyleOverride(groupId, item.id);
+  toast[success ? 'success' : 'warning'](success ? '已恢复默认外观。' : '这个卡片已经不在当前分组中。');
   ui.closeContextMenu();
 };
 
@@ -560,6 +590,7 @@ onUnmounted(() => {
         :currentGroupId="ui.contextMenu.groupId"
         :currentGroupName="currentGroupName"
         :sizeEditor="sizeEditor"
+        :activePreset="activePreset"
         :showAppearance="store.config.theme?.showTileAppearanceMenu !== false"
         :showSizeEditor="store.config.theme?.showTileSizeMenu !== false"
         :showDesigner="store.config.theme?.showDesignerMenu !== false"
@@ -575,6 +606,7 @@ onUnmounted(() => {
         @importTile="handleImportTileRequest"
         @exportTile="handleExportTile"
         @stylePreset="handleStylePreset"
+        @resetStyle="handleResetStyle"
         @configWidget="handleConfigWidget"
         @openSettings="handleOpenSettings"
         @openDevTools="handleOpenDevTools"

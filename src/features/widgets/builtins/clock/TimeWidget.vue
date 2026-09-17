@@ -63,11 +63,11 @@ const dateStyle = computed(() => ({
       :style="wrapStyle"
   >
     <!-- 缩小字号（比你之前 7xl/8xl 克制很多） -->
-    <h1 class="clock-time font-bold tracking-tight" :style="timeStyle">
+    <h1 class="clock-time font-semibold tracking-tight" :style="timeStyle">
       {{ timeStr }}
     </h1>
 
-    <p class="clock-date font-medium uppercase tracking-widest mt-1" :style="dateStyle">
+    <p class="clock-date font-normal tracking-widest mt-1 opacity-85" :style="dateStyle">
       {{ dateStr }}
     </p>
   </div>

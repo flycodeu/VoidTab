@@ -12,7 +12,8 @@ import {
   PhCode,
   PhPalette,
   PhDownloadSimple,
-  PhUploadSimple
+  PhUploadSimple,
+  PhArrowCounterClockwise
 } from '@phosphor-icons/vue';
 
 type SizeValue = {w: number; h: number; label?: string};
@@ -33,6 +34,7 @@ const props = defineProps<{
   currentGroupId: string;
   currentGroupName: string;
   sizeEditor?: SizeEditor | null;
+  activePreset?: 'clean' | 'soft' | 'vivid' | null;
   showAppearance?: boolean;
   showSizeEditor?: boolean;
   showDesigner?: boolean;
@@ -56,6 +58,7 @@ const emit = defineEmits<{
   (e: 'importTile'): void;
   (e: 'exportTile'): void;
   (e: 'stylePreset', preset: 'clean' | 'soft' | 'vivid'): void;
+  (e: 'resetStyle'): void;
   (e: 'configWidget'): void;
   (e: 'edit'): void;
 
@@ -63,11 +66,10 @@ const emit = defineEmits<{
   (e: 'openDevTools'): void;
 }>();
 
-// 预览数值需与 core/tiles/style.ts 的 tileStylePresets 保持一致（这是另一份常量）。
 const STYLE_PRESETS = [
-  {id: 'clean', label: '清爽', tone: '直角 / 浅灰', accent: '#2563eb', surface: '#e5e7eb', radius: 12, elevation: 0},
-  {id: 'soft', label: '柔和', tone: '大圆角 / 青绿', accent: '#14b8a6', surface: '#99f6e4', radius: 24, elevation: 1},
-  {id: 'vivid', label: '醒目', tone: '强阴影 / 橙', accent: '#f97316', surface: '#fed7aa', radius: 18, elevation: 3},
+  {id: 'vivid', label: '微光', tone: '品牌环境光晕', accent: '#3b82f6', surface: '#3b82f6', radius: 18, elevation: 3},
+  {id: 'soft', label: '磨砂', tone: '通透毛玻璃', accent: '#06b6d4', surface: '#f8fafc', radius: 20, elevation: 1},
+  {id: 'clean', label: '黑晶', tone: '沉浸黑曜石', accent: '#6366f1', surface: '#0f172a', radius: 16, elevation: 0},
 ] as const;
 
 const sameSize = (left: SizeValue | undefined, right: SizeValue | undefined) =>
@@ -186,28 +188,43 @@ const emitResizeHeight = (event: Event) => {
         <div class="divider"></div>
 
         <div v-if="appearanceVisible" class="style-panel">
-          <div class="style-title">
-            <PhPalette size="13" aria-hidden="true"/>
-            实例外观
+          <div class="style-title flex items-center justify-between">
+            <span class="flex items-center gap-1.5">
+              <PhPalette size="13" aria-hidden="true"/>
+              实例外观
+            </span>
+            <button
+                v-if="activePreset"
+                @click="emit('resetStyle')"
+                class="flex items-center gap-1 text-[10px] font-normal text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                title="恢复默认"
+                type="button"
+            >
+              <PhArrowCounterClockwise size="11"/>
+              <span>恢复默认</span>
+            </button>
           </div>
-          <div class="style-preset-grid">
+          <div class="style-capsule-bar">
+            <button
+                @click="emit('resetStyle')"
+                class="style-capsule-btn"
+                :class="{ active: !activePreset }"
+                title="默认外观"
+                type="button"
+            >
+              <span>默认</span>
+            </button>
             <button
                 v-for="preset in STYLE_PRESETS"
                 :key="preset.id"
                 @click="emit('stylePreset', preset.id)"
-                class="style-card"
-                :style="{
-                  '--style-accent': preset.accent,
-                  '--style-surface': preset.surface,
-                  '--style-radius': preset.radius + 'px',
-                  '--style-shadow': preset.elevation,
-                }"
+                class="style-capsule-btn"
+                :class="{ active: activePreset === preset.id }"
+                :title="`${preset.label} (${preset.tone})`"
                 type="button"
             >
-              <span class="style-copy">
-                <strong>{{ preset.label }}</strong>
-                <small>{{ preset.tone }}</small>
-              </span>
+              <span class="capsule-dot" :style="{ background: preset.accent }"></span>
+              <span>{{ preset.label }}</span>
             </button>
           </div>
         </div>
@@ -334,28 +351,43 @@ const emitResizeHeight = (event: Event) => {
         <div class="divider"></div>
 
         <div v-if="appearanceVisible" class="style-panel">
-          <div class="style-title">
-            <PhPalette size="13" aria-hidden="true"/>
-            实例外观
+          <div class="style-title flex items-center justify-between">
+            <span class="flex items-center gap-1.5">
+              <PhPalette size="13" aria-hidden="true"/>
+              实例外观
+            </span>
+            <button
+                v-if="activePreset"
+                @click="emit('resetStyle')"
+                class="flex items-center gap-1 text-[10px] font-normal text-blue-500 hover:text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                title="恢复默认"
+                type="button"
+            >
+              <PhArrowCounterClockwise size="11"/>
+              <span>恢复默认</span>
+            </button>
           </div>
-          <div class="style-preset-grid">
+          <div class="style-capsule-bar">
+            <button
+                @click="emit('resetStyle')"
+                class="style-capsule-btn"
+                :class="{ active: !activePreset }"
+                title="默认外观"
+                type="button"
+            >
+              <span>默认</span>
+            </button>
             <button
                 v-for="preset in STYLE_PRESETS"
                 :key="preset.id"
                 @click="emit('stylePreset', preset.id)"
-                class="style-card"
-                :style="{
-                  '--style-accent': preset.accent,
-                  '--style-surface': preset.surface,
-                  '--style-radius': preset.radius + 'px',
-                  '--style-shadow': preset.elevation,
-                }"
+                class="style-capsule-btn"
+                :class="{ active: activePreset === preset.id }"
+                :title="`${preset.label} (${preset.tone})`"
                 type="button"
             >
-              <span class="style-copy">
-                <strong>{{ preset.label }}</strong>
-                <small>{{ preset.tone }}</small>
-              </span>
+              <span class="capsule-dot" :style="{ background: preset.accent }"></span>
+              <span>{{ preset.label }}</span>
             </button>
           </div>
         </div>
@@ -539,82 +571,81 @@ const emitResizeHeight = (event: Event) => {
   @apply flex items-center gap-1.5 text-[10px] opacity-60 font-bold tracking-wider;
 }
 
-.style-preset-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.style-card {
-  position: relative;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  min-height: 52px;
-  padding: 9px 8px 8px 11px;
+.style-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--style-accent) 24%, rgba(127, 127, 127, 0.16));
-  background:
-      linear-gradient(180deg, color-mix(in srgb, var(--style-accent) 10%, transparent), transparent 68%),
-      color-mix(in srgb, var(--style-surface) 13%, rgba(var(--overlay-rgb), 0.07));
-  text-align: center;
-  box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 calc(var(--style-shadow) * 3px) calc(var(--style-shadow) * 8px) color-mix(in srgb, var(--style-accent) 12%, transparent);
-  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  background: rgba(0, 0, 0, 0.03);
 }
 
-.style-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--style-accent);
-  opacity: 0.9;
+:global(.dark) .style-panel {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.style-card::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 5px;
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--style-accent) 58%, transparent);
-  opacity: calc(0.22 + var(--style-shadow) * 0.18);
-}
-
-.style-card:hover,
-.style-card:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--style-accent) 58%, transparent);
-  background:
-      linear-gradient(180deg, color-mix(in srgb, var(--style-accent) 17%, transparent), transparent 68%),
-      color-mix(in srgb, var(--style-surface) 22%, rgba(var(--overlay-rgb), 0.09));
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--style-accent) 14%, transparent);
-  outline: none;
-}
-
-.style-copy {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.style-copy strong {
+.style-title {
   font-size: 11px;
-  line-height: 1.1;
-  font-weight: 900;
+  font-weight: 700;
+  opacity: 0.6;
 }
 
-.style-copy small {
-  font-size: 10px;
-  line-height: 1.1;
-  opacity: 0.56;
+.style-capsule-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 3px;
+  border-radius: 8px;
+}
+
+:global(.dark) .style-capsule-bar {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.style-capsule-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 0;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: currentColor;
+  opacity: 0.7;
+  transition: all 140ms ease;
+  border: 1px solid transparent;
+}
+
+.style-capsule-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+:global(.dark) .style-capsule-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.style-capsule-btn.active {
+  opacity: 1;
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+:global(.dark) .style-capsule-btn.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.capsule-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .size-panel {

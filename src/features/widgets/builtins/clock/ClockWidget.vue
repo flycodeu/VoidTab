@@ -46,13 +46,11 @@ const layout = computed(() => {
     fontSizeClass = h === 1 ? 'text-2xl font-bold' : 'text-3xl font-bold';
     digitHeightClass = 'h-auto';
   } else if (isCompactHeight) {
-    // 【关键修复】宽度 >= 2 但高度 = 1 (即 2x1, 3x1 布局)
-    // 强制使用 4xl (约36px)，防止撑爆容器
+    // 宽度 >= 2 但高度 = 1 (即 2x1, 3x1 布局)
     fontSizeClass = 'text-4xl font-bold leading-tight';
     digitHeightClass = 'h-[40px]';
   } else if (w < 4) {
     // 宽度 2或3，且高度 >= 2 (即 2x2, 2x4)
-    // 保持 54px，这是 2x2 的最佳视觉效果
     fontSizeClass = 'text-[54px] font-bold leading-none';
     digitHeightClass = 'h-[64px]';
   } else {
@@ -64,20 +62,15 @@ const layout = computed(() => {
   // 3. 容器布局与间距决策
   let containerClass = 'flex flex-col items-center justify-center';
 
-  // 间距微调
   if (isCompactHeight) {
-    // 矮布局：间距极小
     containerClass += ' gap-0';
   } else if (isTall) {
-    // 高布局 (2x4)：间距适中，不要太大导致推到底部
     containerClass += ' gap-4';
   } else {
-    // 标准 2x2
     containerClass += ' gap-2';
   }
 
   // 4. 日期文字适配
-  // 1x1不显示日期，2x1显示小号日期
   const showDate = !(w === 1 && h === 1);
   const dateClass = isCompactHeight
       ? 'text-xs opacity-60 mt-0.5' // 2x1 紧凑日期
@@ -85,11 +78,11 @@ const layout = computed(() => {
 
   return {
     containerClass,
-    timeClass: `${fontSizeClass} tracking-tight`, // tracking-tight 防止数字过宽
+    timeClass: `${fontSizeClass} tracking-tight`,
     digitWrapperClass: digitHeightClass,
     dateClass: `flex items-center gap-2 font-medium ${dateClass}`,
     showDate,
-    useLongWeek: w >= 2 && h >= 2, // 只有大方块才显示"星期几"全称
+    useLongWeek: w >= 2 && h >= 2,
   };
 });
 
@@ -105,7 +98,7 @@ const displayData = computed(() => {
 
 <template>
   <div
-      class="w-full h-full flex flex-col relative cursor-pointer bg-[#1C1C1E] rounded-[22px] text-white transition-all hover:bg-[#2A2A2C] overflow-hidden group shadow-sm"
+      class="w-full h-full flex flex-col relative cursor-pointer bg-transparent rounded-[22px] text-inherit transition-all hover:bg-white/5 overflow-hidden group"
       @click.stop="showModal = true"
   >
     <div class="flex-1 w-full select-none" :class="layout.containerClass">
@@ -134,7 +127,7 @@ const displayData = computed(() => {
     </div>
 
     <div class="absolute top-3 right-3 opacity-0 group-hover:opacity-30 transition-opacity">
-      <div class="w-2.5 h-2.5 border-[1.5px] border-white/70 rounded-full"></div>
+      <div class="w-2.5 h-2.5 border-[1.5px] border-current rounded-full"></div>
     </div>
 
     <Teleport to="body">

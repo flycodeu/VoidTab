@@ -183,8 +183,7 @@ onBeforeUnmount(() => pause());
   <div
       class="w-full h-full relative cursor-pointer select-none overflow-hidden group font-sans transition-all duration-300"
       :class="[
-        'bg-[#121212] text-[#E0E0E0]',
-        layout.isLarge ? 'bg-gradient-to-b from-[#151515] to-[#050505]' : ''
+        'bg-transparent text-inherit',
       ]"
       @click="knock"
   >

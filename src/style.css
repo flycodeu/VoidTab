@@ -69,13 +69,13 @@
     --settings-shadow: var(--overlay-panel-shadow);
     --settings-shadow-soft: var(--overlay-panel-shadow-soft);
 
-    /*  Widgets（主面板卡片：不透明） */
-    --widget-surface: #151518;
-    --widget-surface-2: #1b1b1f;
-    --widget-border: rgba(255, 255, 255, 0.10);
-    --widget-text: rgba(255, 255, 255, 0.92);
-    --widget-muted: rgba(255, 255, 255, 0.60);
-    --widget-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+    /*  Widgets（主面板卡片：半透明磨砂） */
+    --widget-surface: rgba(22, 22, 28, 0.72);
+    --widget-surface-2: rgba(30, 30, 38, 0.85);
+    --widget-border: rgba(255, 255, 255, 0.12);
+    --widget-text: rgba(255, 255, 255, 0.94);
+    --widget-muted: rgba(255, 255, 255, 0.62);
+    --widget-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 
     /* Sidebar（深色） */
     --sidebar-surface: #151518; /* 不透明面板，避免和壁纸冲突 */
@@ -201,13 +201,13 @@ html.light {
     --neon-glow-color: #00FFD1;
     --neon-glow-strength: 0;
 
-    /*  Widgets（主面板卡片：不透明，浅灰/浅白） */
-    --widget-surface: #f3f4f6; /* 浅灰 */
-    --widget-surface-2: #ffffff; /* 浅白 */
+    /*  Widgets（主面板卡片：浅色磨砂） */
+    --widget-surface: rgba(255, 255, 255, 0.76);
+    --widget-surface-2: rgba(255, 255, 255, 0.90);
     --widget-border: rgba(0, 0, 0, 0.08);
     --widget-text: rgba(15, 23, 42, 0.92);
-    --widget-muted: rgba(15, 23, 42, 0.55);
-    --widget-shadow: 0 14px 28px rgba(0, 0, 0, 0.10);
+    --widget-muted: rgba(15, 23, 42, 0.58);
+    --widget-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
 
     /* Sidebar（浅色） */
     --sidebar-surface: #ffffff;

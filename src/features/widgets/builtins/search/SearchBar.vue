@@ -106,6 +106,7 @@ const smartAction = computed(() => {
     type: 'ai',
     label: `AI 解答: ${text}`,
     sub: '按 Enter 询问 AI 助手',
+
     query: text,
     icon: PhSparkle,
     color: 'text-purple-500'
@@ -181,7 +182,7 @@ const executeAction = (index: number) => {
   if (index > 0) {
     const item = localResults.value[index - 1];
     if (item) {
-      historyStore.addLog('goto', item.url); //   记录本地跳转
+      historyStore.addLog('goto', item.url);
       window.open(item.url, '_blank');
     }
     closePanel();
@@ -218,35 +219,34 @@ const handleSearch = () => {
   <div ref="searchContainer" class="relative w-[90%] md:w-full md:max-w-[680px] px-0 group z-30 mb-4 transition-all">
 
     <div
-        class="search-shell flex items-center rounded-full px-2 py-2 transition-all border shadow-lg hover:shadow-2xl relative z-20"
+        class="search-shell flex items-center rounded-full px-2.5 py-1.5 transition-all border relative z-20"
         :class="[
-        'bg-white/10 dark:bg-black/20 backdrop-blur-xl',
         { 'effect-neon': store.config.theme.neonGlow },
-        showSuggestions ? 'is-open rounded-b-none border-b-transparent bg-white/90 dark:bg-[#1e1e1e]/95' : ''
+        showSuggestions ? 'is-open rounded-b-none border-b-transparent' : ''
       ]"
     >
 
       <div class="relative shrink-0">
         <button @click.stop="showEngineMenu = !showEngineMenu"
-                class="p-3 rounded-full hover:bg-white/20 transition-colors text-[var(--accent-color)] flex items-center justify-center">
+                class="p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-[var(--accent-color)] flex items-center justify-center">
           <img
               v-if="getEngineIconUrl(currentEngine)"
               :src="getEngineIconUrl(currentEngine)"
-              class="w-6 h-6 object-contain"
+              class="w-5 h-5 object-contain"
               alt=""
               referrerpolicy="no-referrer"
               @error="markEngineIconFailed(currentEngine)"
           />
-          <component v-else :is="getEngineIconComponent(currentEngine, 'MagnifyingGlass')" size="24" weight="bold"/>
+          <component v-else :is="getEngineIconComponent(currentEngine, 'MagnifyingGlass')" size="20" weight="bold"/>
         </button>
 
         <transition name="scale">
           <div v-if="showEngineMenu"
-               class="absolute top-14 left-0 w-48 bg-[#1e1e1e]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 text-white">
+               class="absolute top-14 left-0 w-48 bg-[var(--modal-bg)] backdrop-blur-2xl border border-[var(--modal-border)] rounded-2xl p-2 shadow-2xl flex flex-col gap-1 z-50 text-[var(--modal-text)]">
             <div v-for="eng in store.config.searchEngines" :key="eng.id"
-                 class="flex items-center justify-between p-3 rounded-xl hover:bg-white/10 cursor-pointer group/item transition-colors"
+                 class="flex items-center justify-between p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer group/item transition-colors"
                  @click="store.config.currentEngineId = eng.id; showEngineMenu = false">
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2.5">
                 <img
                     v-if="getEngineIconUrl(eng)"
                     :src="getEngineIconUrl(eng)"
@@ -256,16 +256,16 @@ const handleSearch = () => {
                     @error="markEngineIconFailed(eng)"
                 />
                 <component v-else :is="getEngineIconComponent(eng, 'Globe')" size="18"/>
-                <span class="text-sm font-bold">{{ eng.name }}</span>
+                <span class="text-sm font-medium">{{ eng.name }}</span>
               </div>
               <button v-if="store.config.searchEngines.length > 1" @click.stop="store.removeEngine(eng.id)"
                       class="opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-1 transition-opacity">
                 <PhTrash size="14"/>
               </button>
             </div>
-            <div class="h-[1px] bg-white/10 my-1"></div>
+            <div class="h-[1px] bg-[var(--modal-border)] my-1"></div>
             <button @click="emit('openSettings')"
-                    class="text-xs font-bold opacity-60 hover:opacity-100 text-center py-2 transition-opacity">添加引擎...
+                    class="text-xs font-medium opacity-60 hover:opacity-100 text-center py-2 transition-opacity">添加引擎...
             </button>
           </div>
         </transition>
@@ -406,36 +406,44 @@ const handleSearch = () => {
 }
 
 .search-shell {
-  border-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
-  background:
-      linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08)),
-      rgba(var(--overlay-rgb), 0.16);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(var(--sidebar-surface-rgb), 0.72);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
   box-shadow:
-      0 1px 0 rgba(255,255,255,0.22) inset,
-      0 0 0 1px rgba(var(--overlay-rgb), 0.08),
-      0 16px 42px rgba(0,0,0,0.16);
+      0 1px 0 rgba(255, 255, 255, 0.2) inset,
+      0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+html.light .search-shell {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.6) inset,
+      0 8px 24px rgba(0, 0, 0, 0.05);
 }
 
 .search-shell:hover,
 .search-shell:focus-within,
 .search-shell.is-open {
-  border-color: color-mix(in srgb, var(--accent-color) 52%, var(--text-primary) 18%);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, var(--text-primary) 15%);
   box-shadow:
-      0 1px 0 rgba(255,255,255,0.24) inset,
+      0 1px 0 rgba(255, 255, 255, 0.24) inset,
       0 0 0 3px rgba(var(--accent-color-rgb), 0.12),
-      0 18px 46px rgba(0,0,0,0.18);
+      0 16px 40px rgba(0, 0, 0, 0.14);
 }
 
 .search-suggestions {
-  border-color: color-mix(in srgb, var(--accent-color) 32%, var(--text-primary) 14%);
-  box-shadow:
-      0 18px 46px rgba(0,0,0,0.20),
-      0 0 0 1px rgba(var(--accent-color-rgb), 0.08);
+  border-color: color-mix(in srgb, var(--accent-color) 25%, var(--text-primary) 12%);
+  background: rgba(var(--sidebar-surface-rgb), 0.88);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.20);
 }
 
-:global(.dark) .search-shell {
-  background:
-      linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04)),
-      rgba(12,12,14,0.58);
+html.light .search-suggestions {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.1);
 }
 </style>

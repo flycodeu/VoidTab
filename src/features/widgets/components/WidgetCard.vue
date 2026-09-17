@@ -102,6 +102,8 @@ const widgetResetKey = computed(() => [
   box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.08),
       0 calc(var(--tile-elevation, 1) * 8px) calc(var(--tile-elevation, 1) * 18px) rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
 }
 
 .widget-edit-ring {

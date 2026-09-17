@@ -115,53 +115,53 @@ const containerClass = computed(() => {
   if (sidebarPos.value === 'bottom') {
     return 'fixed bottom-0 left-0 right-0 z-40 pointer-events-none flex justify-center px-4 pb-4';
   }
-  return `fixed inset-y-0 z-40 pointer-events-none flex flex-col justify-center py-4 ${sidebarPos.value === 'right' ? 'right-0' : 'left-0'}`;
+  return `fixed inset-y-0 z-40 pointer-events-none flex flex-col justify-center py-6 px-3 ${sidebarPos.value === 'right' ? 'right-0 items-end' : 'left-0 items-start'}`;
 });
 
 const railClass = computed(() => {
-  if (sidebarPos.value === 'top' || sidebarPos.value === 'bottom') return 'rounded-[22px]';
-  return sidebarPos.value === 'right' ? 'right-0 rounded-l-[24px]' : 'left-0 rounded-r-[24px]';
+  if (sidebarPos.value === 'top' || sidebarPos.value === 'bottom') return 'rounded-[26px]';
+  return 'rounded-[28px]';
 });
 
 const railLayoutClass = computed(() => {
   return isHorizontal.value
-      ? 'hidden lg:flex pointer-events-auto h-[64px] flex-row items-center transition-all duration-300 overflow-hidden sidebar-rail sidebar-rail--horizontal'
-      : 'hidden lg:flex pointer-events-auto h-full w-[82px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail';
+      ? 'hidden lg:flex pointer-events-auto h-[58px] flex-row items-center transition-all duration-300 overflow-hidden sidebar-rail sidebar-rail--horizontal'
+      : 'hidden lg:flex pointer-events-auto max-h-[86vh] w-[62px] flex-col items-center transition-all duration-300 overflow-hidden sidebar-rail';
 });
 
 const brandBlockClass = computed(() => {
   return isHorizontal.value
-      ? 'flex-shrink-0 h-full px-4 flex flex-row items-center border-r gap-2 sidebar-divider'
-      : 'flex-shrink-0 pt-6 pb-4 w-full flex flex-col items-center border-b gap-2 sidebar-divider';
+      ? 'flex-shrink-0 h-full px-3 flex flex-row items-center border-r gap-2 sidebar-divider'
+      : 'flex-shrink-0 pt-3 pb-2 w-full flex flex-col items-center border-b gap-1.5 sidebar-divider';
 });
 
 const listShellClass = computed(() => {
   return isHorizontal.value
-      ? 'w-full min-w-0 h-full px-3 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center justify-start scroll-smooth cursor-grab active:cursor-grabbing'
-      : 'flex-1 w-full px-2 overflow-y-auto no-scrollbar pb-4 space-y-2';
+      ? 'w-full min-w-0 h-full px-2 overflow-x-auto overflow-y-hidden no-scrollbar flex items-center justify-start scroll-smooth cursor-grab active:cursor-grabbing'
+      : 'flex-1 w-full px-1.5 overflow-y-auto no-scrollbar py-2 space-y-1.5';
 });
 
 const listShellStyle = computed(() => {
   return isHorizontal.value ? undefined : {
-    maxHeight: 'calc(100vh - 280px)',
-    minHeight: '200px',
+    maxHeight: 'calc(86vh - 140px)',
+    minHeight: '120px',
   };
 });
 
 const draggableClass = computed(() => {
-  return isHorizontal.value ? 'flex flex-row items-center gap-2 py-2 w-max min-w-max' : 'flex flex-col gap-2';
+  return isHorizontal.value ? 'flex flex-row items-center gap-2 py-1 w-max min-w-max' : 'flex flex-col gap-1.5';
 });
 
 const addButtonClass = computed(() => {
   return isHorizontal.value
-      ? 'w-11 h-11 shrink-0 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn'
-      : 'w-full h-12 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn';
+      ? 'w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn'
+      : 'w-full h-10 rounded-xl flex items-center justify-center transition-all group sidebar-add-btn';
 });
 
 const footerClass = computed(() => {
   return isHorizontal.value
-      ? 'flex-shrink-0 h-full px-4 flex items-center justify-center sidebar-footer sidebar-footer--horizontal'
-      : 'flex-shrink-0 w-full p-4 flex justify-center sidebar-footer';
+      ? 'flex-shrink-0 h-full px-3 flex items-center justify-center sidebar-footer sidebar-footer--horizontal'
+      : 'flex-shrink-0 w-full p-2.5 flex justify-center sidebar-footer';
 });
 
 const transitionName = computed(() => {
@@ -512,14 +512,6 @@ onBeforeUnmount(() => {
 
 .sidebar-rail:hover {
   background: rgba(var(--sidebar-surface-rgb), var(--sidebar-alpha));
-}
-
-.sidebar-rail[data-side='left'] {
-  border-left: none;
-}
-
-.sidebar-rail[data-side='right'] {
-  border-right: none;
 }
 
 .sidebar-divider {
