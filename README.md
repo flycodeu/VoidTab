@@ -1,3 +1,5 @@
+
+
 # VoidTab
 
 [English](./README.en.md) | 简体中文
@@ -113,7 +115,7 @@ src/
 
 - Vue 3 + Composition API
 - TypeScript
-- Vite 5
+- Vite 6
 - Manifest V3
 - Tailwind CSS
 - Pinia
